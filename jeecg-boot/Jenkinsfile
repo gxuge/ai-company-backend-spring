@@ -1,0 +1,146 @@
+pipeline {
+  agent any
+
+  parameters {
+    booleanParam(name: 'RESET_MYSQL_DATA', defaultValue: false, description: 'Reset mysql/data before deploy (destructive). Set false after first reset.')
+  }
+
+  tools {
+    // Update these names to match "Manage Jenkins -> Global Tool Configuration"
+    jdk 'JDK8'
+    maven 'Maven3'
+  }
+
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+  }
+
+  environment {
+    BUNDLE_NAME = 'course-java'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Build') {
+      steps {
+        script {
+          if (isUnix()) {
+            sh 'mvn -U -Pprod -DskipTests clean package -pl jeecg-module-system/jeecg-system-start -am'
+          } else {
+            bat 'mvn -U -Pprod -DskipTests clean package -pl jeecg-module-system/jeecg-system-start -am'
+          }
+        }
+      }
+    }
+
+    stage('Bundle') {
+      steps {
+        script {
+          if (isUnix()) {
+            sh 'bash ./prepare-monolith-bundle.sh "${BUNDLE_NAME}"'
+          } else {
+            powershell '.\\prepare-monolith-bundle.ps1 -BundleName $env:BUNDLE_NAME'
+          }
+        }
+      }
+    }
+
+    stage('Deploy') {
+      steps {
+        script {
+          echo "Deploy with RESET_MYSQL_DATA=${params.RESET_MYSQL_DATA}, BUNDLE_NAME=${env.BUNDLE_NAME}"
+          if (isUnix()) {
+            if (params.RESET_MYSQL_DATA) {
+              echo 'RESET_MYSQL_DATA=true, resetting mysql/data directory before deploy'
+              sh '''
+                docker compose -f ${BUNDLE_NAME}/docker-compose.yml --env-file ${BUNDLE_NAME}/.env down || true
+                rm -rf "${BUNDLE_NAME}/mysql/data"
+                mkdir -p "${BUNDLE_NAME}/mysql/data"
+              '''
+            } else {
+              echo 'RESET_MYSQL_DATA=false, skip mysql/data reset'
+            }
+            sh 'docker compose -f ${BUNDLE_NAME}/docker-compose.yml --env-file ${BUNDLE_NAME}/.env up -d --build'
+            sh '''
+              MYSQL_PASSWORD="$(grep -m1 '^MYSQL_PASSWORD=' "${BUNDLE_NAME}/.env" | cut -d'=' -f2- | tr -d '\r')"
+              if [ -z "${MYSQL_PASSWORD}" ]; then
+                echo "MYSQL_PASSWORD not found in ${BUNDLE_NAME}/.env"
+                exit 1
+              fi
+              for i in $(seq 1 60); do
+                if docker compose -f ${BUNDLE_NAME}/docker-compose.yml --env-file ${BUNDLE_NAME}/.env exec -T -e MYSQL_PWD="$MYSQL_PASSWORD" jeecg-boot-mysql mysqladmin -uroot ping --silent >/dev/null 2>&1; then
+                  echo "MySQL is ready"
+                  break
+                fi
+                if [ "$i" -eq 60 ]; then
+                  echo "MySQL did not become ready in time"
+                  docker compose -f ${BUNDLE_NAME}/docker-compose.yml --env-file ${BUNDLE_NAME}/.env logs --tail 200 jeecg-boot-mysql || true
+                  exit 1
+                fi
+                sleep 2
+              done
+              docker compose -f ${BUNDLE_NAME}/docker-compose.yml --env-file ${BUNDLE_NAME}/.env exec -T -e MYSQL_PWD="$MYSQL_PASSWORD" jeecg-boot-mysql mysql -uroot -e "SHOW VARIABLES LIKE 'lower_case_table_names';"
+            '''
+          } else {
+            if (params.RESET_MYSQL_DATA) {
+              echo 'RESET_MYSQL_DATA=true, resetting mysql/data directory before deploy'
+              powershell '''
+                docker compose -f "$env:BUNDLE_NAME/docker-compose.yml" --env-file "$env:BUNDLE_NAME/.env" down
+                Remove-Item -Recurse -Force "$env:BUNDLE_NAME/mysql/data" -ErrorAction SilentlyContinue
+                New-Item -ItemType Directory -Path "$env:BUNDLE_NAME/mysql/data" -Force | Out-Null
+              '''
+            } else {
+              echo 'RESET_MYSQL_DATA=false, skip mysql/data reset'
+            }
+            powershell 'docker compose -f "$env:BUNDLE_NAME/docker-compose.yml" --env-file "$env:BUNDLE_NAME/.env" up -d --build'
+            powershell '''
+              Get-Content "$env:BUNDLE_NAME/.env" | ForEach-Object {
+                if ($_ -match "^MYSQL_PASSWORD=(.*)$") {
+                  $env:MYSQL_PWD = $matches[1]
+                }
+              }
+              $ready = $false
+              for ($i = 1; $i -le 60; $i++) {
+                docker compose -f "$env:BUNDLE_NAME/docker-compose.yml" --env-file "$env:BUNDLE_NAME/.env" exec -T jeecg-boot-mysql mysqladmin -uroot ping --silent *> $null
+                if ($LASTEXITCODE -eq 0) {
+                  Write-Host "MySQL is ready"
+                  $ready = $true
+                  break
+                }
+                Start-Sleep -Seconds 2
+              }
+              if (-not $ready) {
+                Write-Host "MySQL did not become ready in time"
+                docker compose -f "$env:BUNDLE_NAME/docker-compose.yml" --env-file "$env:BUNDLE_NAME/.env" logs --tail 200 jeecg-boot-mysql
+                exit 1
+              }
+              docker compose -f "$env:BUNDLE_NAME/docker-compose.yml" --env-file "$env:BUNDLE_NAME/.env" exec -T jeecg-boot-mysql mysql -uroot -e "SHOW VARIABLES LIKE 'lower_case_table_names';"
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Archive') {
+      steps {
+        archiveArtifacts artifacts: "${BUNDLE_NAME}/**", fingerprint: true
+      }
+    }
+  }
+
+  post {
+    success {
+      echo 'Build, bundle and deploy completed.'
+    }
+    failure {
+      echo 'Build failed. Check build logs.'
+    }
+  }
+}

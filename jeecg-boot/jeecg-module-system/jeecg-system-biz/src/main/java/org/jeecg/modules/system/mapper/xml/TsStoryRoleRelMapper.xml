@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsStoryRoleRelMapper">
+
+    <!-- 按故事ID集合查询角色关系 -->
+    <select id="selectByStoryIds" resultType="org.jeecg.modules.system.entity.TsStoryRoleRel">
+        SELECT *
+        FROM ts_story_role_rel
+        WHERE story_id IN
+        <foreach collection="storyIds" item="storyId" open="(" separator="," close=")">
+            #{storyId}
+        </foreach>
+        ORDER BY story_id ASC, sort_no ASC, id ASC
+    </select>
+
+    <!-- 按单个故事ID查询角色关系 -->
+    <select id="selectByStoryId" resultType="org.jeecg.modules.system.entity.TsStoryRoleRel">
+        SELECT *
+        FROM ts_story_role_rel
+        WHERE story_id = #{storyId}
+        ORDER BY sort_no ASC, id ASC
+    </select>
+
+    <!-- 删除故事下全部角色关系 -->
+    <delete id="deleteByStoryId">
+        DELETE FROM ts_story_role_rel
+        WHERE story_id = #{storyId}
+    </delete>
+
+    <!-- 查询故事下已绑定的角色ID集合 -->
+    <select id="selectBoundRoleIds" resultType="java.lang.Long">
+        SELECT role_id
+        FROM ts_story_role_rel
+        WHERE story_id = #{storyId}
+          AND role_id IN
+        <foreach collection="roleIds" item="roleId" open="(" separator="," close=")">
+            #{roleId}
+        </foreach>
+    </select>
+
+</mapper>

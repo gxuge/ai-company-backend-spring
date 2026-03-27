@@ -1,0 +1,50 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsChatSessionMapper">
+
+    <!-- 分页查询当前用户可访问的会话 -->
+    <select id="selectSessionPage" resultType="org.jeecg.modules.system.entity.TsChatSession">
+        SELECT s.*
+        FROM ts_chat_session s
+        WHERE s.user_id = #{query.userId}
+        <if test="query != null and query.sessionType != null and query.sessionType != ''">
+            AND s.session_type = #{query.sessionType}
+        </if>
+        <if test="query != null and query.targetRoleId != null">
+            AND s.target_role_id = #{query.targetRoleId}
+        </if>
+        <if test="query != null and query.storyId != null">
+            AND s.story_id = #{query.storyId}
+        </if>
+        <if test="query != null and query.keyword != null and query.keyword != ''">
+            AND s.session_title LIKE CONCAT('%', #{query.keyword}, '%')
+        </if>
+        <if test="query != null and query.lastMessageAtStart != null">
+            AND s.last_message_at <![CDATA[>=]]> #{query.lastMessageAtStart}
+        </if>
+        <if test="query != null and query.lastMessageAtEnd != null">
+            AND s.last_message_at <![CDATA[<=]]> #{query.lastMessageAtEnd}
+        </if>
+        <choose>
+            <when test="query != null and query.sessionStatus != null">
+                AND s.session_status = #{query.sessionStatus}
+            </when>
+            <otherwise>
+                AND s.session_status != 0
+            </otherwise>
+        </choose>
+        ORDER BY COALESCE(s.last_message_at, s.updated_at) DESC, s.id DESC
+    </select>
+
+    <!-- 查询当前用户拥有的单条会话 -->
+    <select id="selectOwnedById" resultType="org.jeecg.modules.system.entity.TsChatSession">
+        SELECT s.*
+        FROM ts_chat_session s
+        WHERE s.id = #{id}
+          AND s.user_id = #{userId}
+          AND s.session_status != 0
+        LIMIT 1
+    </select>
+
+</mapper>

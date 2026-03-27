@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsStoryMapper">
+
+    <!-- 分页查询当前用户故事列表 -->
+    <select id="selectStoryPage" resultType="org.jeecg.modules.system.entity.TsStory">
+        SELECT *
+        FROM ts_story_info
+        WHERE user_id = #{query.userId}
+          AND is_deleted = 0
+        <if test="query != null and query.keyword != null and query.keyword != ''">
+            AND (
+                title LIKE CONCAT('%', #{query.keyword}, '%')
+                OR story_intro LIKE CONCAT('%', #{query.keyword}, '%')
+            )
+        </if>
+        <if test="query != null and query.status != null">
+            AND status = #{query.status}
+        </if>
+        <if test="query != null and query.isPublic != null">
+            AND is_public = #{query.isPublic}
+        </if>
+        <if test="query != null and query.storyMode != null and query.storyMode != ''">
+            AND story_mode = #{query.storyMode}
+        </if>
+        ORDER BY updated_at DESC, id DESC
+    </select>
+
+    <!-- 校验当前用户是否拥有指定故事 -->
+    <select id="selectOwned" resultType="org.jeecg.modules.system.entity.TsStory">
+        SELECT *
+        FROM ts_story_info
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND is_deleted = 0
+          AND (status IS NULL OR status != 9)
+        LIMIT 1
+    </select>
+
+    <!-- 校验并锁定当前用户拥有的故事（写操作并发控制） -->
+    <select id="selectOwnedForUpdate" resultType="org.jeecg.modules.system.entity.TsStory">
+        SELECT *
+        FROM ts_story_info
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND is_deleted = 0
+          AND (status IS NULL OR status != 9)
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+</mapper>

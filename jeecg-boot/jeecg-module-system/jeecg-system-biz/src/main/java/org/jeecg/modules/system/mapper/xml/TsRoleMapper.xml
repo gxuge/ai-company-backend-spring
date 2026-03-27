@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsRoleMapper">
+
+    <!-- 分页查询当前用户角色列表 -->
+    <select id="selectRolePage" resultType="org.jeecg.modules.system.entity.TsRole">
+        SELECT *
+        FROM ts_role_info
+        WHERE user_id = #{query.userId}
+        <if test="query != null and query.keyword != null and query.keyword != ''">
+            AND (
+                role_name LIKE CONCAT('%', #{query.keyword}, '%')
+                OR role_subtitle LIKE CONCAT('%', #{query.keyword}, '%')
+                OR intro_text LIKE CONCAT('%', #{query.keyword}, '%')
+            )
+        </if>
+        <if test="query != null and query.gender != null and query.gender != ''">
+            AND gender = #{query.gender}
+        </if>
+        <if test="query != null and query.isPublic != null">
+            AND is_public = #{query.isPublic}
+        </if>
+        <choose>
+            <when test="query != null and query.status != null">
+                AND status = #{query.status}
+            </when>
+            <otherwise>
+                AND (status IS NULL OR status != 0)
+            </otherwise>
+        </choose>
+        ORDER BY updated_at DESC, id DESC
+    </select>
+
+    <!-- 校验当前用户是否拥有指定角色 -->
+    <select id="selectOwned" resultType="org.jeecg.modules.system.entity.TsRole">
+        SELECT *
+        FROM ts_role_info
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND (status IS NULL OR status != 0)
+        LIMIT 1
+    </select>
+
+    <!-- 批量查询当前用户拥有的角色ID -->
+    <select id="selectOwnedIds" resultType="java.lang.Long">
+        SELECT id
+        FROM ts_role_info
+        WHERE user_id = #{userId}
+          AND (status IS NULL OR status != 0)
+          AND id IN
+        <foreach collection="roleIds" item="roleId" open="(" separator="," close=")">
+            #{roleId}
+        </foreach>
+    </select>
+
+</mapper>

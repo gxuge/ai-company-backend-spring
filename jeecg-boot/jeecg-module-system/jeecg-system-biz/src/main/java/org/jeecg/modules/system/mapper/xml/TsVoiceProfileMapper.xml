@@ -1,0 +1,48 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsVoiceProfileMapper">
+
+    <!-- 分页查询公共音色列表 -->
+    <select id="selectVoiceProfilePage" resultType="org.jeecg.modules.system.entity.TsVoiceProfile">
+        SELECT *
+        FROM ts_voice_profile
+        WHERE 1 = 1
+        <if test="query != null and query.keyword != null and query.keyword != ''">
+            AND name LIKE CONCAT('%', #{query.keyword}, '%')
+        </if>
+        <if test="query != null and query.gender != null and query.gender != ''">
+            AND gender = #{query.gender}
+        </if>
+        <if test="query != null and query.ageGroup != null and query.ageGroup != ''">
+            AND age_group = #{query.ageGroup}
+        </if>
+        <choose>
+            <when test="query != null and query.status != null">
+                AND status = #{query.status}
+            </when>
+            <otherwise>
+                AND status != 0
+            </otherwise>
+        </choose>
+        ORDER BY sort_no ASC, updated_at DESC, id DESC
+    </select>
+
+    <!-- 查询有效音色 -->
+    <select id="selectActiveById" resultType="org.jeecg.modules.system.entity.TsVoiceProfile">
+        SELECT *
+        FROM ts_voice_profile
+        WHERE id = #{id}
+          AND status != 0
+        LIMIT 1
+    </select>
+
+    <!-- 校验音色是否存在且有效 -->
+    <select id="countActiveById" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM ts_voice_profile
+        WHERE id = #{id}
+          AND status != 0
+    </select>
+
+</mapper>

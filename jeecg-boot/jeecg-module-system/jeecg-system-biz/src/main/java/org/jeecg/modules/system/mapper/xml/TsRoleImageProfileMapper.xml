@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsRoleImageProfileMapper">
+
+    <!-- 分页查询当前用户可见的角色形象模板列表 -->
+    <select id="selectProfilePage" resultType="org.jeecg.modules.system.entity.TsRoleImageProfile">
+        SELECT p.*
+        FROM ts_role_image_profile p
+        WHERE (
+                p.owner_user_id = #{query.userId}
+                OR p.owner_user_id IS NULL
+                OR p.is_public = 1
+            )
+        <choose>
+            <when test="query != null and query.status != null">
+                AND p.status = #{query.status}
+            </when>
+            <otherwise>
+                AND p.status != 0
+            </otherwise>
+        </choose>
+        <if test="query != null and query.keyword != null and query.keyword != ''">
+            AND (
+                p.profile_name LIKE CONCAT('%', #{query.keyword}, '%')
+                OR p.style_name LIKE CONCAT('%', #{query.keyword}, '%')
+                OR p.prompt_text LIKE CONCAT('%', #{query.keyword}, '%')
+            )
+        </if>
+        <if test="query != null and query.profileName != null and query.profileName != ''">
+            AND p.profile_name LIKE CONCAT('%', #{query.profileName}, '%')
+        </if>
+        <if test="query != null and query.styleName != null and query.styleName != ''">
+            AND p.style_name = #{query.styleName}
+        </if>
+        <if test="query != null and query.sourceType != null and query.sourceType != ''">
+            AND p.source_type = #{query.sourceType}
+        </if>
+        <if test="query != null and query.isPublic != null">
+            AND p.is_public = #{query.isPublic}
+        </if>
+        ORDER BY p.updated_at DESC, p.id DESC
+    </select>
+
+    <!-- 按模板ID查询当前用户可见的模板 -->
+    <select id="selectVisibleById" resultType="org.jeecg.modules.system.entity.TsRoleImageProfile">
+        SELECT *
+        FROM ts_role_image_profile
+        WHERE id = #{id}
+          AND status != 0
+          AND (
+                owner_user_id = #{userId}
+                OR owner_user_id IS NULL
+                OR is_public = 1
+              )
+        LIMIT 1
+    </select>
+
+    <!-- 按模板ID查询当前用户拥有的模板 -->
+    <select id="selectOwnedById" resultType="org.jeecg.modules.system.entity.TsRoleImageProfile">
+        SELECT *
+        FROM ts_role_image_profile
+        WHERE id = #{id}
+          AND owner_user_id = #{userId}
+          AND status != 0
+        LIMIT 1
+    </select>
+
+</mapper>

@@ -1,0 +1,68 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsChatMessageMapper">
+
+    <!-- 分页查询当前用户可访问的会话消息 -->
+    <select id="selectMessagePage" resultType="org.jeecg.modules.system.entity.TsChatMessage">
+        SELECT m.*
+        FROM ts_chat_message m
+        INNER JOIN ts_chat_session s ON s.id = m.session_id
+        WHERE s.user_id = #{query.userId}
+          AND s.session_status != 0
+        <if test="query != null and query.sessionId != null">
+            AND m.session_id = #{query.sessionId}
+        </if>
+        <if test="query != null and query.senderType != null and query.senderType != ''">
+            AND m.sender_type = #{query.senderType}
+        </if>
+        <if test="query != null and query.messageType != null and query.messageType != ''">
+            AND m.message_type = #{query.messageType}
+        </if>
+        <if test="query != null and query.generateStatus != null and query.generateStatus != ''">
+            AND m.generate_status = #{query.generateStatus}
+        </if>
+        <if test="query != null and query.replyToMessageId != null">
+            AND m.reply_to_message_id = #{query.replyToMessageId}
+        </if>
+        <if test="query != null and query.keyword != null and query.keyword != ''">
+            AND m.content_text LIKE CONCAT('%', #{query.keyword}, '%')
+        </if>
+        <if test="query != null and query.createdAtStart != null">
+            AND m.created_at <![CDATA[>=]]> #{query.createdAtStart}
+        </if>
+        <if test="query != null and query.createdAtEnd != null">
+            AND m.created_at <![CDATA[<=]]> #{query.createdAtEnd}
+        </if>
+        ORDER BY m.created_at DESC, m.id DESC
+    </select>
+
+    <!-- 查询当前用户拥有的单条消息 -->
+    <select id="selectOwnedById" resultType="org.jeecg.modules.system.entity.TsChatMessage">
+        SELECT m.*
+        FROM ts_chat_message m
+        INNER JOIN ts_chat_session s ON s.id = m.session_id
+        WHERE m.id = #{id}
+          AND s.user_id = #{userId}
+          AND s.session_status != 0
+        LIMIT 1
+    </select>
+
+    <!-- 校验会话归属 -->
+    <select id="selectOwnedSessionCount" resultType="java.lang.Integer">
+        SELECT COUNT(1)
+        FROM ts_chat_session
+        WHERE id = #{sessionId}
+          AND user_id = #{userId}
+          AND session_status != 0
+    </select>
+
+    <!-- 获取会话下一个顺序号（插入前加锁） -->
+    <select id="selectNextSeqNoForUpdate" resultType="java.lang.Long">
+        SELECT IFNULL(MAX(seq_no), 0) + 1
+        FROM ts_chat_message
+        WHERE session_id = #{sessionId}
+        FOR UPDATE
+    </select>
+
+</mapper>

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsChatMessageAttachmentMapper">
+
+    <!-- 分页查询当前用户可访问的消息附件 -->
+    <select id="selectAttachmentPage" resultType="org.jeecg.modules.system.entity.TsChatMessageAttachment">
+        SELECT a.*
+        FROM ts_chat_message_attachment a
+        INNER JOIN ts_chat_message m ON m.id = a.message_id
+        INNER JOIN ts_chat_session s ON s.id = m.session_id
+        WHERE s.user_id = #{query.userId}
+          AND s.session_status != 0
+        <if test="query != null and query.messageId != null">
+            AND a.message_id = #{query.messageId}
+        </if>
+        <if test="query != null and query.fileType != null and query.fileType != ''">
+            AND a.file_type = #{query.fileType}
+        </if>
+        <if test="query != null and query.mimeType != null and query.mimeType != ''">
+            AND a.mime_type = #{query.mimeType}
+        </if>
+        <if test="query != null and query.keyword != null and query.keyword != ''">
+            AND a.file_name LIKE CONCAT('%', #{query.keyword}, '%')
+        </if>
+        <if test="query != null and query.createdAtStart != null">
+            AND a.created_at <![CDATA[>=]]> #{query.createdAtStart}
+        </if>
+        <if test="query != null and query.createdAtEnd != null">
+            AND a.created_at <![CDATA[<=]]> #{query.createdAtEnd}
+        </if>
+        ORDER BY a.created_at DESC, a.id DESC
+    </select>
+
+    <!-- 查询当前用户拥有的单条消息附件 -->
+    <select id="selectOwnedById" resultType="org.jeecg.modules.system.entity.TsChatMessageAttachment">
+        SELECT a.*
+        FROM ts_chat_message_attachment a
+        INNER JOIN ts_chat_message m ON m.id = a.message_id
+        INNER JOIN ts_chat_session s ON s.id = m.session_id
+        WHERE a.id = #{id}
+          AND s.user_id = #{userId}
+          AND s.session_status != 0
+        LIMIT 1
+    </select>
+
+    <!-- 校验消息归属 -->
+    <select id="selectOwnedMessageCount" resultType="java.lang.Integer">
+        SELECT COUNT(1)
+        FROM ts_chat_message m
+        INNER JOIN ts_chat_session s ON s.id = m.session_id
+        WHERE m.id = #{messageId}
+          AND s.user_id = #{userId}
+          AND s.session_status != 0
+    </select>
+
+</mapper>

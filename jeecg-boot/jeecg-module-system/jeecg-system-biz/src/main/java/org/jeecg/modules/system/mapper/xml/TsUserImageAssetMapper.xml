@@ -1,0 +1,41 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsUserImageAssetMapper">
+
+    <!-- 分页查询当前用户素材列表 -->
+    <select id="selectAssetPage" resultType="org.jeecg.modules.system.entity.TsUserImageAsset">
+        SELECT *
+        FROM ts_user_image_asset
+        WHERE user_id = #{query.userId}
+        <if test="query != null and query.keyword != null and query.keyword != ''">
+            AND (
+                file_name LIKE CONCAT('%', #{query.keyword}, '%')
+                OR file_url LIKE CONCAT('%', #{query.keyword}, '%')
+            )
+        </if>
+        <if test="query != null and query.sourceType != null and query.sourceType != ''">
+            AND source_type = #{query.sourceType}
+        </if>
+        <choose>
+            <when test="query != null and query.status != null">
+                AND status = #{query.status}
+            </when>
+            <otherwise>
+                AND status != 0
+            </otherwise>
+        </choose>
+        ORDER BY updated_at DESC, id DESC
+    </select>
+
+    <!-- 查询当前用户拥有的指定素材 -->
+    <select id="selectOwned" resultType="org.jeecg.modules.system.entity.TsUserImageAsset">
+        SELECT *
+        FROM ts_user_image_asset
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND status != 0
+        LIMIT 1
+    </select>
+
+</mapper>

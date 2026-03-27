@@ -1,0 +1,103 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsStoryChapterMapper">
+
+    <!-- 分页查询当前用户故事章节列表 -->
+    <select id="selectChapterPage" resultType="org.jeecg.modules.system.entity.TsStoryChapter">
+        SELECT c.*
+        FROM ts_story_chapter c
+        INNER JOIN ts_story_info s ON s.id = c.story_id
+        WHERE s.user_id = #{query.userId}
+          AND s.is_deleted = 0
+          AND c.story_id = #{query.storyId}
+        <if test="query != null and query.keyword != null and query.keyword != ''">
+            AND (
+                c.chapter_title LIKE CONCAT('%', #{query.keyword}, '%')
+                OR c.chapter_desc LIKE CONCAT('%', #{query.keyword}, '%')
+            )
+        </if>
+        <choose>
+            <when test="query != null and query.status != null">
+                AND c.status = #{query.status}
+            </when>
+            <otherwise>
+                AND (c.status IS NULL OR c.status != 0)
+            </otherwise>
+        </choose>
+        ORDER BY c.sort_no ASC, c.chapter_no ASC, c.id ASC
+    </select>
+
+    <!-- 校验当前用户是否拥有指定章节 -->
+    <select id="selectOwnedChapter" resultType="org.jeecg.modules.system.entity.TsStoryChapter">
+        SELECT c.*
+        FROM ts_story_chapter c
+        INNER JOIN ts_story_info s ON s.id = c.story_id
+        WHERE c.id = #{id}
+          AND s.user_id = #{userId}
+          AND s.is_deleted = 0
+          AND (c.status IS NULL OR c.status != 0)
+        LIMIT 1
+    </select>
+
+    <!-- 查询故事下最大章节序号 -->
+    <select id="selectMaxChapterNo" resultType="java.lang.Integer">
+        SELECT COALESCE(MAX(chapter_no), 0)
+        FROM ts_story_chapter
+        WHERE story_id = #{storyId}
+          AND (status IS NULL OR status != 0)
+    </select>
+
+    <!-- 校验章节序号冲突 -->
+    <select id="countChapterNo" resultType="int">
+        SELECT COUNT(1)
+        FROM ts_story_chapter
+        WHERE story_id = #{storyId}
+          AND chapter_no = #{chapterNo}
+          AND (status IS NULL OR status != 0)
+        <if test="excludeId != null">
+            AND id != #{excludeId}
+        </if>
+    </select>
+
+    <!-- 查询章节禁用角色ID集合 -->
+    <select id="selectForbiddenRoleIds" resultType="java.lang.Long">
+        SELECT role_id
+        FROM ts_story_chapter_forbidden_role
+        WHERE chapter_id = #{chapterId}
+        ORDER BY id ASC
+    </select>
+
+    <!-- 按章节ID集合批量查询禁用角色关系 -->
+    <select id="selectForbiddenRolePairs" resultType="map">
+        SELECT chapter_id AS chapterId, role_id AS roleId
+        FROM ts_story_chapter_forbidden_role
+        WHERE chapter_id IN
+        <foreach collection="chapterIds" item="chapterId" open="(" separator="," close=")">
+            #{chapterId}
+        </foreach>
+        ORDER BY chapter_id ASC, id ASC
+    </select>
+
+    <!-- 删除章节全部禁用角色关系 -->
+    <delete id="deleteForbiddenRoles">
+        DELETE FROM ts_story_chapter_forbidden_role
+        WHERE chapter_id = #{chapterId}
+    </delete>
+
+    <!-- 新增章节禁用角色关系 -->
+    <insert id="insertForbiddenRole">
+        INSERT INTO ts_story_chapter_forbidden_role (story_id, chapter_id, role_id)
+        VALUES (#{storyId}, #{chapterId}, #{roleId})
+    </insert>
+
+    <!-- 按故事ID逻辑删除章节 -->
+    <update id="logicDeleteByStoryId">
+        UPDATE ts_story_chapter
+        SET status = 0,
+            updated_at = NOW()
+        WHERE story_id = #{storyId}
+          AND (status IS NULL OR status != 0)
+    </update>
+
+</mapper>

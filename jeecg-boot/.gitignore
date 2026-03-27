@@ -1,4 +1,4 @@
-## ide
+﻿## ide
 **/.idea
 *.iml
 rebel.xml
@@ -13,3 +13,7 @@ os_del.cmd
 os_del_doc.cmd
 .svn
 derby.log
+
+## deploy artifacts
+docker-deploy/monolith/system/*.jar
+

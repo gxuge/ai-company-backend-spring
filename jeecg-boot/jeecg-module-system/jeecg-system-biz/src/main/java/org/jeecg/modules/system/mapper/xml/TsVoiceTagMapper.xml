@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsVoiceTagMapper">
+
+    <!-- 分页查询音色标签 -->
+    <select id="selectTagPage" resultType="org.jeecg.modules.system.entity.TsVoiceTag">
+        SELECT *
+        FROM ts_voice_tag
+        WHERE 1 = 1
+        <if test="query != null and query.keyword != null and query.keyword != ''">
+            AND tag_name LIKE CONCAT('%', #{query.keyword}, '%')
+        </if>
+        ORDER BY created_at DESC, id DESC
+    </select>
+
+    <!-- 按ID查询标签 -->
+    <select id="selectByTagId" resultType="org.jeecg.modules.system.entity.TsVoiceTag">
+        SELECT *
+        FROM ts_voice_tag
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <!-- 统计同名标签数量 -->
+    <select id="countByTagName" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM ts_voice_tag
+        WHERE tag_name = #{tagName}
+    </select>
+
+    <!-- 批量统计标签ID存在数量 -->
+    <select id="countByIds" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM ts_voice_tag
+        WHERE id IN
+        <foreach collection="tagIds" item="tagId" open="(" separator="," close=")">
+            #{tagId}
+        </foreach>
+    </select>
+
+    <!-- 统计标签关联的音色数量 -->
+    <select id="countProfileRelByTagId" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM ts_voice_profile_tag
+        WHERE tag_id = #{tagId}
+    </select>
+
+</mapper>

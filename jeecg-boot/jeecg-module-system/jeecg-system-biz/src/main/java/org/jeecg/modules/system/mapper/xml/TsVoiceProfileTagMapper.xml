@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsVoiceProfileTagMapper">
+
+    <!-- 按音色ID集合查询标签关系 -->
+    <select id="selectByProfileIds" resultType="org.jeecg.modules.system.entity.TsVoiceProfileTag">
+        SELECT *
+        FROM ts_voice_profile_tag
+        WHERE voice_profile_id IN
+        <foreach collection="voiceProfileIds" item="voiceProfileId" open="(" separator="," close=")">
+            #{voiceProfileId}
+        </foreach>
+        ORDER BY voice_profile_id ASC, id ASC
+    </select>
+
+    <!-- 按音色ID集合查询标签关系（别名方法） -->
+    <select id="selectByVoiceProfileIds" resultType="org.jeecg.modules.system.entity.TsVoiceProfileTag">
+        SELECT *
+        FROM ts_voice_profile_tag
+        WHERE voice_profile_id IN
+        <foreach collection="voiceProfileIds" item="voiceProfileId" open="(" separator="," close=")">
+            #{voiceProfileId}
+        </foreach>
+        ORDER BY voice_profile_id ASC, id ASC
+    </select>
+
+    <!-- 查询单个音色绑定的标签ID集合 -->
+    <select id="selectTagIdsByProfileId" resultType="java.lang.Long">
+        SELECT tag_id
+        FROM ts_voice_profile_tag
+        WHERE voice_profile_id = #{voiceProfileId}
+        ORDER BY id ASC
+    </select>
+
+    <!-- 删除单个音色下全部标签关系 -->
+    <delete id="deleteByProfileId">
+        DELETE FROM ts_voice_profile_tag
+        WHERE voice_profile_id = #{voiceProfileId}
+    </delete>
+
+    <!-- 删除单个音色下全部标签关系（别名方法） -->
+    <delete id="deleteByVoiceProfileId">
+        DELETE FROM ts_voice_profile_tag
+        WHERE voice_profile_id = #{voiceProfileId}
+    </delete>
+
+    <!-- 批量插入音色与标签关系 -->
+    <insert id="insertBatch">
+        INSERT INTO ts_voice_profile_tag (voice_profile_id, tag_id)
+        VALUES
+        <foreach collection="tagIds" item="tagId" separator=",">
+            (#{voiceProfileId}, #{tagId})
+        </foreach>
+    </insert>
+
+</mapper>

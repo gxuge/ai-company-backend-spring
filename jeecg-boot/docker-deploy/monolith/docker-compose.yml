@@ -1,0 +1,53 @@
+services:
+  jeecg-boot-mysql:
+    image: mysql:5.7
+    restart: always
+    container_name: jeecg-boot-mysql
+    hostname: jeecg-boot-mysql
+    ports:
+      - ${MYSQL_PORT}:3306
+    env_file:
+      - ./.env
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DB}
+    command: ["--lower_case_table_names=1"]
+    volumes:
+      - ./mysql/data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d
+    networks:
+      - share-net
+
+  jeecg-boot-redis:
+    image: registry.cn-hangzhou.aliyuncs.com/jeecgdocker/redis:5.0
+    ports:
+      - ${REDIS_PORT}:6379
+    restart: always
+    container_name: jeecg-boot-redis
+    hostname: jeecg-boot-redis
+    env_file:
+      - ./.env
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    networks:
+      - share-net
+
+  jeecg-boot-system:
+    build:
+      context: ./system
+    restart: on-failure
+    container_name: jeecg-boot-system
+    image: jeecg-boot-system
+    hostname: jeecg-boot-system
+    ports:
+      - 8080:8080
+    env_file:
+      - ./.env
+    depends_on:
+      - jeecg-boot-mysql
+      - jeecg-boot-redis
+    networks:
+      - share-net
+
+networks:
+  share-net:
+    name: share-net

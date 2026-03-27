@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsRoleImageGenerateRecordMapper">
+
+    <!-- 分页查询当前用户生成记录 -->
+    <select id="selectRecordPage" resultType="org.jeecg.modules.system.entity.TsRoleImageGenerateRecord">
+        SELECT g.*
+        FROM ts_role_image_generate_record g
+                 INNER JOIN ts_role_info r ON r.id = g.role_id
+        WHERE r.user_id = #{query.userId}
+          AND (r.status IS NULL OR r.status != 0)
+        <if test="query != null and query.keyword != null and query.keyword != ''">
+            AND (
+                g.style_name LIKE CONCAT('%', #{query.keyword}, '%')
+                OR g.request_id LIKE CONCAT('%', #{query.keyword}, '%')
+                OR g.fail_reason LIKE CONCAT('%', #{query.keyword}, '%')
+            )
+        </if>
+        <if test="query != null and query.roleId != null">
+            AND g.role_id = #{query.roleId}
+        </if>
+        <if test="query != null and query.generateStatus != null and query.generateStatus != ''">
+            AND g.generate_status = #{query.generateStatus}
+        </if>
+        <if test="query != null and query.applyStatus != null and query.applyStatus != ''">
+            AND g.apply_status = #{query.applyStatus}
+        </if>
+        <if test="query != null and query.requestId != null and query.requestId != ''">
+            AND g.request_id = #{query.requestId}
+        </if>
+        ORDER BY g.updated_at DESC, g.id DESC
+    </select>
+
+    <!-- 查询当前用户拥有的指定生成记录 -->
+    <select id="selectOwned" resultType="org.jeecg.modules.system.entity.TsRoleImageGenerateRecord">
+        SELECT g.*
+        FROM ts_role_image_generate_record g
+                 INNER JOIN ts_role_info r ON r.id = g.role_id
+        WHERE g.id = #{id}
+          AND r.user_id = #{userId}
+          AND (r.status IS NULL OR r.status != 0)
+        LIMIT 1
+    </select>
+
+</mapper>

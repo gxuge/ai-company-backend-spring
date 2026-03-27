@@ -19,7 +19,13 @@ management:
       exposure:
         include: metrics,httpexchanges,jeecghttptrace
 
+chat:
+  executor:
+    base: ${CHAT_EXECUTOR_BASE}
+
 spring:
+  config:
+    import: optional:classpath:application-prod.properties
   flyway:
     # 是否启用flyway
     enabled: false
@@ -144,9 +150,9 @@ spring:
           slow-sql-millis: 5000
       datasource:
         master:
-          url: jdbc:mysql://127.0.0.1:3306/jeecg-boot?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
-          username: root
-          password: root
+          url: ${MYSQL_URL}
+          username: ${MYSQL_USERNAME}
+          password: ${MYSQL_PASSWORD}
           driver-class-name: com.mysql.cj.jdbc.Driver
           # 多数据源配置
           #multi-datasource1:
@@ -158,9 +164,9 @@ spring:
   data:
     redis:
       database: 0
-      host: 127.0.0.1
-      port: 6379
-      password:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
 #mybatis plus 设置
 mybatis-plus:
   mapper-locations: classpath*:org/jeecg/**/xml/*Mapper.xml
@@ -296,8 +302,8 @@ jeecg:
     logRetentionDays: 30
   #分布式锁配置
   redisson:
-    address: 127.0.0.1:6379
-    password:
+    address: ${REDIS_HOST}:${REDIS_PORT}
+    password: ${REDIS_PASSWORD}
     type: STANDALONE
     enabled: true
   # 百度开放API配置
