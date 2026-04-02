@@ -41,6 +41,7 @@ public final class TsVoiceProfileVoConverter {
         TsVoiceProfileVo vo = new TsVoiceProfileVo();
         vo.setId(entity.getId());
         vo.setName(entity.getName());
+        vo.setProviderVoiceId(entity.getProviderVoiceId());
         vo.setAvatarUrl(entity.getAvatarUrl());
         vo.setGender(entity.getGender());
         vo.setAgeGroup(entity.getAgeGroup());

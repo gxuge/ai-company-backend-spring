@@ -14,10 +14,22 @@ server:
     mime-types: application/javascript,application/json,application/xml,text/html,text/xml,text/plain,text/css,image/*
 
 management:
+  tracing:
+    sampling:
+      probability: ${OTEL_TRACING_SAMPLING_PROBABILITY:1.0}
+  observations:
+    annotations:
+      enabled: ${MANAGEMENT_OBSERVATIONS_ANNOTATIONS_ENABLED:true}
+    enable:
+      "http.server.requests": false
+      "http.client.requests": false
   endpoints:
     web:
       exposure:
-        include: metrics,httpexchanges,jeecghttptrace
+        include: ${MANAGEMENT_ENDPOINTS_EXPOSURE:metrics,httpexchanges,jeecghttptrace}
+  endpoint:
+    health:
+      show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:when_authorized}
 
 chat:
   executor:
@@ -167,6 +179,13 @@ spring:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT}
       password: ${REDIS_PASSWORD}
+  ai:
+    minimax:
+      api-key: ${MINIMAX_API_KEY:}
+      base-url: ${MINIMAX_BASE_URL:https://api.minimaxi.com}
+      chat:
+        options:
+          model: ${MINIMAX_CHAT_MODEL:abab6.5g-chat}
 #mybatis plus 设置
 mybatis-plus:
   mapper-locations: classpath*:org/jeecg/**/xml/*Mapper.xml
@@ -194,6 +213,30 @@ jeecg:
     apiKey: ??
     apiHost: https://api.deepseek.com
     timeout: 60
+  airag:
+    minimax:
+      demo:
+        enabled: ${AIRAG_MINIMAX_DEMO_ENABLED:false}
+        guard:
+          enabled: ${AIRAG_MINIMAX_GUARD_ENABLED:true}
+          access-token: ${AIRAG_MINIMAX_DEMO_TOKEN:}
+          header-name: ${AIRAG_MINIMAX_TOKEN_HEADER:X-AI-ACCESS-TOKEN}
+          max-requests-per-minute: ${AIRAG_MINIMAX_RATE_LIMIT_PER_MINUTE:30}
+          max-chat-chars: ${AIRAG_MINIMAX_MAX_CHAT_CHARS:4000}
+          max-tts-chars: ${AIRAG_MINIMAX_MAX_TTS_CHARS:1000}
+          max-image-prompt-chars: ${AIRAG_MINIMAX_MAX_IMAGE_PROMPT_CHARS:1000}
+      api-key: ${MINIMAX_API_KEY:}
+      api-base-url: ${AIRAG_MINIMAX_API_BASE_URL:https://api.minimaxi.com}
+      tts-model: ${AIRAG_MINIMAX_TTS_MODEL:speech-2.8-hd}
+      image-model: ${AIRAG_MINIMAX_IMAGE_MODEL:image-01}
+      image-aspect-ratio: ${AIRAG_MINIMAX_IMAGE_ASPECT_RATIO:16:9}
+      connect-timeout-ms: ${AIRAG_MINIMAX_CONNECT_TIMEOUT_MS:3000}
+      read-timeout-ms: ${AIRAG_MINIMAX_READ_TIMEOUT_MS:30000}
+      retry-max-attempts: ${AIRAG_MINIMAX_RETRY_MAX_ATTEMPTS:2}
+      retry-backoff-ms: ${AIRAG_MINIMAX_RETRY_BACKOFF_MS:300}
+      upload-generated-media: ${AIRAG_MINIMAX_UPLOAD_GENERATED_MEDIA:true}
+      image-upload-biz-path: ${AIRAG_MINIMAX_IMAGE_UPLOAD_BIZ_PATH:airag/minimax/image}
+      audio-upload-biz-path: ${AIRAG_MINIMAX_AUDIO_UPLOAD_BIZ_PATH:airag/minimax/audio}
   # AIRag向量库
   ai-rag:
     # AI流程敏感节点(stdio=命令行节点, sql=SQL节点)
@@ -216,6 +259,11 @@ jeecg:
     lowCodeMode: prod
     # 是否允许同一账号多地同时登录 （为 true 时允许一起登录, 为 false 时新登录挤掉旧登录）
     is-concurrent: true
+  # login strategy
+  login:
+    phone-auto-register: ${JEECG_LOGIN_PHONE_AUTO_REGISTER:true}
+    default-role-codes: ${JEECG_LOGIN_DEFAULT_ROLE_CODES:user}
+    default-depart-ids: ${JEECG_LOGIN_DEFAULT_DEPART_IDS:}
   # 签名密钥串(前后端要一致，正式发布请自行修改)
   signatureSecret: dd05f1c54d63749eda95f9fa6d49v442a
   #签名拦截接口
@@ -273,6 +321,13 @@ jeecg:
     minio_name: ??
     minio_pass: ??
     bucketName: otatest
+  # Cloudflare R2 template (S3 compatible)
+  cloudflareR2:
+    endpoint: ${R2_ENDPOINT:https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com}
+    accessKey: ${R2_ACCESS_KEY_ID:??}
+    secretKey: ${R2_SECRET_ACCESS_KEY:??}
+    bucketName: ${R2_BUCKET_NAME:otatest}
+    publicDomain: ${R2_PUBLIC_DOMAIN:}
   #大屏报表参数设置
   jmreport:
     #多租户模式，默认值为空(created:按照创建人隔离、tenant:按照租户隔离) (v1.6.2+ 新增)
@@ -355,3 +410,16 @@ justauth:
     type: default
     prefix: 'demo::'
     timeout: 1h
+
+otel:
+  sdk:
+    disabled: ${OTEL_SDK_DISABLED:false}
+  exporter:
+    otlp:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:https://lf.sztszs.top/api/public/otel}
+      headers: ${OTEL_EXPORTER_OTLP_HEADERS:}
+  instrumentation:
+    spring-webmvc:
+      enabled: false
+    spring-web:
+      enabled: false

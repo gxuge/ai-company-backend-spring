@@ -1,5 +1,5 @@
 server:
-  port: 7008
+  port: ${SERVER_PORT:7008}
 spring:
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
@@ -12,8 +12,8 @@ spring:
     druid:
       stat-view-servlet:
         enabled: true
-        loginUsername: admin
-        loginPassword: 123456
+        loginUsername: ${DRUID_LOGIN_USERNAME}
+        loginPassword: ${DRUID_LOGIN_PASSWORD}
         allow:
       web-stat-filter:
         enabled: true
@@ -52,21 +52,69 @@ spring:
       datasource:
         master:
           ## !!!!!MYSQL
-          url: jdbc:mysql://localhost:3306/jeecg-boot-dev?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
-          username: root
-          password: 123456
+          url: ${MYSQL_URL}
+          username: ${MYSQL_USERNAME}
+          password: ${MYSQL_PASSWORD}
           driver-class-name: com.mysql.cj.jdbc.Driver
   redis:
-    database: 0
-    host: 192.168.1.188
-    port: 6379
-    password: 'res983'
+    database: ${REDIS_DATABASE}
+    host: ${REDIS_HOST}
+    port: ${REDIS_PORT}
+    password: ${REDIS_PASSWORD}
+
 jeecg:
+  # local|minio|alioss
+  # Cloudflare R2建议使用 minio 兼容模式
+  uploadType: ${UPLOAD_TYPE:minio}
+  minio:
+    minio_url: ${R2_ENDPOINT:}
+    minio_name: ${R2_ACCESS_KEY_ID:}
+    minio_pass: ${R2_SECRET_ACCESS_KEY:}
+    bucketName: ${R2_BUCKET_NAME:}
+  # Cloudflare R2 参数模板
+  cloudflareR2:
+    endpoint: ${R2_ENDPOINT:}
+    accessKey: ${R2_ACCESS_KEY_ID:}
+    secretKey: ${R2_SECRET_ACCESS_KEY:}
+    token: ${R2_TOKEN:}
+    bucketName: ${R2_BUCKET_NAME:}
+    publicDomain: ${R2_PUBLIC_DOMAIN:}
   ai-rag:
     embed-store:
-      host: "localhost"
-      port: 15432
-      database: "postgres"
-      user: "postgres"
-      password: "123456"
-      table: "embeddings"
+      host: ${EMBED_STORE_HOST}
+      port: ${EMBED_STORE_PORT}
+      database: ${EMBED_STORE_DATABASE}
+      user: ${EMBED_STORE_USER}
+      password: ${EMBED_STORE_PASSWORD}
+      table: ${EMBED_STORE_TABLE}
+
+management:
+  tracing:
+    sampling:
+      probability: ${OTEL_TRACING_SAMPLING_PROBABILITY:1.0}
+  observations:
+    annotations:
+      enabled: ${MANAGEMENT_OBSERVATIONS_ANNOTATIONS_ENABLED:true}
+    enable:
+      "http.server.requests": false
+      "http.client.requests": false
+  endpoints:
+    web:
+      exposure:
+        include: ${MANAGEMENT_ENDPOINTS_EXPOSURE:health,info,metrics,prometheus}
+  endpoint:
+    health:
+      show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:when_authorized}
+
+otel:
+  sdk:
+    disabled: ${OTEL_SDK_DISABLED:true}
+  exporter:
+    otlp:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:https://lf.sztszs.top/api/public/otel}
+      headers: ${OTEL_EXPORTER_OTLP_HEADERS:}
+  instrumentation:
+    spring-webmvc:
+      enabled: false
+    spring-web:
+      enabled: false

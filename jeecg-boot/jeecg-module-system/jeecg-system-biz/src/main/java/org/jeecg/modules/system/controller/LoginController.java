@@ -27,6 +27,7 @@ import org.jeecg.config.JeecgBaseConfig;
 import org.jeecg.config.shiro.IgnoreAuth;
 import org.jeecg.modules.base.service.BaseCommonService;
 import org.jeecg.modules.system.entity.SysDepart;
+import org.jeecg.modules.system.entity.SysRole;
 import org.jeecg.modules.system.entity.SysRoleIndex;
 import org.jeecg.modules.system.entity.SysUser;
 import org.jeecg.modules.system.model.SysLoginModel;
@@ -35,6 +36,7 @@ import org.jeecg.modules.system.service.impl.SysBaseApiImpl;
 import org.jeecg.modules.system.util.RandImageUtil;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -63,13 +65,40 @@ public class LoginController {
 	@Autowired
     private RedisUtil redisUtil;
 	@Autowired
-    private ISysDepartService sysDepartService;
+	    private ISysDepartService sysDepartService;
 	@Autowired
-    private ISysDictService sysDictService;
+	private ISysRoleService sysRoleService;
+	@Autowired
+	    private ISysDictService sysDictService;
 	@Resource
 	private BaseCommonService baseCommonService;
 	@Autowired
 	private JeecgBaseConfig jeecgBaseConfig;
+
+	/**
+	 * 手机登录是否自动注册未注册手机号。
+	 */
+	@Value("${jeecg.login.phone-auto-register:true}")
+	private boolean phoneAutoRegister;
+
+	/**
+	 * 自动注册时默认绑定的角色编码，多个逗号分隔。
+	 */
+	@Value("${jeecg.login.default-role-codes:user}")
+	private String phoneAutoRegisterDefaultRoleCodes;
+
+	/**
+	 * 自动注册时默认绑定的部门ID，多个逗号分隔。
+	 */
+	@Value("${jeecg.login.default-depart-ids:}")
+	private String phoneAutoRegisterDefaultDepartIds;
+
+	/**
+	 * Whitelisted phone numbers that can bypass SMS captcha on /sys/phoneLogin.
+	 * Comma-separated list is supported.
+	 */
+	@Value("${jeecg.login.quick-login-whitelist-phone:13609742270}")
+	private String quickLoginWhitelistPhone;
 	
 	private final String BASE_CHECK_CODES = "qwertyuiplkjhgfdsazxcvbnmQWERTYUPLKJHGFDSAZXCVBNM1234567890";
 	/**
@@ -357,7 +386,11 @@ public class LoginController {
 			}else {
 				//登录模式，校验用户有效性
 				SysUser sysUser = sysUserService.getUserByPhone(mobile);
-				result = sysUserService.checkUserIsEffective(sysUser);
+				if (CommonConstant.SMS_TPL_TYPE_0.equals(smsmode) && sysUser == null && phoneAutoRegister) {
+					result.setSuccess(true);
+				} else {
+					result = sysUserService.checkUserIsEffective(sysUser);
+				}
 				if(!result.isSuccess()) {
 					String message = result.getMessage();
 					String userNotExist="该用户不存在，请注册";
@@ -424,28 +457,46 @@ public class LoginController {
 		
 		//校验用户有效性
 		SysUser sysUser = sysUserService.getUserByPhone(phone);
-		result = sysUserService.checkUserIsEffective(sysUser);
-		if(!result.isSuccess()) {
-			return result;
-		}
 		
 		String smscode = jsonObject.getString("captcha");
 
 		// 代码逻辑说明: VUEN-2245 【漏洞】发现新漏洞待处理20220906
 		String redisKey = CommonConstant.PHONE_REDIS_KEY_PRE+phone;
-		Object code = redisUtil.get(redisKey);
+		boolean bypassSmsVerify = isQuickLoginWhitelistPhone(phone);
+		if (!bypassSmsVerify) {
+			Object code = redisUtil.get(redisKey);
+		if (oConvertUtils.isEmpty(code)) {
+			addLoginFailOvertimes(phone);
+			return Result.error("手机验证码失效，请重新获取");
+		}
 
-		if (!smscode.equals(code)) {
+		if (oConvertUtils.isEmpty(smscode) || !smscode.equals(code.toString())) {
 			addLoginFailOvertimes(phone);
 			return Result.error("手机验证码错误");
 		}
 		//用户信息
+		} else {
+			log.info("Quick login whitelist phone matched, skip SMS captcha check. phone={}", phone);
+		}
+		if (sysUser == null) {
+			if (!phoneAutoRegister) {
+				return Result.error("该用户不存在或未绑定手机号");
+			}
+			sysUser = autoRegisterByPhone(phone);
+		} else {
+			result = sysUserService.checkUserIsEffective(sysUser);
+			if(!result.isSuccess()) {
+				return result;
+			}
+		}
 		String loginOrgCode = jsonObject.getString("loginOrgCode");
 		sysUser.setLoginOrgCode(loginOrgCode);
 		userInfo(sysUser, result, request, CommonConstant.CLIENT_TYPE_PHONE);
 		//添加日志
 		baseCommonService.addLog("用户名: " + sysUser.getUsername() + ",登录成功！", CommonConstant.LOG_TYPE_1, null);
-        redisUtil.removeAll(redisKey);
+		if (!bypassSmsVerify) {
+			redisUtil.removeAll(redisKey);
+		}
 		return result;
 	}
 
@@ -457,6 +508,145 @@ public class LoginController {
 	 * @param result
 	 * @return
 	 */
+	/**
+	 * 手机号自动注册用户。
+	 *
+	 * @param phone 手机号
+	 * @return 新建用户
+	 */
+	private SysUser autoRegisterByPhone(String phone) {
+		SysUser user = new SysUser();
+		String username = generateAutoRegisterUsername(phone);
+		String password = RandomUtil.randomString(8);
+		String salt = oConvertUtils.randomGen(8);
+		String passwordEncode = PasswordUtil.encrypt(username, password, salt);
+		user.setCreateTime(new Date());
+		user.setUsername(username);
+		user.setRealname(username);
+		user.setPassword(passwordEncode);
+		user.setSalt(salt);
+		user.setPhone(phone);
+		user.setStatus(CommonConstant.USER_UNFREEZE);
+		user.setDelFlag(CommonConstant.DEL_FLAG_0);
+		user.setActivitiSync(CommonConstant.ACT_SYNC_1);
+		user.setLastPwdUpdateTime(new Date());
+		String defaultRoleIds = resolveRoleIdsByCodes(phoneAutoRegisterDefaultRoleCodes);
+		String defaultDepartIds = resolveValidDepartIds(phoneAutoRegisterDefaultDepartIds);
+		if (oConvertUtils.isNotEmpty(defaultDepartIds)) {
+			user.setDepartIds(defaultDepartIds);
+			String firstDepartId = defaultDepartIds.split(SymbolConstant.COMMA)[0];
+			SysDepart mainDepart = sysDepartService.getById(firstDepartId);
+			if (mainDepart != null && oConvertUtils.isNotEmpty(mainDepart.getOrgCode())) {
+				user.setOrgCode(mainDepart.getOrgCode());
+			}
+		}
+		sysUserService.saveUser(user, defaultRoleIds, defaultDepartIds, "", false);
+		baseCommonService.addLog("手机登录自动注册成功，username: " + username, CommonConstant.LOG_TYPE_1, null);
+		return user;
+	}
+
+	/**
+	 * 按角色编码解析角色ID列表。
+	 */
+	private String resolveRoleIdsByCodes(String roleCodes) {
+		String normalizedCodes = normalizeCsv(roleCodes);
+		if (oConvertUtils.isEmpty(normalizedCodes)) {
+			return "";
+		}
+		String[] codeArray = normalizedCodes.split(SymbolConstant.COMMA);
+		LambdaQueryWrapper<SysRole> queryWrapper = new LambdaQueryWrapper<>();
+		queryWrapper.in(SysRole::getRoleCode, Arrays.asList(codeArray));
+		List<SysRole> roleList = sysRoleService.list(queryWrapper);
+		if (oConvertUtils.isEmpty(roleList)) {
+			log.warn("Phone auto-register default roles not found, roleCodes={}", normalizedCodes);
+			return "";
+		}
+		Map<String, String> codeIdMap = new HashMap<>();
+		for (SysRole role : roleList) {
+			codeIdMap.put(role.getRoleCode(), role.getId());
+		}
+		LinkedHashSet<String> roleIds = new LinkedHashSet<>();
+		List<String> missingCodes = new ArrayList<>();
+		for (String code : codeArray) {
+			String roleId = codeIdMap.get(code);
+			if (oConvertUtils.isNotEmpty(roleId)) {
+				roleIds.add(roleId);
+			} else {
+				missingCodes.add(code);
+			}
+		}
+		if (!missingCodes.isEmpty()) {
+			log.warn("Phone auto-register roles partially missing, missingCodes={}", String.join(SymbolConstant.COMMA, missingCodes));
+		}
+		return String.join(SymbolConstant.COMMA, roleIds);
+	}
+
+	/**
+	 * 过滤并返回存在的部门ID列表。
+	 */
+	private String resolveValidDepartIds(String departIds) {
+		String normalizedDepartIds = normalizeCsv(departIds);
+		if (oConvertUtils.isEmpty(normalizedDepartIds)) {
+			return "";
+		}
+		String[] departIdArray = normalizedDepartIds.split(SymbolConstant.COMMA);
+		LinkedHashSet<String> validDepartIds = new LinkedHashSet<>();
+		List<String> missingDepartIds = new ArrayList<>();
+		for (String departId : departIdArray) {
+			SysDepart sysDepart = sysDepartService.getById(departId);
+			if (sysDepart != null) {
+				validDepartIds.add(departId);
+			} else {
+				missingDepartIds.add(departId);
+			}
+		}
+		if (!missingDepartIds.isEmpty()) {
+			log.warn("Phone auto-register departs partially missing, missingDepartIds={}", String.join(SymbolConstant.COMMA, missingDepartIds));
+		}
+		return String.join(SymbolConstant.COMMA, validDepartIds);
+	}
+
+	/**
+	 * 逗号分隔字符串标准化（去空格、去空项、去重）。
+	 */
+	private String normalizeCsv(String rawValue) {
+		if (oConvertUtils.isEmpty(rawValue)) {
+			return "";
+		}
+		String[] items = rawValue.split(SymbolConstant.COMMA);
+		LinkedHashSet<String> normalized = new LinkedHashSet<>();
+		for (String item : items) {
+			if (item == null) {
+				continue;
+			}
+			String trimmed = item.trim();
+			if (oConvertUtils.isNotEmpty(trimmed)) {
+				normalized.add(trimmed);
+			}
+		}
+		return String.join(SymbolConstant.COMMA, normalized);
+	}
+
+	/**
+	 * 生成自动注册用户名。
+	 *
+	 * @param phone 手机号
+	 * @return 可用用户名
+	 */
+	private String generateAutoRegisterUsername(String phone) {
+		String username = phone;
+		if (sysUserService.getUserByName(username) == null) {
+			return username;
+		}
+		for (int i = 0; i < 5; i++) {
+			username = phone + "_" + RandomUtil.randomString(4);
+			if (sysUserService.getUserByName(username) == null) {
+				return username;
+			}
+		}
+		return phone + "_" + IdWorker.get32UUID().substring(0, 8);
+	}
+
 	private Result<JSONObject> userInfo(SysUser sysUser, Result<JSONObject> result, HttpServletRequest request, String clientType) {
 		String username = sysUser.getUsername();
 		String syspassword = sysUser.getPassword();
@@ -829,6 +1019,18 @@ public class LoginController {
 	 * @param jsonObject
 	 * @return
 	 */
+	/**
+	 * Check whether the phone can bypass SMS captcha in /sys/phoneLogin.
+	 */
+	private boolean isQuickLoginWhitelistPhone(String phone) {
+		if (oConvertUtils.isEmpty(phone) || oConvertUtils.isEmpty(quickLoginWhitelistPhone)) {
+			return false;
+		}
+		return Arrays.stream(quickLoginWhitelistPhone.split(SymbolConstant.COMMA))
+			.map(String::trim)
+			.anyMatch(phone::equals);
+	}
+
 	@PostMapping(value = "/sendChangePwdSms")
 	public Result<String> sendSms(@RequestBody JSONObject jsonObject) {
 		Result<String> result = new Result<>();

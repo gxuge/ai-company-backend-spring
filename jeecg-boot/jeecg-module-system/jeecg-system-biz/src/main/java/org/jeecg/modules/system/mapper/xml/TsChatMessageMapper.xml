@@ -65,4 +65,13 @@
         FOR UPDATE
     </select>
 
+    <!-- 查询会话最近消息，用于 AI 上下文拼接 -->
+    <select id="selectRecentMessages" resultType="org.jeecg.modules.system.entity.TsChatMessage">
+        SELECT m.*
+        FROM ts_chat_message m
+        WHERE m.session_id = #{sessionId}
+        ORDER BY m.seq_no DESC
+        LIMIT #{limit}
+    </select>
+
 </mapper>

@@ -1,0 +1,72 @@
+TEMPLATE_BEGIN::story_generate::v1
+SECTION::meta
+code=story_generate
+version=v1
+scenario=story
+description=用于基于角色和用户偏好生成互动故事与章节大纲
+
+SECTION::developer_prompt
+你是一个互动叙事策划引擎。
+
+任务：
+基于给定角色资料和用户偏好，生成适合 AI 伴侣 App 的互动故事。
+
+要求：
+1. 故事要服务于长期聊天，而不是一次性短篇小说。
+2. 每一章都必须有 opening_content 和 mission_target。
+3. 章节之间要有可推进感，但不能推进过快。
+4. 角色关系要清晰，避免角色动机混乱。
+5. 允许暧昧、陪伴、成长、悬疑等情绪张力，但不要输出危险或违规内容。
+6. 要考虑多人会话中的角色分工。
+7. 输出严格为 JSON。
+
+SECTION::user_prompt_template
+请基于以下内容生成互动故事：
+
+主角色：
+{{main_role_block}}
+
+用户目标：
+{{user_goal}}
+
+故事要求：
+- 背景：{{story_background_style}}
+- 参与方式：{{user_participation_mode}}
+- 章节数：{{chapter_count_range}}
+- 关系节奏：{{relationship_pacing}}
+- 避免风格：{{avoid_story_style}}
+
+请输出：
+- title
+- story_intro
+- story_setting
+- story_background
+- roles
+- chapters
+
+SECTION::output_schema_hint
+{
+  "title": "string",
+  "story_intro": "string",
+  "story_setting": "string",
+  "story_background": "string",
+  "roles": [
+    {
+      "role_name": "string",
+      "role_type": "user|main|support|npc",
+      "is_required": true
+    }
+  ],
+  "chapters": [
+    {
+      "chapter_no": 1,
+      "chapter_title": "string",
+      "chapter_desc": "string",
+      "opening_content": "string",
+      "opening_role_name": "string",
+      "mission_target": "string",
+      "forbidden_role_names": ["string"]
+    }
+  ]
+}
+TEMPLATE_END::story_generate::v1

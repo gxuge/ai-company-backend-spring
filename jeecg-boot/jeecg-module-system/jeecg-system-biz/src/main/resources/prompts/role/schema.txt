@@ -1,0 +1,144 @@
+{
+  "type": "json_schema",
+  "name": "role_profile",
+  "strict": true,
+  "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role_name",
+        "role_subtitle",
+        "gender",
+        "occupation",
+        "intro_text",
+        "persona_text",
+        "background_story",
+        "dialogue_preview",
+        "dialogue_length",
+        "tone_tendency",
+        "interaction_mode",
+        "about_items",
+        "tags",
+        "voice_suggestion",
+        "ext"
+      ],
+      "properties": {
+        "role_name": {
+          "type": "string",
+          "description": "角色名称"
+        },
+        "role_subtitle": {
+          "type": "string",
+          "description": "角色副标题/补充身份文案"
+        },
+        "gender": {
+          "type": "string",
+          "enum": ["male", "female", "unknown", "random"],
+          "description": "角色性别"
+        },
+        "occupation": {
+          "type": "string",
+          "description": "角色职业"
+        },
+        "intro_text": {
+          "type": "string",
+          "description": "角色简介，用于列表展示"
+        },
+        "persona_text": {
+          "type": "string",
+          "description": "角色核心人设"
+        },
+        "background_story": {
+          "type": "string",
+          "description": "角色背景故事"
+        },
+        "dialogue_preview": {
+          "type": "string",
+          "description": "角色对话风格预览，必须像真实聊天"
+        },
+        "dialogue_length": {
+          "type": "string",
+          "enum": ["short", "balanced", "detailed"],
+          "description": "对话长度偏好"
+        },
+        "tone_tendency": {
+          "type": "string",
+          "description": "语气倾向，如温柔、幽默、克制"
+        },
+        "interaction_mode": {
+          "type": "string",
+          "enum": ["active", "passive", "balanced"],
+          "description": "互动模式"
+        },
+        "about_items": {
+          "type": "array",
+          "description": "关于TA条目",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["item_type", "item_title", "item_text"],
+            "properties": {
+              "item_type": {
+                "type": "string",
+                "enum": ["profile", "trait", "habit", "tab", "custom"]
+              },
+              "item_title": {
+                "type": "string"
+              },
+              "item_subtitle": {
+                "type": "string"
+              },
+              "item_text": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "tags": {
+          "type": "array",
+          "description": "短标签数组",
+          "items": {
+            "type": "string"
+          }
+        },
+        "voice_suggestion": {
+          "type": "string",
+          "description": "推荐音色名称"
+        },
+        "ext": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "relationship_style",
+            "memory_bias",
+            "reply_do",
+            "reply_dont"
+          ],
+          "properties": {
+            "relationship_style": {
+              "type": "string",
+              "description": "关系风格，如陪伴型、引导型、慢热型"
+            },
+            "memory_bias": {
+              "type": "string",
+              "description": "记忆倾向，如偏记用户情绪/偏记关系节点"
+            },
+            "reply_do": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "回复时应该做的事情"
+            },
+            "reply_dont": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "回复时不要做的事情"
+            }
+          }
+        }
+      }
+    }
+}

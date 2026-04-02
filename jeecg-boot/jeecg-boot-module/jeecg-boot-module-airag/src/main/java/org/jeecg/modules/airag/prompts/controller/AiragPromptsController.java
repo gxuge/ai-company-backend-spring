@@ -14,7 +14,9 @@ import org.jeecg.common.constant.CommonConstant;
 import org.jeecg.common.system.base.controller.JeecgController;
 import org.jeecg.common.system.query.QueryGenerator;
 import org.jeecg.modules.airag.prompts.entity.AiragPrompts;
+import org.jeecg.modules.airag.prompts.service.IAiragPromptTemplateService;
 import org.jeecg.modules.airag.prompts.service.IAiragPromptsService;
+import org.jeecg.modules.airag.prompts.vo.AiragPromptTemplateVo;
 import org.jeecg.modules.airag.prompts.vo.AiragExperimentVo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -34,6 +36,9 @@ import java.util.Arrays;
 public class AiragPromptsController extends JeecgController<AiragPrompts, IAiragPromptsService> {
 	@Autowired
 	private IAiragPromptsService airagPromptsService;
+
+	@Autowired
+	private IAiragPromptTemplateService airagPromptTemplateService;
 	
 	/**
 	 * 分页列表查询
@@ -141,6 +146,21 @@ public class AiragPromptsController extends JeecgController<AiragPrompts, IAirag
 	 public Result<?> promptExperiment(@RequestBody AiragExperimentVo experimentVo, HttpServletRequest request) {
 		 return airagPromptsService.promptExperiment(experimentVo,request);
 	 }
+
+	/**
+	 * 从 classpath 查询固定模板文件中的模板内容
+	 *
+	 * @param code 模板编码
+	 * @param version 模板版本
+	 * @return 模板分段内容
+	 */
+	@Operation(summary = "airag_prompts-classpath模板查询")
+	@GetMapping(value = "/template/query")
+	public Result<AiragPromptTemplateVo> queryTemplate(@RequestParam(name = "code") String code,
+														@RequestParam(name = "version", defaultValue = "v1") String version) {
+		AiragPromptTemplateVo template = airagPromptTemplateService.getTemplate(code, version);
+		return Result.OK(template);
+	}
     /**
     * 导出excel
     *

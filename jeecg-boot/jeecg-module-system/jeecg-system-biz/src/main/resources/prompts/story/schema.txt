@@ -1,0 +1,114 @@
+{
+  "type": "json_schema",
+  "name": "story_blueprint",
+  "strict": true,
+  "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "story_intro",
+        "story_mode",
+        "story_setting",
+        "story_background",
+        "roles",
+        "chapters"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "故事标题"
+        },
+        "story_intro": {
+          "type": "string",
+          "description": "故事简介"
+        },
+        "story_mode": {
+          "type": "string",
+          "enum": ["normal", "chapter"],
+          "description": "剧情模式"
+        },
+        "story_setting": {
+          "type": "string",
+          "description": "故事整体设定/世界观"
+        },
+        "story_background": {
+          "type": "string",
+          "description": "故事背景补充说明"
+        },
+        "roles": {
+          "type": "array",
+          "description": "参与故事的角色列表",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "role_name",
+              "role_type",
+              "is_required",
+              "join_source"
+            ],
+            "properties": {
+              "role_name": {
+                "type": "string"
+              },
+              "role_type": {
+                "type": "string",
+                "enum": ["user", "main", "support", "npc"]
+              },
+              "is_required": {
+                "type": "boolean"
+              },
+              "join_source": {
+                "type": "string",
+                "enum": ["manual", "ai"]
+              }
+            }
+          }
+        },
+        "chapters": {
+          "type": "array",
+          "description": "章节列表",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "chapter_no",
+              "chapter_title",
+              "chapter_desc",
+              "opening_content",
+              "opening_role_name",
+              "mission_target",
+              "forbidden_role_names"
+            ],
+            "properties": {
+              "chapter_no": {
+                "type": "integer"
+              },
+              "chapter_title": {
+                "type": "string"
+              },
+              "chapter_desc": {
+                "type": "string"
+              },
+              "opening_content": {
+                "type": "string"
+              },
+              "opening_role_name": {
+                "type": "string"
+              },
+              "mission_target": {
+                "type": "string"
+              },
+              "forbidden_role_names": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+}

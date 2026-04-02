@@ -4,7 +4,7 @@
       <RouterView />
     </AppProvider>
   </ConfigProvider>
-</template>
+</template>       
 
 <script lang="ts" setup>
   import { watch, ref } from 'vue';

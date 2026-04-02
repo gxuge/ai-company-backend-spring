@@ -5,3 +5,21 @@ spring:
     import: optional:classpath:config/application-liteflow.yml
   profiles:
     active: '@profile.name@'
+
+management:
+  tracing:
+    enabled: ${MANAGEMENT_TRACING_ENABLED:false}
+  otlp:
+    metrics:
+      export:
+        enabled: ${MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED:false}
+
+otel:
+  sdk:
+    disabled: ${OTEL_SDK_DISABLED:false}
+  traces:
+    exporter: ${OTEL_TRACES_EXPORTER:none}
+  metrics:
+    exporter: ${OTEL_METRICS_EXPORTER:none}
+  logs:
+    exporter: ${OTEL_LOGS_EXPORTER:none}

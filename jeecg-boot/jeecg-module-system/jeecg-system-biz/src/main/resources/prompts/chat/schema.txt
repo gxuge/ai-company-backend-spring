@@ -1,0 +1,108 @@
+{
+  "type": "json_schema",
+  "name": "chat_turn_output",
+  "strict": true,
+  "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reply_text",
+        "emotion",
+        "action_hint",
+        "relationship_stage",
+        "plot_progress",
+        "should_save_memory",
+        "memory_candidates",
+        "should_update_summary",
+        "summary_patch"
+      ],
+      "properties": {
+        "reply_text": {
+          "type": "string",
+          "description": "实际展示给用户的回复文本"
+        },
+        "emotion": {
+          "type": "string",
+          "description": "本轮角色主要情绪，如 calm/warm/concerned/playful"
+        },
+        "action_hint": {
+          "type": "string",
+          "description": "可选的动作描写或演出提示"
+        },
+        "relationship_stage": {
+          "type": "string",
+          "enum": [
+            "stranger",
+            "familiar",
+            "trusting",
+            "dependent",
+            "ambiguous",
+            "close"
+          ],
+          "description": "当前关系阶段判断"
+        },
+        "plot_progress": {
+          "type": "string",
+          "enum": ["none", "light", "medium"],
+          "description": "本轮剧情推进程度"
+        },
+        "should_save_memory": {
+          "type": "boolean",
+          "description": "本轮是否建议写入长期记忆"
+        },
+        "memory_candidates": {
+          "type": "array",
+          "description": "本轮抽取出的记忆候选",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "memory_type",
+              "memory_key",
+              "memory_text",
+              "importance",
+              "confidence"
+            ],
+            "properties": {
+              "memory_type": {
+                "type": "string",
+                "enum": [
+                  "profile",
+                  "preference",
+                  "taboo",
+                  "relationship",
+                  "story",
+                  "fact",
+                  "other"
+                ]
+              },
+              "memory_key": {
+                "type": "string"
+              },
+              "memory_text": {
+                "type": "string"
+              },
+              "importance": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            }
+          }
+        },
+        "should_update_summary": {
+          "type": "boolean",
+          "description": "是否建议更新摘要"
+        },
+        "summary_patch": {
+          "type": "string",
+          "description": "对当前阶段摘要的补丁文本，可为空字符串"
+        }
+      }
+    }
+}
