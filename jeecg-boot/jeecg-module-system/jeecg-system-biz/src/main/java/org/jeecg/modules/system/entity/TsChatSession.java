@@ -41,6 +41,8 @@ public class TsChatSession implements Serializable {
     private Date lastMessageAt;
     @TableField("ext_json")
     private String extJson;
+    @TableField("system_session_key")
+    private String systemSessionKey;
     @TableField("created_at")
     @JsonFormat(timezone = "GMT+8", pattern = "yyyy-MM-dd HH:mm:ss")
     @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")

@@ -66,4 +66,4 @@
 - 结果摘要：待执行。
 - 后续事项：
   - 评估主聊天链路是否补充 Langfuse 统一埋点策略。
-  - 补齐 `docs/api/hardness-api-inventory.md` 或移除无效引用。
+  - 维护 `docs/api/Index.md` 的跨模块索引，并移除无效文档引用。

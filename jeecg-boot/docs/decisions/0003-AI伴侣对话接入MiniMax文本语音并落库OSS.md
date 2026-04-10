@@ -52,7 +52,7 @@ Proposed
 
 ## 待办与风险
 - 高优先级：轮换并下线明文 `MINIMAX_API_KEY`，统一改为环境变量注入。
-- 中优先级：`docs/api/hardness-api-inventory.md` 已于 2026-03-31 补齐，后续需按接口变更持续维护。
+- 中优先级：接口资产基线已拆分到 `docs/api/Index.md`（跨模块索引）以及 `docs/api/airag-api.md`、`docs/api/ts-api.md`（明细），后续需按接口变更持续维护。
 - 中优先级：统一 `docs` 目录编码为 UTF-8，避免中文乱码。
 
 ## 关联信息
@@ -81,8 +81,8 @@ Proposed
   - 执行 `mvn -pl jeecg-module-system/jeecg-system-biz -am -DskipTests compile`，编译通过
 
 ### 2026-03-31（文档对齐补录）
-- 按 `docs/api/README.md` 规则补齐 `docs/api/hardness-api-inventory.md`，建立 AI 伴侣对话链路接口资产基线。
-- 更新 `docs/api/README.md` 的 API 文档目录规则与“当前已落地 API 文档”清单，纳入 `hardness-api-inventory.md`。
+- 按 `docs/api/Index.md` 目录规则将接口资产基线拆分到 `docs/api/Index.md`（索引）与各业务文档（`airag-api.md`、`ts-api.md`）。
+- 更新 `docs/api/Index.md` 与 `docs/README.md` 的 API 文档清单，移除已删除的 `hardness-api-inventory.md` 引用。
 - 在 `docs/changelog.md` 追加本次文档治理变更，确保接口文档更新有留痕可追溯。
 
 ### 2026-03-31（规范约束对齐）

@@ -8,15 +8,18 @@ import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.modules.system.dto.tsvoiceprofile.TsVoiceProfilePreviewDto;
 import org.jeecg.modules.system.dto.tsvoiceprofile.TsVoiceProfileQueryDto;
 import org.jeecg.modules.system.dto.tsvoiceprofile.TsVoiceProfileTagSaveDto;
 import org.jeecg.modules.system.service.ITsVoiceProfileService;
+import org.jeecg.modules.system.vo.tsvoiceprofile.TsVoiceProfilePreviewVo;
 import org.jeecg.modules.system.vo.tsvoiceprofile.TsVoiceProfileVo;
 import org.jeecg.modules.system.vo.tsvoicetag.TsVoiceTagVo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -53,5 +56,10 @@ public class TsVoiceProfileController {
     @PutMapping("/ts-voice-profiles/tags")
     public Result<List<TsVoiceTagVo>> saveVoiceProfileTags(@Validated @RequestBody TsVoiceProfileTagSaveDto request) {
         return tsVoiceProfileService.saveVoiceProfileTags((LoginUser) SecurityUtils.getSubject().getPrincipal(), request);
+    }
+    @Operation(summary = "按选中音色生成试听音频")
+    @PostMapping("/ts-voice-profiles/preview")
+    public Result<TsVoiceProfilePreviewVo> previewVoice(@Validated @RequestBody TsVoiceProfilePreviewDto request) {
+        return tsVoiceProfileService.previewVoice((LoginUser) SecurityUtils.getSubject().getPrincipal(), request);
     }
 }

@@ -5,10 +5,12 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.apache.ibatis.annotations.Param;
 import org.jeecg.modules.system.entity.TsRole;
 import org.jeecg.modules.system.po.tsrole.TsRoleQueryPo;
+import org.jeecg.modules.system.vo.tsrole.TsRoleAuthorPublicVo;
 
 import java.util.List;
 public interface TsRoleMapper extends BaseMapper<TsRole> {
     Page<TsRole> selectRolePage(Page<TsRole> page, @Param("query") TsRoleQueryPo query);
     TsRole selectOwned(@Param("id") Long id, @Param("userId") String userId);
     List<Long> selectOwnedIds(@Param("roleIds") List<Long> roleIds, @Param("userId") String userId);
+    TsRoleAuthorPublicVo selectRoleAuthorPublic(@Param("roleId") Long roleId);
 }

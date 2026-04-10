@@ -7,6 +7,9 @@ import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.aop.TsStoryOwnershipAspect;
 import org.jeecg.modules.aop.TsStoryOwnershipAspect.CheckTsStoryOwnership;
+import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickOutlineGenerateDto;
+import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneGenerateDto;
+import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSettingGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryQueryDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryRoleBindingDto;
 import org.jeecg.modules.system.dto.tsstory.TsStorySaveDto;
@@ -20,7 +23,11 @@ import org.jeecg.modules.system.mapper.TsStoryRoleRelMapper;
 import org.jeecg.modules.system.mapper.TsStoryStatMapper;
 import org.jeecg.modules.system.po.tsstory.TsStoryQueryPo;
 import org.jeecg.modules.system.po.tsstory.TsStorySavePo;
+import org.jeecg.modules.system.service.ITsStoryGenerateService;
 import org.jeecg.modules.system.service.ITsStoryService;
+import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineGenerateVo;
+import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneGenerateVo;
+import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSettingGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryVoConverter;
 import org.springframework.stereotype.Service;
@@ -48,6 +55,9 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
 
     @Resource
     private TsRoleMapper tsRoleMapper;
+
+    @Resource
+    private ITsStoryGenerateService tsStoryGenerateService;
     @Override
     public Result<Page<TsStoryVo>> pageStories(LoginUser user, TsStoryQueryDto request) {
         String userId = user.getId();
@@ -212,5 +222,20 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
         tsStoryChapterMapper.logicDeleteByStoryId(story.getId());
         tsStoryRoleRelMapper.deleteByStoryId(story.getId());
         return Result.OK("删除成功");
+    }
+
+    @Override
+    public Result<TsStoryOneClickSettingGenerateVo> generateStorySetting(LoginUser user, TsStoryOneClickSettingGenerateDto request) {
+        return Result.OK(tsStoryGenerateService.generateStorySetting(user, request));
+    }
+
+    @Override
+    public Result<TsStoryOneClickSceneGenerateVo> generateStoryScene(LoginUser user, TsStoryOneClickSceneGenerateDto request) {
+        return Result.OK(tsStoryGenerateService.generateStoryScene(user, request));
+    }
+
+    @Override
+    public Result<TsStoryOneClickOutlineGenerateVo> generateStoryOutline(LoginUser user, TsStoryOneClickOutlineGenerateDto request) {
+        return Result.OK(tsStoryGenerateService.generateStoryOutline(user, request));
     }
 }

@@ -9,11 +9,13 @@ import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.system.dto.tschatsession.TsChatAiReplyDto;
+import org.jeecg.modules.system.dto.tschatsession.TsChatReplySuggestionsDto;
 import org.jeecg.modules.system.dto.tschatsession.TsChatSessionQueryDto;
 import org.jeecg.modules.system.dto.tschatsession.TsChatSessionSaveDto;
 import org.jeecg.modules.system.service.ITsChatAiReplyService;
 import org.jeecg.modules.system.service.ITsChatSessionService;
 import org.jeecg.modules.system.vo.tschatsession.TsChatAiReplyVo;
+import org.jeecg.modules.system.vo.tschatsession.TsChatReplySuggestionsVo;
 import org.jeecg.modules.system.vo.tschatsession.TsChatSessionVo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
@@ -104,6 +106,19 @@ public class TsChatSessionController {
     @PostMapping("/ts-chat-sessions/ai-reply")
     public Result<TsChatAiReplyVo> createAiReply(@Validated @RequestBody TsChatAiReplyDto request) {
         return tsChatAiReplyService.createAiReply(
+                ((LoginUser) SecurityUtils.getSubject().getPrincipal()), request.getSessionId(), request);
+    }
+
+    /**
+     * 在指定会话内生成 3 条候选回复建议。
+     *
+     * @param request 候选回复请求参数
+     * @return 候选回复结果
+     */
+    @Operation(summary = "会话内生成候选回复建议")
+    @PostMapping("/ts-chat-sessions/reply-suggestions")
+    public Result<TsChatReplySuggestionsVo> replySuggestions(@Validated @RequestBody TsChatReplySuggestionsDto request) {
+        return tsChatAiReplyService.replySuggestions(
                 ((LoginUser) SecurityUtils.getSubject().getPrincipal()), request.getSessionId(), request);
     }
 }

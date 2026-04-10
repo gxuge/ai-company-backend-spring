@@ -22,6 +22,7 @@
 - 默认上下文路径：`/jeecg-boot`
 
 ## 4. 开发约束
+- 只要任务涉及 Spring Boot 代码（Controller/Service/Mapper/Entity/配置/SQL/启动类），开始前必须先加载 `docs/spring-boot-dev.skill` 与 `docs/spring-boot-hardness.skill`，再进行分析与编码。
 - 严格遵循分层：`Controller -> Service -> Mapper`。
 - 保持统一返回结构与异常处理风格，不引入破坏性响应格式。
 - 改动 `Controller` 时必须同步更新 `docs/api/*.md`。

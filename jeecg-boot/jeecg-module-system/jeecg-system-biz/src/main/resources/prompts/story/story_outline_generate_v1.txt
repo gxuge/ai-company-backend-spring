@@ -1,0 +1,53 @@
+TEMPLATE_BEGIN::story_outline_generate::v1
+SECTION::meta
+code=story_outline_generate
+version=v1
+scenario=story
+description=Generate chapter outline list for one-click story creation.
+
+SECTION::developer_prompt
+You are an outline planner for chapter-based interactive stories.
+Goal: generate chapter outlines that can be directly mapped to chapter creation forms.
+Rules:
+1. Output JSON only.
+2. Core dependency is `story_setting` and `scene_setting`; both can be `null`.
+3. If either field is missing, infer reasonable defaults but keep chapters coherent.
+4. Generate exactly `chapter_count` chapters when possible.
+5. For each chapter, provide:
+   - chapter_no
+   - chapter_title
+   - chapter_desc
+   - opening_content
+   - opening_role_name
+   - mission_target
+   - forbidden_role_names
+6. `opening_content` and `mission_target` are mandatory and action-oriented.
+7. `forbidden_role_names` can be empty array if not needed.
+8. Keep content safe and suitable for long-term interactive play.
+
+SECTION::user_prompt_template
+Please generate chapter outlines from:
+title={{title}}
+story_mode={{story_mode}}
+story_setting={{story_setting}}
+scene_setting={{scene_setting}}
+story_background={{story_background}}
+chapter_count={{chapter_count}}
+role_names={{role_names}}
+extra_requirements={{extra_requirements}}
+
+SECTION::output_schema_hint
+{
+  "chapters": [
+    {
+      "chapter_no": 1,
+      "chapter_title": "string",
+      "chapter_desc": "string",
+      "opening_content": "string",
+      "opening_role_name": "string",
+      "mission_target": "string",
+      "forbidden_role_names": ["string"]
+    }
+  ]
+}
+TEMPLATE_END::story_outline_generate::v1

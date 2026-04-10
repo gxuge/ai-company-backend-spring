@@ -43,12 +43,19 @@
 |---|---|---|
 | GET | `/ts-roles` | 查询角色列表 |
 | POST | `/ts-roles` | 新增角色 |
+| POST | `/ts-roles/one-click-setting` | 角色设定一键生成（四核心字段：名称/性别/职业/背景） |
+| POST | `/ts-roles/one-click-image` | 角色形象一键生成（可不依赖完整设定，若传设定字段则用于提示词上下文） |
+| POST | `/ts-roles/one-click-voice` | 角色声音一键生成（可不依赖完整设定，若传设定字段则用于提示词上下文） |
+| POST | `/ts-roles/generate-role` | 随机完整角色生成（融合设定+形象+声音，`storySetting/storyBackground` 可选） |
 | GET | `/ts-role-image-profiles` | 查询角色形象档案 |
 | POST | `/ts-role-image-profiles` | 新增角色形象档案 |
 | GET | `/ts-role-image-generate-records` | 查询角色生图记录 |
 | POST | `/ts-role-image-generate-records` | 新增角色生图记录 |
 | GET | `/ts-stories` | 查询故事列表 |
 | POST | `/ts-stories` | 新增故事 |
+| POST | `/ts-stories/story-setting-generate` | 故事设定生成（标题/简介/设定/背景，按模板+模型返回结构化字段） |
+| POST | `/ts-stories/story--scene-generate` | 场所设定生成（场所快照名/场景摘要/场景元素） |
+| POST | `/ts-stories/story--outline-generate` | 剧情大纲生成（支持 `storySetting/sceneSetting` 缺省，按上下文补全章节） |
 | GET | `/ts-story-chapters` | 查询章节列表 |
 | POST | `/ts-story-chapters` | 新增章节 |
 

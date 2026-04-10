@@ -1,0 +1,107 @@
+---
+name: spring-boot-dev
+description: 通用 Spring Boot 接口开发标准。用于 Controller/Service/Mapper/DTO/PO/VO/Entity/Mapper XML 的新增、改造与重构；强调分层职责、事务边界、分页与归属约束、编码规范和启动前验收闭环。
+---
+
+# Spring Boot 接口开发 Skill（通用）
+
+## 注入规则（强制）
+- 只要任务涉及 Spring Boot 代码（Controller/Service/Mapper/DTO/PO/VO/Entity/Mapper XML/配置/SQL），在任务开始阶段必须先加载：
+  - `docs/spring-boot-dev.skill`
+  - `docs/spring-boot-hardness.skill`
+
+## 核心目标
+- 交付可维护、可扩展、可联调的分层接口实现。
+- 统一 `Controller/Service/Mapper/DTO-PO-VO` 职责边界，避免风格漂移。
+- 在开发、验收、文档同步中维持一致的工程质量基线。
+
+## 分层职责
+- Controller：参数接收、登录态/上下文提取、调用 Service、返回统一响应。
+- Service：业务规则、归属校验、事务边界、异常语义。
+- Mapper/Mapper XML：数据访问与复杂查询实现。
+- DTO/PO/VO/Entity：输入输出与持久化模型分离，职责明确。
+
+## 目录与命名建议（可按项目调整）
+- `controller/*Controller.java`
+- `service/I*Service.java`
+- `service/impl/*ServiceImpl.java`
+- `mapper/*Mapper.java`
+- `mapper/xml/*Mapper.xml`
+- `dto/<domain>/*QueryDto.java`
+- `dto/<domain>/*SaveDto.java`
+- `po/<domain>/*QueryPo.java`
+- `po/<domain>/*SavePo.java`
+- `vo/<domain>/*Vo.java`
+- `vo/<domain>/*VoConverter.java`
+- `entity/*Entity.java`
+
+## 开发流程（强约束）
+1. 先判定接口类型：通用 CRUD 优先复用框架能力；复杂查询/聚合优先 DTO + Mapper XML。
+2. 先补模型：DTO/PO/VO/Entity 齐备后，再落地 Controller/Service/Mapper。
+3. Controller 不写复杂业务逻辑。
+4. 鉴权边界统一：鉴权放在 Controller 或统一拦截层，Service 不重复写登录态兜底分支。
+5. 写操作统一事务：`@Transactional(rollbackFor = Exception.class)`。
+6. 业务异常类型统一，避免同类错误多种抛法。
+7. 分页参数统一并设置上限（建议默认 `pageNo=1`、`pageSize=10`、最大 `pageSize=100`）。
+8. 私有数据必须显式归属过滤（例如 `user_id = #{userId}`）。
+9. 列表查询必须显式 `ORDER BY`，避免分页抖动。
+
+## REST 语义与 ID 传参约定
+- 语义一致：`GET` 查、`POST` 增、`PUT/PATCH` 改、`DELETE` 删。
+- 资源命名优先复数。
+- `POST` 创建通常不传 `id`。
+- 更新接口必须有稳定的资源标识（路径或请求体二选一，但需项目内统一）。
+- 删除/详情接口的 ID 传参方式在同一业务域保持一致。
+
+## 注释规范（强制）
+- DTO/VO/PO/Entity 字段必须有中文注释。
+- 状态值、枚举值、0/1 布尔语义必须写明取值含义。
+- Controller/Service/Mapper 方法（含 private helper）必须有中文注释。
+- 涉及权限、事务、分页、SQL 条件拼装的方法必须说明边界条件。
+
+## Service / AOP 约束（强制）
+- Service 目录只保留 Controller 直接调用的业务 Service 类型（`I*Service`、`*ServiceImpl`）。
+- 非 Service 职责的通用能力（如字符串处理、模板拼装、格式转换、通用校验）不得放在 Service 包中，必须抽象到 Service 同级 `utils` 目录。
+- 资源归属校验与资源存在性校验优先 AOP 化（如 `@CheckXxxOwnership`、`@CheckXxxExists`）。
+- AOP 注解需支持自定义错误文案（`message`），切面需支持从基础类型和常见 DTO getter 提取资源 ID。
+- ServiceImpl 优先保留 `@Override` 业务入口，减少无复用私有 helper。
+- 通用转换逻辑下沉至 DTO/PO/VO/Converter，避免 Service 过载。
+
+## Prompt 资源规范（强制）
+- Prompt 文件统一放在 `src/main/resources/prompts`。
+- 在 `prompts` 下按业务域或场景拆分子目录（如 `chat/`、`role/`、`story/`），禁止将 Prompt 分散到 Service 或其他 Java 包目录。
+- Prompt 仅作为资源文件管理与加载，不在 Service 层内联大段模板文本。
+
+## Mapper XML 规范（强制）
+- XML 放在项目统一约定目录，`namespace` 与 Mapper 全限定名一致，`id` 与方法名一致。
+- XML 文本节点中避免直接写 `<`、`<=`、`<>`；使用 `&lt;` / `&lt;=` 或 `CDATA`。
+- 软删除过滤与状态过滤统一写法，避免同域多标准。
+
+## 文件编码规范（强制）
+- 默认 `UTF-8`。
+- SQL 导入脚本（尤其包含 `SET NAMES`）建议 `UTF-8 without BOM`。
+- 修改已有文件时保持原编码与 BOM 状态，禁止无感转码。
+- 不在同一业务改动中混入“批量转码”；如需转码，单独提交并专项验证。
+
+## 启动前验收闭环（强制）
+1. 校验 Mapper XML：`namespace/id`、运算符转义、动态 SQL 标签闭合。
+2. 清理对应模块构建产物，避免旧资源残留。
+3. 启动检查关键错误（如 `Failed to parse mapping resource`）。
+4. 接口冒烟：分页、详情、新增、编辑、删除至少各跑一遍。
+5. 权限/归属回归：越权访问必须失败。
+
+## 交付清单
+- Controller
+- Service 接口 + ServiceImpl
+- Mapper 接口 + Mapper XML（复杂查询必有）
+- DTO（Query + Save）
+- PO（按需）
+- Entity（新增表或结构变更时必有）
+- VO + Converter（聚合输出场景必有）
+- 对应 API 文档与变更记录
+
+## 反模式（禁止）
+- Service/Controller 同时实现鉴权兜底，造成边界重复。
+- 列表查询无 `ORDER BY`。
+- 复杂查询只写在 Java 代码，不提供可复查 SQL。
+- 用“测试能过”替代“职责边界正确”。

@@ -139,6 +139,8 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
 
 	@Autowired
 	private JeecgBaseConfig jeecgBaseConfig;
+	@Autowired
+	private ITsChatSessionService tsChatSessionService;
 
 	/**
 	 * 管理员账号
@@ -336,6 +338,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
 	@Transactional(rollbackFor = Exception.class)
 	public void addUserWithRole(SysUser user, String roles) {
 		this.save(user);
+		tsChatSessionService.ensureDefaultSystemSession(user.getId());
 		if(oConvertUtils.isNotEmpty(roles)) {
 			String[] arr = roles.split(",");
 			for (String roleId : arr) {
@@ -800,6 +803,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         //step.1 保存用户
 		this.save(user);
 		//获取用户保存前台传过来的租户id并添加到租户
+		tsChatSessionService.ensureDefaultSystemSession(user.getId());
         this.saveUserTenant(user.getId(),relTenantIds, izSyncPack);
 		//step.2 保存角色
 		if(oConvertUtils.isNotEmpty(selectedRoles)) {

@@ -54,4 +54,19 @@
         </foreach>
     </select>
 
+    <select id="selectRoleAuthorPublic" resultType="org.jeecg.modules.system.vo.tsrole.TsRoleAuthorPublicVo">
+        SELECT
+            r.user_id AS userId,
+            COALESCE(NULLIF(u.realname, ''), u.username) AS displayName,
+            u.avatar AS avatar,
+            0 AS verified,
+            NULL AS bio
+        FROM ts_role_info r
+        LEFT JOIN sys_user u ON u.id = r.user_id
+        WHERE r.id = #{roleId}
+          AND (r.status IS NULL OR r.status != 0)
+          AND r.is_public = 1
+        LIMIT 1
+    </select>
+
 </mapper>

@@ -1,5 +1,6 @@
 package org.jeecg.modules.system.service.impl;
 
+import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import jakarta.annotation.Resource;
 import org.jeecg.common.api.vo.Result;
@@ -10,21 +11,31 @@ import org.jeecg.modules.aop.TsChatSessionOwnershipAspect.CheckTsChatSessionOwne
 import org.jeecg.modules.openapi.dto.MiniMaxChatRequestDto;
 import org.jeecg.modules.openapi.dto.MiniMaxTtsRequestDto;
 import org.jeecg.modules.openapi.service.IMiniMaxDemoService;
+import org.jeecg.modules.openapi.service.PromptRenderService;
 import org.jeecg.modules.openapi.vo.MiniMaxChatResponseVo;
 import org.jeecg.modules.openapi.vo.MiniMaxTtsResponseVo;
 import org.jeecg.modules.system.dto.tschatsession.TsChatAiReplyDto;
+import org.jeecg.modules.system.dto.tschatsession.TsChatReplySuggestionsDto;
 import org.jeecg.modules.system.entity.TsChatMessage;
 import org.jeecg.modules.system.entity.TsChatMessageAttachment;
 import org.jeecg.modules.system.entity.TsChatSession;
+import org.jeecg.modules.system.entity.TsRole;
+import org.jeecg.modules.system.entity.TsStory;
 import org.jeecg.modules.system.entity.TsUserVoiceConfig;
 import org.jeecg.modules.system.entity.TsVoiceProfile;
 import org.jeecg.modules.system.mapper.TsChatMessageAttachmentMapper;
 import org.jeecg.modules.system.mapper.TsChatMessageMapper;
 import org.jeecg.modules.system.mapper.TsChatSessionMapper;
+import org.jeecg.modules.system.mapper.TsRoleMapper;
+import org.jeecg.modules.system.mapper.TsStoryMapper;
 import org.jeecg.modules.system.mapper.TsUserVoiceConfigMapper;
 import org.jeecg.modules.system.mapper.TsVoiceProfileMapper;
 import org.jeecg.modules.system.service.ITsChatAiReplyService;
+import org.jeecg.modules.system.util.ChatGenerateSnapshotUtil;
+import org.jeecg.modules.system.util.PromptRuntimeUtil;
 import org.jeecg.modules.system.vo.tschatsession.TsChatAiReplyVo;
+import org.jeecg.modules.system.vo.tschatsession.TsChatReplySuggestionsVo;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -32,8 +43,11 @@ import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 @Service
 public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
@@ -78,6 +92,26 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
     private static final String PROMPT_USER_PREFIX = "用户当前消息：";
     /** Prompt 指令：输出格式约束。 */
     private static final String PROMPT_OUTPUT_RULE = "请直接回复可读文本，不要输出JSON。";
+    /** 候选回复模板编码。 */
+    private static final String PROMPT_CODE_REPLY_SUGGESTIONS = "chat_reply_suggestions";
+    /** 候选回复模板版本。 */
+    private static final String PROMPT_VERSION = "v1";
+    /** 候选回复模板路径。 */
+    private static final String PROMPT_PATH_REPLY_SUGGESTIONS = "prompts/chat/chat_reply_suggestions_v1.txt";
+    /** 候选回复快照缓存前缀。 */
+    private static final String REDIS_SNAPSHOT_PREFIX = "ts:chat:generate:snapshot:";
+    /** 候选回复快照缓存 TTL（小时）。 */
+    private static final long REDIS_SNAPSHOT_TTL_HOURS = 72L;
+    /** 固定返回候选条数。 */
+    private static final int FIXED_SUGGESTION_COUNT = 3;
+    /** 单条候选最大长度，防止模型超长输出影响前端。 */
+    private static final int MAX_SUGGESTION_LENGTH = 64;
+    /** 候选回复兜底文案 1。 */
+    private static final String FALLBACK_SUGGESTION_1 = "你刚刚那句我有点在意，能多说一点吗？";
+    /** 候选回复兜底文案 2。 */
+    private static final String FALLBACK_SUGGESTION_2 = "那你更希望我现在怎么回应你？";
+    /** 候选回复兜底文案 3。 */
+    private static final String FALLBACK_SUGGESTION_3 = "我们先从最在意的那一件事聊起吧。";
 
     @Resource
     private TsChatMessageMapper tsChatMessageMapper;
@@ -95,7 +129,19 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
     private TsVoiceProfileMapper tsVoiceProfileMapper;
 
     @Resource
+    private TsRoleMapper tsRoleMapper;
+
+    @Resource
+    private TsStoryMapper tsStoryMapper;
+
+    @Resource
     private IMiniMaxDemoService miniMaxDemoService;
+
+    @Resource
+    private PromptRenderService promptRenderService;
+
+    @Resource
+    private RedisTemplate<String, Object> redisTemplate;
 
     /**
      * 在会话内完成“用户消息入库 + AI 文本生成 + 语音合成 + 附件落库”的编排流程。
@@ -272,5 +318,232 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         response.setMimeType(attachment.getMimeType());
         response.setCreatedAt(assistantMessage.getCreatedAt());
         return Result.OK("生成成功", response);
+    }
+
+    /**
+     * 在会话内生成 3 条可直接发送的候选回复，不落库消息。
+     *
+     * @param user 当前登录用户
+     * @param sessionId 会话 ID
+     * @param request 候选回复请求参数
+     * @return 候选回复结果
+     */
+    @Override
+    @CheckTsChatSessionOwnership(message = "会话不存在或无权限访问")
+    public Result<TsChatReplySuggestionsVo> replySuggestions(LoginUser user, Long sessionId, TsChatReplySuggestionsDto request) {
+        TsChatReplySuggestionsDto dto = request == null ? new TsChatReplySuggestionsDto() : request;
+        dto.applyDefaults();
+
+        TsChatSession session = TsChatSessionOwnershipAspect.SESSION_CONTEXT.get();
+        if (session == null) {
+            throw new JeecgBootException("会话不存在或无权限访问");
+        }
+
+        List<TsChatMessage> historyMessages = tsChatMessageMapper.selectRecentMessages(sessionId, dto.getHistoryCount());
+        String recentMessagesBlock = buildRecentMessagesBlock(historyMessages);
+
+        String roleName = null;
+        if (session.getTargetRoleId() != null) {
+            TsRole role = tsRoleMapper.selectOwned(session.getTargetRoleId(), user.getId());
+            roleName = role == null ? null : PromptRuntimeUtil.trimToNull(role.getRoleName());
+        }
+
+        String storyTitle = null;
+        if (session.getStoryId() != null) {
+            TsStory story = tsStoryMapper.selectOwned(session.getStoryId(), user.getId());
+            storyTitle = story == null ? null : PromptRuntimeUtil.trimToNull(story.getTitle());
+        }
+
+        String lastAssistantMessage = null;
+        if (dto.getLastAssistantMessageId() != null) {
+            TsChatMessage focusMessage = tsChatMessageMapper.selectOwnedById(dto.getLastAssistantMessageId(), user.getId());
+            if (focusMessage == null || !sessionId.equals(focusMessage.getSessionId())) {
+                throw new JeecgBootException("lastAssistantMessageId不属于当前会话");
+            }
+            lastAssistantMessage = PromptRuntimeUtil.trimToNull(focusMessage.getContentText());
+        }
+
+        Map<String, String> variables = new HashMap<>();
+        variables.put("session_id", String.valueOf(sessionId));
+        variables.put("role_name", PromptRuntimeUtil.nullableToken(roleName));
+        variables.put("story_title", PromptRuntimeUtil.nullableToken(storyTitle));
+        variables.put("session_type", PromptRuntimeUtil.nullableToken(session.getSessionType()));
+        variables.put("user_draft", PromptRuntimeUtil.nullableToken(dto.getUserDraft()));
+        variables.put("last_assistant_message", PromptRuntimeUtil.nullableToken(lastAssistantMessage));
+        variables.put("recent_messages_block", PromptRuntimeUtil.nullableToken(recentMessagesBlock));
+
+        String renderedPrompt = promptRenderService.renderPrompt(PROMPT_PATH_REPLY_SUGGESTIONS, variables);
+        JSONObject modelJson = PromptRuntimeUtil.callPromptChat(miniMaxDemoService, renderedPrompt);
+
+        List<String> suggestions = new ArrayList<>();
+        suggestions.addAll(normalizeSuggestionList(modelJson.get("suggestions")));
+        if (suggestions.isEmpty()) {
+            suggestions.addAll(normalizeSuggestionList(modelJson.get("reply_suggestions")));
+        }
+        if (suggestions.isEmpty()) {
+            suggestions.addAll(normalizeSuggestionList(modelJson.get("candidates")));
+        }
+        addSuggestionCandidate(suggestions, modelJson.getString("suggestion_1"));
+        addSuggestionCandidate(suggestions, modelJson.getString("suggestion_2"));
+        addSuggestionCandidate(suggestions, modelJson.getString("suggestion_3"));
+        suggestions = ensureFixedSuggestions(suggestions);
+
+        JSONObject snapshot = new JSONObject();
+        snapshot.put("type", "reply-suggestions");
+        snapshot.put("promptCode", PROMPT_CODE_REPLY_SUGGESTIONS);
+        snapshot.put("promptVersion", PROMPT_VERSION);
+        snapshot.put("promptRendered", renderedPrompt);
+        snapshot.put("rawResponse", modelJson == null ? null : modelJson.toJSONString());
+        snapshot.put("result", suggestions);
+        String snapshotKey = ChatGenerateSnapshotUtil.saveSnapshot(
+                redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS, "suggest", user.getId(), snapshot);
+
+        TsChatReplySuggestionsVo response = new TsChatReplySuggestionsVo();
+        response.setSessionId(sessionId);
+        response.setSuggestions(suggestions);
+        response.setPromptCode(PROMPT_CODE_REPLY_SUGGESTIONS);
+        response.setPromptVersion(PROMPT_VERSION);
+        response.setRenderedPrompt(renderedPrompt);
+        response.setSnapshotKey(snapshotKey);
+        return Result.OK("生成成功", response);
+    }
+
+    /**
+     * 将最近消息拼装成 prompt 上下文文本（按时间从旧到新）。
+     */
+    private String buildRecentMessagesBlock(List<TsChatMessage> historyMessages) {
+        if (historyMessages == null || historyMessages.isEmpty()) {
+            return null;
+        }
+        List<TsChatMessage> orderedMessages = new ArrayList<>(historyMessages);
+        Collections.reverse(orderedMessages);
+        StringBuilder builder = new StringBuilder();
+        for (TsChatMessage message : orderedMessages) {
+            if (message == null || !StringUtils.hasText(message.getContentText())) {
+                continue;
+            }
+            String roleName = ROLE_NAME_AI;
+            String senderType = PromptRuntimeUtil.trimToNull(message.getSenderType());
+            if (StringUtils.hasText(senderType)) {
+                String normalizedSenderType = senderType.toLowerCase(Locale.ROOT);
+                if (SENDER_TYPE_USER.equals(normalizedSenderType)) {
+                    roleName = ROLE_NAME_USER;
+                } else if (SENDER_TYPE_SYSTEM.equals(normalizedSenderType)) {
+                    roleName = ROLE_NAME_SYSTEM;
+                }
+            }
+            if (ROLE_NAME_AI.equals(roleName) && StringUtils.hasText(message.getSenderName())) {
+                roleName = message.getSenderName().trim();
+            }
+            String line = "【" + roleName + "】" + message.getContentText().trim() + "\n";
+            if (builder.length() + line.length() > MAX_HISTORY_PROMPT_CHARS) {
+                break;
+            }
+            builder.append(line);
+        }
+        return PromptRuntimeUtil.trimToNull(builder.toString());
+    }
+
+    /**
+     * 归一化模型返回的候选列表，支持数组与分隔字符串。
+     */
+    private List<String> normalizeSuggestionList(Object rawValue) {
+        List<String> result = new ArrayList<>();
+        if (rawValue == null) {
+            return result;
+        }
+
+        if (rawValue instanceof JSONArray) {
+            JSONArray array = (JSONArray) rawValue;
+            for (Object item : array) {
+                addSuggestionCandidate(result, item == null ? null : String.valueOf(item));
+            }
+            return result;
+        }
+
+        if (rawValue instanceof List) {
+            List<?> list = (List<?>) rawValue;
+            for (Object item : list) {
+                addSuggestionCandidate(result, item == null ? null : String.valueOf(item));
+            }
+            return result;
+        }
+
+        String plainText = PromptRuntimeUtil.trimToNull(String.valueOf(rawValue));
+        if (!StringUtils.hasText(plainText)) {
+            return result;
+        }
+
+        if (plainText.startsWith("[")) {
+            try {
+                JSONArray array = JSONArray.parseArray(plainText);
+                for (Object item : array) {
+                    addSuggestionCandidate(result, item == null ? null : String.valueOf(item));
+                }
+                return result;
+            } catch (Exception ignored) {
+                // fallback to delimiter split
+            }
+        }
+
+        String[] parts = plainText.split("[\\n,，;；]");
+        for (String part : parts) {
+            addSuggestionCandidate(result, part);
+        }
+        return result;
+    }
+
+    /**
+     * 增加单条候选并做去空白/限长处理。
+     */
+    private void addSuggestionCandidate(List<String> target, String rawSuggestion) {
+        String value = PromptRuntimeUtil.trimToNull(rawSuggestion);
+        if (!StringUtils.hasText(value)) {
+            return;
+        }
+        value = value.replaceFirst("^[0-9一二三四五六七八九十]+[\\.|、\\)]\\s*", "");
+        value = value.replaceAll("^[-•*]\\s*", "");
+        if (value.length() > MAX_SUGGESTION_LENGTH) {
+            value = value.substring(0, MAX_SUGGESTION_LENGTH);
+        }
+        target.add(value);
+    }
+
+    /**
+     * 固定化候选数量，去重后不足 3 条时补齐兜底文案。
+     */
+    private List<String> ensureFixedSuggestions(List<String> source) {
+        LinkedHashSet<String> unique = new LinkedHashSet<>();
+        if (source != null) {
+            for (String item : source) {
+                String value = PromptRuntimeUtil.trimToNull(item);
+                if (value != null) {
+                    unique.add(value);
+                }
+            }
+        }
+        List<String> result = new ArrayList<>(unique);
+        addSuggestionCandidate(result, FALLBACK_SUGGESTION_1);
+        addSuggestionCandidate(result, FALLBACK_SUGGESTION_2);
+        addSuggestionCandidate(result, FALLBACK_SUGGESTION_3);
+
+        LinkedHashSet<String> distinct = new LinkedHashSet<>(result);
+        result = new ArrayList<>(distinct);
+        if (result.size() > FIXED_SUGGESTION_COUNT) {
+            return new ArrayList<>(result.subList(0, FIXED_SUGGESTION_COUNT));
+        }
+        String[] fallbacks = {FALLBACK_SUGGESTION_1, FALLBACK_SUGGESTION_2, FALLBACK_SUGGESTION_3};
+        for (String fallback : fallbacks) {
+            if (result.size() >= FIXED_SUGGESTION_COUNT) {
+                break;
+            }
+            if (!result.contains(fallback)) {
+                result.add(fallback);
+            }
+        }
+        while (result.size() < FIXED_SUGGESTION_COUNT) {
+            result.add(FALLBACK_SUGGESTION_3);
+        }
+        return result;
     }
 }

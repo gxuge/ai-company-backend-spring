@@ -100,6 +100,7 @@ public class ShiroConfig {
         filterChainDefinitionMap.put("/sys/user/register", "anon");//用户注册
         filterChainDefinitionMap.put("/sys/user/phoneVerification", "anon");//用户忘记密码验证手机号
         filterChainDefinitionMap.put("/sys/user/passwordChange", "anon");//用户更改密码
+        filterChainDefinitionMap.put("/sys/ts-roles/author-public", "anon");//角色作者公开信息
         filterChainDefinitionMap.put("/auth/2step-code", "anon");//登录验证码
         filterChainDefinitionMap.put("/sys/common/static/**", "anon");//图片预览 &下载文件不限制token
         filterChainDefinitionMap.put("/sys/common/pdf/**", "anon");//pdf预览

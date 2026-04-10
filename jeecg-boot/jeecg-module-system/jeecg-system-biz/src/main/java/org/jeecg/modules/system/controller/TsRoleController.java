@@ -8,9 +8,17 @@ import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateRoleDto;
+import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickImageGenerateDto;
+import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickSettingGenerateDto;
+import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickVoiceGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleQueryDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleSaveDto;
 import org.jeecg.modules.system.service.ITsRoleService;
+import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateRoleVo;
+import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickImageGenerateVo;
+import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickSettingGenerateVo;
+import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickVoiceGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleVo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
@@ -49,5 +57,26 @@ public class TsRoleController {
     @DeleteMapping("/ts-roles")
     public Result<?> removeRole(@RequestParam("id") Long id) {
         return tsRoleService.deleteRole(((LoginUser) SecurityUtils.getSubject().getPrincipal()), id);
+    }
+    @Operation(summary = "Role one-click setting generate")
+    @PostMapping("/ts-roles/one-click-setting")
+    public Result<TsRoleOneClickSettingGenerateVo> generateRoleSetting(@RequestBody TsRoleOneClickSettingGenerateDto request) {
+        return tsRoleService.generateRoleSetting(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
+    }
+    @Operation(summary = "Role one-click image generate")
+    @PostMapping("/ts-roles/one-click-image")
+    public Result<TsRoleOneClickImageGenerateVo> generateRoleImage(@RequestBody TsRoleOneClickImageGenerateDto request) {
+        return tsRoleService.generateRoleImage(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
+    }
+    @Operation(summary = "Role one-click voice generate")
+    @PostMapping("/ts-roles/one-click-voice")
+    public Result<TsRoleOneClickVoiceGenerateVo> generateRoleVoice(@RequestBody TsRoleOneClickVoiceGenerateDto request) {
+        return tsRoleService.generateRoleVoice(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
+    }
+
+    @Operation(summary = "Role generate role")
+    @PostMapping("/ts-roles/generate-role")
+    public Result<TsRoleGenerateRoleVo> generateRole(@RequestBody TsRoleGenerateRoleDto request) {
+        return tsRoleService.generateRole(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
     }
 }

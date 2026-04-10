@@ -8,9 +8,15 @@ import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickOutlineGenerateDto;
+import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneGenerateDto;
+import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSettingGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryQueryDto;
 import org.jeecg.modules.system.dto.tsstory.TsStorySaveDto;
 import org.jeecg.modules.system.service.ITsStoryService;
+import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineGenerateVo;
+import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneGenerateVo;
+import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSettingGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryVo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
@@ -49,5 +55,23 @@ public class TsStoryController {
     @DeleteMapping("/ts-stories")
     public Result<?> removeStory(@RequestParam("id") Long id) {
         return tsStoryService.deleteStory(((LoginUser) SecurityUtils.getSubject().getPrincipal()), id);
+    }
+
+    @Operation(summary = "Story setting generate")
+    @PostMapping("/ts-stories/story-setting-generate")
+    public Result<TsStoryOneClickSettingGenerateVo> generateStorySetting(@RequestBody TsStoryOneClickSettingGenerateDto request) {
+        return tsStoryService.generateStorySetting(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
+    }
+
+    @Operation(summary = "Story scene generate")
+    @PostMapping("/ts-stories/story--scene-generate")
+    public Result<TsStoryOneClickSceneGenerateVo> generateStoryScene(@RequestBody TsStoryOneClickSceneGenerateDto request) {
+        return tsStoryService.generateStoryScene(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
+    }
+
+    @Operation(summary = "Story outline generate")
+    @PostMapping("/ts-stories/story--outline-generate")
+    public Result<TsStoryOneClickOutlineGenerateVo> generateStoryOutline(@RequestBody TsStoryOneClickOutlineGenerateDto request) {
+        return tsStoryService.generateStoryOutline(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
     }
 }

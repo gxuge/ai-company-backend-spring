@@ -67,6 +67,18 @@ public class TsRole implements Serializable {
     @TableField("voice_name")
     private String voiceName;
 
+    /**
+     * 角色编码：内置角色使用固定编码（例如 SYSTEM_ASSISTANT）
+     */
+    @TableField("role_code")
+    private String roleCode;
+
+    /**
+     * 是否内置角色：1=内置，0=普通用户角色
+     */
+    @TableField("is_builtin")
+    private Integer isBuiltin;
+
     @TableField("ext_json")
     private String extJson;
 
