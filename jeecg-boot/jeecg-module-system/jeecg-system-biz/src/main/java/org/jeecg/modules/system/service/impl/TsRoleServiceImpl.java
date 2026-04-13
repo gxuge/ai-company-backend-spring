@@ -8,6 +8,7 @@ import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.aop.TsRoleOwnershipAspect;
 import org.jeecg.modules.aop.TsRoleOwnershipAspect.CheckTsRoleOwnership;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateRoleDto;
+import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateTextByTemplateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickImageGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickSettingGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickVoiceGenerateDto;
@@ -20,6 +21,7 @@ import org.jeecg.modules.system.po.tsrole.TsRoleSavePo;
 import org.jeecg.modules.system.service.ITsRoleGenerateService;
 import org.jeecg.modules.system.service.ITsRoleService;
 import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateRoleVo;
+import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateTextByTemplateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickImageGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickSettingGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickVoiceGenerateVo;
@@ -137,5 +139,10 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
     @Transactional(rollbackFor = Exception.class)
     public Result<TsRoleGenerateRoleVo> generateRole(LoginUser user, TsRoleGenerateRoleDto request) {
         return Result.OK(tsRoleGenerateService.generateRole(user, request));
+    }
+
+    @Override
+    public Result<TsRoleGenerateTextByTemplateVo> generateTextByTemplate(LoginUser user, TsRoleGenerateTextByTemplateDto request) {
+        return Result.OK(tsRoleGenerateService.generateTextByTemplate(user, request));
     }
 }

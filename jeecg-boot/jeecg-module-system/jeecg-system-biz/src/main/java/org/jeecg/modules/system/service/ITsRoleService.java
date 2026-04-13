@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.service.IService;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateRoleDto;
+import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateTextByTemplateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickImageGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickSettingGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickVoiceGenerateDto;
@@ -12,10 +13,12 @@ import org.jeecg.modules.system.dto.tsrole.TsRoleQueryDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleSaveDto;
 import org.jeecg.modules.system.entity.TsRole;
 import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateRoleVo;
+import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateTextByTemplateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickImageGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickSettingGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickVoiceGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleVo;
+
 public interface ITsRoleService extends IService<TsRole> {
     /**
      * 分页查询角色列表。
@@ -61,4 +64,9 @@ public interface ITsRoleService extends IService<TsRole> {
      * 生成完整角色（设定+形象+声音）。
      */
     Result<TsRoleGenerateRoleVo> generateRole(LoginUser user, TsRoleGenerateRoleDto request);
+
+    /**
+     * 基于模板渲染并生成一段文本。
+     */
+    Result<TsRoleGenerateTextByTemplateVo> generateTextByTemplate(LoginUser user, TsRoleGenerateTextByTemplateDto request);
 }

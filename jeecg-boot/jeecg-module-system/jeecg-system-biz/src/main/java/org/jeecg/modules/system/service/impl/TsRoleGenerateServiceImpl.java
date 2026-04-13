@@ -12,6 +12,7 @@ import org.jeecg.modules.openapi.service.PromptRenderService;
 import org.jeecg.modules.openapi.vo.MiniMaxImageResponseVo;
 import org.jeecg.modules.openapi.vo.MiniMaxTtsResponseVo;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateRoleDto;
+import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateTextByTemplateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickImageGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickSettingGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickVoiceGenerateDto;
@@ -28,6 +29,7 @@ import org.jeecg.modules.system.util.PromptRuntimeUtil;
 import org.jeecg.modules.system.util.RoleGenerateSnapshotUtil;
 import org.jeecg.modules.system.util.VoiceProfileMatchUtil;
 import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateRoleVo;
+import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateTextByTemplateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickImageGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickSettingGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickVoiceGenerateVo;
@@ -38,7 +40,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 角色一键生成服务实现。
@@ -50,10 +54,12 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
     private static final String PROMPT_CODE_GENERATE_ROLE = "role_generate_role";
     private static final String PROMPT_CODE_IMAGE = "role_image_generate";
     private static final String PROMPT_CODE_VOICE = "role_voice_generate";
+    private static final String PROMPT_CODE_TEXT_TEMPLATE = "role_ai_generate_text";
     private static final String PROMPT_PATH_SETTING = "prompts/role/role_core_fill_v1.txt";
     private static final String PROMPT_PATH_GENERATE_ROLE = "prompts/role/role_generate_role_v1.txt";
     private static final String PROMPT_PATH_IMAGE = "prompts/role/role_image_generate_v1.txt";
     private static final String PROMPT_PATH_VOICE = "prompts/role/role_voice_generate_v1.txt";
+    private static final String PROMPT_PATH_TEXT_TEMPLATE = "prompts/role/role_ai_generate_text_v1.txt";
     private static final String REDIS_SNAPSHOT_PREFIX = "ts:role:generate:snapshot:";
     private static final long REDIS_SNAPSHOT_TTL_HOURS = 72L;
     private static final String DEFAULT_PREVIEW_TEXT = "你好呀，很高兴认识你。";
@@ -306,6 +312,60 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         return vo;
     }
 
+    @Override
+    public TsRoleGenerateTextByTemplateVo generateTextByTemplate(LoginUser user, TsRoleGenerateTextByTemplateDto request) {
+        TsRoleGenerateTextByTemplateDto dto = request == null ? new TsRoleGenerateTextByTemplateDto() : request;
+        dto.normalize();
+
+        String promptCode = PromptRuntimeUtil.firstNonBlank(dto.getPromptCode(), PROMPT_CODE_TEXT_TEMPLATE);
+        String promptVersion = PromptRuntimeUtil.firstNonBlank(dto.getPromptVersion(), PROMPT_VERSION);
+        String promptPath = resolvePromptPath(promptCode, promptVersion);
+
+        Map<String, String> variables = new LinkedHashMap<>();
+        if (dto.getVariables() != null) {
+            for (Map.Entry<String, Object> entry : dto.getVariables().entrySet()) {
+                String key = PromptRuntimeUtil.trimToNull(entry.getKey());
+                if (!StringUtils.hasText(key)) {
+                    continue;
+                }
+                Object rawValue = entry.getValue();
+                String value = rawValue == null ? null : PromptRuntimeUtil.trimToNull(String.valueOf(rawValue));
+                variables.put(key, PromptRuntimeUtil.nullableToken(value));
+            }
+        }
+
+        String renderedPrompt = promptRenderService.renderPrompt(promptPath, variables);
+        JSONObject modelJson = PromptRuntimeUtil.callPromptChat(miniMaxDemoService, renderedPrompt);
+        String generatedText = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("generated_text")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("text")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("result")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("prompt_text"))
+        );
+        if (!StringUtils.hasText(generatedText)) {
+            throw new JeecgBootException("模板生成文本失败，模型未返回有效文本");
+        }
+
+        JSONObject snapshot = new JSONObject();
+        snapshot.put("type", "text-template");
+        snapshot.put("promptCode", promptCode);
+        snapshot.put("promptVersion", promptVersion);
+        snapshot.put("promptRendered", renderedPrompt);
+        snapshot.put("variables", variables);
+        snapshot.put("rawResponse", modelJson == null ? null : modelJson.toJSONString());
+        snapshot.put("result", generatedText);
+        String snapshotKey = RoleGenerateSnapshotUtil.saveSnapshot(redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS,
+                "text-template", user.getId(), snapshot);
+
+        TsRoleGenerateTextByTemplateVo vo = new TsRoleGenerateTextByTemplateVo();
+        vo.setGeneratedText(generatedText);
+        vo.setPromptCode(promptCode);
+        vo.setPromptVersion(promptVersion);
+        vo.setRenderedPrompt(renderedPrompt);
+        vo.setSnapshotKey(snapshotKey);
+        return vo;
+    }
+
     /**
      * 随机生成完整角色（设定+形象+声音）。
      * 输入的 storySetting/storyBackground 可为空，空值由模板与模型自动补全。
@@ -406,6 +466,13 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         vo.setRenderedPrompt(renderedPrompt);
         vo.setSnapshotKey(snapshotKey);
         return vo;
+    }
+
+    private String resolvePromptPath(String promptCode, String promptVersion) {
+        if (PROMPT_CODE_TEXT_TEMPLATE.equals(promptCode) && PROMPT_VERSION.equals(promptVersion)) {
+            return PROMPT_PATH_TEXT_TEMPLATE;
+        }
+        throw new JeecgBootException("不支持的模板编码或版本: " + promptCode + "@" + promptVersion);
     }
 
 }

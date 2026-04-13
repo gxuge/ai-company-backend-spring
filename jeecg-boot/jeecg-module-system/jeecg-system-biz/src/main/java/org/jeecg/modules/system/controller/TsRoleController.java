@@ -9,6 +9,7 @@ import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateRoleDto;
+import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateTextByTemplateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickImageGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickSettingGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickVoiceGenerateDto;
@@ -16,6 +17,7 @@ import org.jeecg.modules.system.dto.tsrole.TsRoleQueryDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleSaveDto;
 import org.jeecg.modules.system.service.ITsRoleService;
 import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateRoleVo;
+import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateTextByTemplateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickImageGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickSettingGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickVoiceGenerateVo;
@@ -72,6 +74,12 @@ public class TsRoleController {
     @PostMapping("/ts-roles/one-click-voice")
     public Result<TsRoleOneClickVoiceGenerateVo> generateRoleVoice(@RequestBody TsRoleOneClickVoiceGenerateDto request) {
         return tsRoleService.generateRoleVoice(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
+    }
+
+    @Operation(summary = "Role generate text by prompt template")
+    @PostMapping("/ts-roles/generate-text-by-template")
+    public Result<TsRoleGenerateTextByTemplateVo> generateTextByTemplate(@RequestBody TsRoleGenerateTextByTemplateDto request) {
+        return tsRoleService.generateTextByTemplate(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
     }
 
     @Operation(summary = "Role generate role")

@@ -6,6 +6,7 @@ import org.jeecg.modules.system.entity.TsChatSession;
 import java.util.ArrayList;
 import java.util.List;
 public final class TsChatSessionVoConverter {
+    private static final String DEFAULT_SYSTEM_SESSION_KEY = "DEFAULT_SYSTEM";
 
     private TsChatSessionVoConverter() {
     }
@@ -28,6 +29,7 @@ public final class TsChatSessionVoConverter {
         target.setId(source.getId());
         target.setUserId(source.getUserId());
         target.setSessionType(source.getSessionType());
+        target.setIsSystemSession(DEFAULT_SYSTEM_SESSION_KEY.equals(source.getSystemSessionKey()));
         target.setSessionTitle(source.getSessionTitle());
         target.setTargetRoleId(source.getTargetRoleId());
         target.setStoryId(source.getStoryId());
