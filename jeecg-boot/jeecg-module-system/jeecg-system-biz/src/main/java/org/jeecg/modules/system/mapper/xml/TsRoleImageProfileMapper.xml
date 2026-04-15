@@ -66,4 +66,35 @@
         LIMIT 1
     </select>
 
+    <select id="selectPublicProfilePage" resultType="org.jeecg.modules.system.vo.tsroleimageprofile.TsRoleImageProfilePublicVo">
+        SELECT
+            p.id AS id,
+            p.profile_name AS profileName,
+            p.style_name AS styleName,
+            p.selected_image_url AS selectedImageUrl,
+            p.source_type AS sourceType,
+            p.prompt_text AS promptText,
+            COALESCE(NULLIF(u.realname, ''), u.username) AS authorName,
+            u.avatar AS authorAvatar,
+            p.updated_at AS updatedAt
+        FROM ts_role_image_profile p
+        LEFT JOIN sys_user u ON u.id = p.owner_user_id
+        WHERE p.is_public = 1
+          AND p.status != 0
+        <if test="keyword != null and keyword != ''">
+            AND (
+                p.profile_name LIKE CONCAT('%', #{keyword}, '%')
+                OR p.style_name LIKE CONCAT('%', #{keyword}, '%')
+                OR p.prompt_text LIKE CONCAT('%', #{keyword}, '%')
+            )
+        </if>
+        <if test="styleName != null and styleName != ''">
+            AND p.style_name = #{styleName}
+        </if>
+        <if test="sourceType != null and sourceType != ''">
+            AND p.source_type = #{sourceType}
+        </if>
+        ORDER BY p.updated_at DESC, p.id DESC
+    </select>
+
 </mapper>

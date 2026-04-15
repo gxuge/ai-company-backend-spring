@@ -74,6 +74,8 @@ public class CommonUtils {
                 String relativePath = bizPath+"/"+fileName;
                 if(CommonConstant.UPLOAD_TYPE_MINIO.equals(uploadType)){
                     dbPath = MinioUtil.upload(in,relativePath);
+                }else if(CommonConstant.UPLOAD_TYPE_R2.equals(uploadType)){
+                    dbPath = CloudflareR2Util.upload(in,relativePath);
                 }else if(CommonConstant.UPLOAD_TYPE_OSS.equals(uploadType)){
                     dbPath = OssBootUtil.upload(in,relativePath);
                 }
@@ -138,6 +140,8 @@ public class CommonUtils {
         try {
             if (CommonConstant.UPLOAD_TYPE_MINIO.equals(uploadType)) {
                 url = MinioUtil.upload(file, bizPath);
+            } else if (CommonConstant.UPLOAD_TYPE_R2.equals(uploadType)) {
+                url = CloudflareR2Util.upload(file, bizPath);
             } else {
                 url = OssBootUtil.upload(file, bizPath);
             }
@@ -206,6 +210,8 @@ public class CommonUtils {
         try {
             if (CommonConstant.UPLOAD_TYPE_MINIO.equals(uploadType)) {
                 url = MinioUtil.upload(file, bizPath, customBucket);
+            } else if (CommonConstant.UPLOAD_TYPE_R2.equals(uploadType)) {
+                url = CloudflareR2Util.upload(file, bizPath, customBucket);
             } else {
                 url = OssBootUtil.upload(file, bizPath, customBucket);
             }

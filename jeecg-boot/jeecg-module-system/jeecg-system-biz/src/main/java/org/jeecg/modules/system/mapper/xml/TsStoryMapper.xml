@@ -50,4 +50,34 @@
         FOR UPDATE
     </select>
 
+    <select id="selectPublicStoryPage" resultType="org.jeecg.modules.system.vo.tsstory.TsStoryPublicVo">
+        SELECT
+            s.id AS id,
+            s.title AS title,
+            s.story_intro AS storyIntro,
+            s.story_mode AS storyMode,
+            s.cover_url AS coverUrl,
+            COALESCE(st.follower_count, 0) AS followerCount,
+            COALESCE(st.dialogue_count, 0) AS dialogueCount,
+            COALESCE(NULLIF(u.realname, ''), u.username) AS authorName,
+            u.avatar AS authorAvatar,
+            s.updated_at AS updatedAt
+        FROM ts_story_info s
+        LEFT JOIN ts_story_stat st ON st.story_id = s.id
+        LEFT JOIN sys_user u ON u.id = s.user_id
+        WHERE s.is_deleted = 0
+          AND s.is_public = 1
+          AND (s.status IS NULL OR s.status != 9)
+        <if test="keyword != null and keyword != ''">
+            AND (
+                s.title LIKE CONCAT('%', #{keyword}, '%')
+                OR s.story_intro LIKE CONCAT('%', #{keyword}, '%')
+            )
+        </if>
+        <if test="storyMode != null and storyMode != ''">
+            AND s.story_mode = #{storyMode}
+        </if>
+        ORDER BY s.updated_at DESC, s.id DESC
+    </select>
+
 </mapper>

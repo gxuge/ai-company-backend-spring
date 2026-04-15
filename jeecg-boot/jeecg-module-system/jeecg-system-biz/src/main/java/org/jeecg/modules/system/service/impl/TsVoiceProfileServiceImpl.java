@@ -11,16 +11,20 @@ import org.jeecg.modules.aop.TsVoiceProfileValidationAspect.CheckTsVoiceProfileE
 import org.jeecg.modules.openapi.dto.MiniMaxTtsRequestDto;
 import org.jeecg.modules.openapi.service.IMiniMaxDemoService;
 import org.jeecg.modules.openapi.vo.MiniMaxTtsResponseVo;
+import org.jeecg.modules.system.dto.tsuservoiceprofile.TsUserVoiceProfileRenameDto;
 import org.jeecg.modules.system.dto.tsvoiceprofile.TsVoiceProfilePreviewDto;
 import org.jeecg.modules.system.dto.tsvoiceprofile.TsVoiceProfileQueryDto;
 import org.jeecg.modules.system.dto.tsvoiceprofile.TsVoiceProfileTagSaveDto;
+import org.jeecg.modules.system.entity.TsUserVoiceProfile;
 import org.jeecg.modules.system.entity.TsVoiceProfile;
 import org.jeecg.modules.system.entity.TsVoiceProfileTag;
 import org.jeecg.modules.system.entity.TsVoiceTag;
 import org.jeecg.modules.system.mapper.TsUserVoiceConfigMapper;
+import org.jeecg.modules.system.mapper.TsUserVoiceProfileMapper;
 import org.jeecg.modules.system.mapper.TsVoiceProfileMapper;
 import org.jeecg.modules.system.mapper.TsVoiceProfileTagMapper;
 import org.jeecg.modules.system.mapper.TsVoiceTagMapper;
+import org.jeecg.modules.system.po.tsuservoiceprofile.TsUserVoiceProfileQueryPo;
 import org.jeecg.modules.system.po.tsvoiceprofile.TsVoiceProfileQueryPo;
 import org.jeecg.modules.system.po.tsvoiceprofile.TsVoiceProfileTagSavePo;
 import org.jeecg.modules.system.service.ITsVoiceProfileService;
@@ -49,6 +53,9 @@ public class TsVoiceProfileServiceImpl extends ServiceImpl<TsVoiceProfileMapper,
     private static final String DEFAULT_PREVIEW_TEXT = "\u8FD9\u662F\u8BD5\u542C\u6587\u672C\uFF0C\u8BF7\u6839\u636E\u97F3\u8272\u53C2\u6570\u64AD\u653E\u3002";
     private static final String MSG_VOICE_NOT_FOUND_OR_DELETED = "\u97F3\u8272\u4E0D\u5B58\u5728\u6216\u5DF2\u5220\u9664";
     private static final String MSG_VOICE_NOT_FOUND_OR_DISABLED = "\u97F3\u8272\u4E0D\u5B58\u5728\u6216\u5DF2\u505C\u7528";
+    private static final String MSG_USER_VOICE_NOT_FOUND = "\u6211\u7684\u97F3\u8272\u4E0D\u5B58\u5728\u6216\u65E0\u6743\u9650\u8BBF\u95EE";
+    private static final String MSG_USER_VOICE_RENAME_FORBIDDEN = "\u6211\u7684\u97F3\u8272\u4E0D\u5B58\u5728\u6216\u65E0\u6743\u9650\u4FEE\u6539";
+    private static final String MSG_USER_VOICE_DELETE_FORBIDDEN = "\u6211\u7684\u97F3\u8272\u4E0D\u5B58\u5728\u6216\u65E0\u6743\u9650\u5220\u9664";
 
     @Resource
     private TsVoiceProfileTagMapper tsVoiceProfileTagMapper;
@@ -58,6 +65,9 @@ public class TsVoiceProfileServiceImpl extends ServiceImpl<TsVoiceProfileMapper,
 
     @Resource
     private TsUserVoiceConfigMapper tsUserVoiceConfigMapper;
+
+    @Resource
+    private TsUserVoiceProfileMapper tsUserVoiceProfileMapper;
 
     @Resource
     private IMiniMaxDemoService miniMaxDemoService;
@@ -108,6 +118,87 @@ public class TsVoiceProfileServiceImpl extends ServiceImpl<TsVoiceProfileMapper,
             }
         }
         return Result.OK(TsVoiceProfileVoConverter.fromPage(pageData, profileTagIds, tagVoMap));
+    }
+
+    @Override
+    public Result<Page<TsVoiceProfileVo>> pageUserVoiceProfiles(LoginUser user, TsVoiceProfileQueryDto request) {
+        TsUserVoiceProfileQueryPo queryPo = TsUserVoiceProfileQueryPo.fromRequest(user.getId(), request);
+        Page<TsVoiceProfile> page = new Page<>(queryPo.getPageNo(), queryPo.getPageSize());
+        Page<TsVoiceProfile> pageData = tsUserVoiceProfileMapper.selectUserVoiceProfilePage(page, queryPo);
+
+        List<Long> voiceProfileIds = new ArrayList<>();
+        if (pageData.getRecords() != null) {
+            for (TsVoiceProfile item : pageData.getRecords()) {
+                if (item != null && item.getId() != null) {
+                    voiceProfileIds.add(item.getId());
+                }
+            }
+        }
+
+        Map<Long, List<Long>> profileTagIds = new HashMap<>();
+        Map<Long, TsVoiceTagVo> tagVoMap = new HashMap<>();
+        if (!voiceProfileIds.isEmpty()) {
+            List<TsVoiceProfileTag> relList = tsVoiceProfileTagMapper.selectByVoiceProfileIds(voiceProfileIds);
+            Set<Long> tagIdSet = new LinkedHashSet<>();
+            if (relList != null) {
+                for (TsVoiceProfileTag rel : relList) {
+                    if (rel == null || rel.getVoiceProfileId() == null || rel.getTagId() == null) {
+                        continue;
+                    }
+                    List<Long> tagIds = profileTagIds.get(rel.getVoiceProfileId());
+                    if (tagIds == null) {
+                        tagIds = new ArrayList<>();
+                        profileTagIds.put(rel.getVoiceProfileId(), tagIds);
+                    }
+                    tagIds.add(rel.getTagId());
+                    tagIdSet.add(rel.getTagId());
+                }
+            }
+            if (!tagIdSet.isEmpty()) {
+                List<TsVoiceTag> tags = tsVoiceTagMapper.selectBatchIds(new ArrayList<>(tagIdSet));
+                if (tags != null) {
+                    for (TsVoiceTag tag : tags) {
+                        if (tag != null && tag.getId() != null) {
+                            tagVoMap.put(tag.getId(), TsVoiceTagVoConverter.fromEntity(tag));
+                        }
+                    }
+                }
+            }
+        }
+        return Result.OK(TsVoiceProfileVoConverter.fromPage(pageData, profileTagIds, tagVoMap));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Result<TsVoiceProfileVo> renameUserVoiceProfile(LoginUser user, Long voiceProfileId, TsUserVoiceProfileRenameDto request) {
+        request.normalize();
+        TsUserVoiceProfile relation = tsUserVoiceProfileMapper.selectOwnedActive(voiceProfileId, user.getId());
+        if (relation == null) {
+            throw new JeecgBootException(MSG_USER_VOICE_RENAME_FORBIDDEN);
+        }
+
+        relation.setCustomName(request.getName());
+        relation.setUpdatedAt(new Date());
+        tsUserVoiceProfileMapper.updateById(relation);
+
+        TsVoiceProfile profile = tsUserVoiceProfileMapper.selectOwnedActiveVoiceProfile(voiceProfileId, user.getId());
+        if (profile == null) {
+            throw new JeecgBootException(MSG_USER_VOICE_NOT_FOUND);
+        }
+        return Result.OK("淇敼鎴愬姛", buildVoiceProfileVo(profile));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Result<?> deleteUserVoiceProfile(LoginUser user, Long voiceProfileId) {
+        TsUserVoiceProfile relation = tsUserVoiceProfileMapper.selectOwnedActive(voiceProfileId, user.getId());
+        if (relation == null) {
+            throw new JeecgBootException(MSG_USER_VOICE_DELETE_FORBIDDEN);
+        }
+        relation.setStatus(0);
+        relation.setUpdatedAt(new Date());
+        tsUserVoiceProfileMapper.updateById(relation);
+        return Result.OK("鍒犻櫎鎴愬姛");
     }
 
     @Override
@@ -207,6 +298,43 @@ public class TsVoiceProfileServiceImpl extends ServiceImpl<TsVoiceProfileMapper,
             }
         }
         return Result.OK("\u4FDD\u5B58\u6210\u529F", result);
+    }
+
+    private TsVoiceProfileVo buildVoiceProfileVo(TsVoiceProfile profile) {
+        if (profile == null || profile.getId() == null) {
+            return null;
+        }
+        List<TsVoiceProfileTag> relList = tsVoiceProfileTagMapper.selectByVoiceProfileIds(
+                Collections.singletonList(profile.getId())
+        );
+        List<Long> tagIds = new ArrayList<>();
+        if (relList != null) {
+            for (TsVoiceProfileTag rel : relList) {
+                if (rel != null && rel.getTagId() != null) {
+                    tagIds.add(rel.getTagId());
+                }
+            }
+        }
+        if (tagIds.isEmpty()) {
+            return TsVoiceProfileVoConverter.fromEntity(profile, tagIds, new ArrayList<>());
+        }
+        List<TsVoiceTag> tags = tsVoiceTagMapper.selectBatchIds(tagIds);
+        Map<Long, TsVoiceTagVo> tagVoMap = new HashMap<>();
+        if (tags != null) {
+            for (TsVoiceTag tag : tags) {
+                if (tag != null && tag.getId() != null) {
+                    tagVoMap.put(tag.getId(), TsVoiceTagVoConverter.fromEntity(tag));
+                }
+            }
+        }
+        List<TsVoiceTagVo> tagVos = new ArrayList<>();
+        for (Long tagId : tagIds) {
+            TsVoiceTagVo tagVo = tagVoMap.get(tagId);
+            if (tagVo != null) {
+                tagVos.add(tagVo);
+            }
+        }
+        return TsVoiceProfileVoConverter.fromEntity(profile, tagIds, tagVos);
     }
 
     @Override

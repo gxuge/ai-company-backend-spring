@@ -63,6 +63,9 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/ts-voice-profiles` | 查询音色档案列表 |
+| GET | `/ts-user-voice-profiles` | 查询当前用户音色库列表 |
+| PUT | `/ts-user-voice-profiles/{id}` | 重命名当前用户音色（`id` 为 voiceProfileId） |
+| DELETE | `/ts-user-voice-profiles/{id}` | 从当前用户音色库移除音色（`id` 为 voiceProfileId） |
 | DELETE | `/ts-voice-profiles` | 删除音色档案 |
 | GET | `/ts-voice-profiles/tags` | 查询音色标签关系 |
 | PUT | `/ts-voice-profiles/tags` | 保存音色标签关系 |

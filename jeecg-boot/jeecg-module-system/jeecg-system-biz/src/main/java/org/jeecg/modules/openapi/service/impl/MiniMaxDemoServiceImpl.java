@@ -2,6 +2,7 @@ package org.jeecg.modules.openapi.service.impl;
 
 import org.jeecg.common.constant.CommonConstant;
 import org.jeecg.common.exception.JeecgBootBizTipException;
+import org.jeecg.common.util.CloudflareR2Util;
 import org.jeecg.common.util.FileDownloadUtils;
 import org.jeecg.common.util.MinioUtil;
 import org.jeecg.common.util.oss.OssBootUtil;
@@ -18,9 +19,11 @@ import org.jeecg.modules.openapi.vo.MiniMaxChatResponseVo;
 import org.jeecg.modules.openapi.vo.MiniMaxImageResponseVo;
 import org.jeecg.modules.openapi.vo.MiniMaxTtsResponseVo;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.util.FileCopyUtils;
 import org.springframework.util.StringUtils;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -36,6 +39,7 @@ import java.util.UUID;
  * MiniMax 演示服务实现。
  */
 @Service
+@Slf4j
 public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
 
     private final ChatClient chatClient;
@@ -43,17 +47,20 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
     private final MiniMaxDemoGuardConfigBean guardConfig;
     private final MiniMaxDemoConfigBean miniMaxDemoConfig;
     private final JeecgBaseConfig jeecgBaseConfig;
+    private final Environment environment;
 
     public MiniMaxDemoServiceImpl(ChatClient.Builder chatClientBuilder,
                                   IMiniMaxMediaService miniMaxMediaService,
                                   MiniMaxDemoGuardConfigBean guardConfig,
                                   MiniMaxDemoConfigBean miniMaxDemoConfig,
-                                  JeecgBaseConfig jeecgBaseConfig) {
+                                  JeecgBaseConfig jeecgBaseConfig,
+                                  Environment environment) {
         this.chatClient = chatClientBuilder.build();
         this.miniMaxMediaService = miniMaxMediaService;
         this.guardConfig = guardConfig;
         this.miniMaxDemoConfig = miniMaxDemoConfig;
         this.jeecgBaseConfig = jeecgBaseConfig;
+        this.environment = environment;
     }
 
     /**
@@ -171,7 +178,8 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
                 String ext = guessImageExtension(imageUrl);
                 String uploadedUrl = uploadBinary(imageBytes, miniMaxDemoConfig.getImageUploadBizPath(), ext);
                 uploadedUrls.add(uploadedUrl);
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                log.warn("上传生图到对象存储失败，回退原图URL。sourceUrl={}, reason={}", imageUrl, e.getMessage());
                 uploadedUrls.add(imageUrl);
             }
         }
@@ -278,11 +286,14 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
                     throw new JeecgBootBizTipException("failed to create local upload directory");
                 }
                 FileCopyUtils.copy(data, target);
-                return "#{domainURL}/" + objectKey;
+                return buildLocalStaticFileUrl(objectKey);
             }
             try (InputStream inputStream = new ByteArrayInputStream(data)) {
                 if (CommonConstant.UPLOAD_TYPE_MINIO.equals(uploadType)) {
                     return MinioUtil.upload(inputStream, objectKey);
+                }
+                if (CommonConstant.UPLOAD_TYPE_R2.equals(uploadType)) {
+                    return CloudflareR2Util.upload(inputStream, objectKey);
                 }
                 if (CommonConstant.UPLOAD_TYPE_OSS.equals(uploadType)) {
                     return OssBootUtil.upload(inputStream, objectKey);
@@ -294,6 +305,42 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
         } catch (Exception e) {
             throw new JeecgBootBizTipException("upload generated media failed: " + e.getMessage());
         }
+    }
+
+    /**
+     * 构建本地上传文件可访问路径（不再返回未替换的 #{domainURL} 占位符）。
+     *
+     * @param objectKey 存储对象 key
+     * @return 静态访问路径
+     */
+    private String buildLocalStaticFileUrl(String objectKey) {
+        String safeObjectKey = objectKey == null ? "" : objectKey.replace("\\", "/");
+        String contextPath = environment.getProperty("server.servlet.context-path", "");
+        String normalizedContextPath = normalizeContextPath(contextPath);
+        return normalizedContextPath + "/sys/common/static/" + safeObjectKey;
+    }
+
+    /**
+     * 规范化 context-path：空或 "/" 返回空串，非空保证前导 "/" 且无尾部 "/"
+     *
+     * @param contextPath 原始 context-path
+     * @return 规范化后的 context-path
+     */
+    private String normalizeContextPath(String contextPath) {
+        if (!StringUtils.hasText(contextPath)) {
+            return "";
+        }
+        String value = contextPath.trim();
+        if ("/".equals(value)) {
+            return "";
+        }
+        if (!value.startsWith("/")) {
+            value = "/" + value;
+        }
+        if (value.endsWith("/")) {
+            value = value.substring(0, value.length() - 1);
+        }
+        return value;
     }
 
     /**

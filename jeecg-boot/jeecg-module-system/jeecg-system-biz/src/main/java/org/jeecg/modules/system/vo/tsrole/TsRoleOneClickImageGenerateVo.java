@@ -4,6 +4,10 @@ import lombok.Data;
 
 @Data
 public class TsRoleOneClickImageGenerateVo {
+    /** 是否已受理 */
+    private Boolean accepted;
+    /** 生成状态（pending/running/success/failed） */
+    private String generateStatus;
     /** 生成结果图片URL */
     private String imageUrl;
     /** 图片资产ID */

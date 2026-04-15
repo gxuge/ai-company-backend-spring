@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsUserVoiceProfileMapper">
+
+    <select id="selectUserVoiceProfilePage" resultType="org.jeecg.modules.system.entity.TsVoiceProfile">
+        SELECT
+            vp.id,
+            COALESCE(NULLIF(uvp.custom_name, ''), vp.name) AS name,
+            vp.provider_voice_id,
+            vp.avatar_url,
+            vp.gender,
+            vp.age_group,
+            vp.status,
+            vp.sort_no,
+            vp.created_at,
+            vp.updated_at
+        FROM ts_user_voice_profile uvp
+        INNER JOIN ts_voice_profile vp ON vp.id = uvp.voice_profile_id
+        WHERE uvp.user_id = #{query.userId}
+          AND vp.status != 0
+        <choose>
+            <when test="query != null and query.status != null">
+                AND uvp.status = #{query.status}
+            </when>
+            <otherwise>
+                AND uvp.status != 0
+            </otherwise>
+        </choose>
+        <if test="query != null and query.keyword != null and query.keyword != ''">
+            AND (
+                COALESCE(NULLIF(uvp.custom_name, ''), vp.name) LIKE CONCAT('%', #{query.keyword}, '%')
+                OR vp.name LIKE CONCAT('%', #{query.keyword}, '%')
+            )
+        </if>
+        <if test="query != null and query.gender != null and query.gender != ''">
+            AND vp.gender = #{query.gender}
+        </if>
+        <if test="query != null and query.ageGroup != null and query.ageGroup != ''">
+            AND vp.age_group = #{query.ageGroup}
+        </if>
+        ORDER BY uvp.updated_at DESC, uvp.id DESC
+    </select>
+
+    <select id="selectOwnedActive" resultType="org.jeecg.modules.system.entity.TsUserVoiceProfile">
+        SELECT *
+        FROM ts_user_voice_profile
+        WHERE user_id = #{userId}
+          AND voice_profile_id = #{voiceProfileId}
+          AND status != 0
+        LIMIT 1
+    </select>
+
+    <select id="selectOwnedActiveVoiceProfile" resultType="org.jeecg.modules.system.entity.TsVoiceProfile">
+        SELECT
+            vp.id,
+            COALESCE(NULLIF(uvp.custom_name, ''), vp.name) AS name,
+            vp.provider_voice_id,
+            vp.avatar_url,
+            vp.gender,
+            vp.age_group,
+            vp.status,
+            vp.sort_no,
+            vp.created_at,
+            vp.updated_at
+        FROM ts_user_voice_profile uvp
+        INNER JOIN ts_voice_profile vp ON vp.id = uvp.voice_profile_id
+        WHERE uvp.user_id = #{userId}
+          AND uvp.voice_profile_id = #{voiceProfileId}
+          AND uvp.status != 0
+          AND vp.status != 0
+        LIMIT 1
+    </select>
+
+    <insert id="insertOrReactivate">
+        INSERT INTO ts_user_voice_profile (
+            user_id,
+            voice_profile_id,
+            status,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            #{userId},
+            #{voiceProfileId},
+            1,
+            #{now},
+            #{now}
+        )
+        ON DUPLICATE KEY UPDATE
+            status = 1,
+            updated_at = #{now}
+    </insert>
+
+</mapper>
+

@@ -247,6 +247,7 @@ public interface CommonConstant {
     String UPLOAD_TYPE_LOCAL = "local";
     String UPLOAD_TYPE_MINIO = "minio";
     String UPLOAD_TYPE_OSS = "alioss";
+    String UPLOAD_TYPE_R2 = "r2";
 
     /**
      * 文档上传自定义桶名称

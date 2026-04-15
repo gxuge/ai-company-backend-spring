@@ -146,3 +146,51 @@
 - MiniMax 配置已在 `system-start` 模块集中维护。
 - MiniMax 下游 service/dto/vo/config 已迁移到 `openapi` 现有目录（config/dto/vo/service/impl）。
 - `prompts` 资源目录已迁移到 `jeecg-system-biz/src/main/resources/prompts`。
+## 任务 ID
+`20260414-sound-edit-user-voice-profiles-api`
+
+### 背景
+- `pages/sound-edit` 的“我的音色库”在前端仍是降级提示，缺少真实后端接口（列表/重命名/删除）。
+- 需要补齐接口能力并给出可联调的文档与验证证据。
+
+### 目标
+- 新增 `GET /sys/ts-user-voice-profiles`
+- 新增 `PUT /sys/ts-user-voice-profiles/{id}`
+- 新增 `DELETE /sys/ts-user-voice-profiles/{id}`
+- 同步 `docs/api/ts-api.md` 与 SQL 基线。
+
+### 范围
+- 范围内：`TsVoiceProfileController`、`ITsVoiceProfileService`、`TsVoiceProfileServiceImpl`、`TsUserVoiceProfile*`（Entity/Mapper/PO/DTO）、`db/ai-company.sql`、`docs/api/ts-api.md`
+- 范围外：前端 UI 布局改动、无关模块重构。
+
+### 执行步骤
+1. 落地 `ts_user_voice_profile` 表结构及用户归属字段。
+2. 新增我的音色查询/重命名/删除接口，并统一做登录用户归属校验。
+3. 保持 `TsUserVoiceConfigServiceImpl` 默认音色初始化兼容逻辑。
+4. 更新 API 文档并完成编译验收。
+
+### 进度
+- [x] 步骤 1
+- [x] 步骤 2
+- [x] 步骤 3
+- [x] 步骤 4
+
+### 决策记录
+- 决策：将“我的音色库”独立为 `ts_user_voice_profile`，避免与公共推荐音色耦合。
+- 备选方案：
+  - 在 `ts_voice_profile` 上直接增加用户字段（会污染公共库语义）。
+  - 继续前端降级提示（无法满足重命名/删除真实能力）。
+- 选择原因：用户隔离清晰、扩展性更好、与现有音色配置链路兼容。
+
+### 风险与回滚
+- 风险：历史用户首次进入时可能出现个人音色为空。
+- 监控/告警信号：`GET /sys/ts-user-voice-profiles` 空列表比例异常。
+- 回滚步骤：回退本次接口与表变更，前端保持降级提示模式。
+
+### 验证记录
+- 编译验证：`mvn -f D:\project_demo\ai-company-backend-spring\jeecg-boot\pom.xml -pl jeecg-module-system/jeecg-system-biz -am -DskipTests compile`
+- 结果：`BUILD SUCCESS`
+- 手工验证：接口路径、入参、权限校验与文档字段对齐。
+
+### 结果
+- 已完成 `pages/sound-edit` 对接所需后端接口基础能力，可进入前端真实联调。

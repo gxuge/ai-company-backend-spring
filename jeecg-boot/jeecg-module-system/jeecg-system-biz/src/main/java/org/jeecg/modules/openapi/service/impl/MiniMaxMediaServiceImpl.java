@@ -1,5 +1,7 @@
 package org.jeecg.modules.openapi.service.impl;
 
+import com.alibaba.fastjson.JSONObject;
+import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.exception.JeecgBootBizTipException;
 import org.jeecg.modules.openapi.config.MiniMaxDemoConfigBean;
 import org.jeecg.modules.openapi.service.IMiniMaxMediaService;
@@ -19,8 +21,10 @@ import java.util.Map;
 /**
  * MiniMax speech and image generation service.
  */
+@Slf4j
 @Service
 public class MiniMaxMediaServiceImpl implements IMiniMaxMediaService {
+    private static final int LOG_MAX_LEN = 800;
 
     private final RestClient miniMaxRestClient;
     private final MiniMaxDemoConfigBean config;
@@ -33,6 +37,7 @@ public class MiniMaxMediaServiceImpl implements IMiniMaxMediaService {
         RestClient.Builder clientBuilder = builder
                 .requestFactory(requestFactory)
                 .baseUrl(config.getApiBaseUrl())
+                .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
         if (StringUtils.hasText(config.getApiKey())) {
             clientBuilder = clientBuilder.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + config.getApiKey().trim());
@@ -111,27 +116,44 @@ public class MiniMaxMediaServiceImpl implements IMiniMaxMediaService {
     private Map<String, Object> postForMap(String uri, Map<String, Object> request, String apiName) {
         int maxAttempts = Math.max(config.getRetryMaxAttempts(), 1);
         RuntimeException lastException = null;
+        String traceId = apiName + "-" + System.currentTimeMillis();
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                return miniMaxRestClient.post()
+                log.info("[MINIMAX_REQ] traceId={} api={} attempt={}/{} uri={} payload={}",
+                        traceId, apiName, attempt, maxAttempts, uri, clip(JSONObject.toJSONString(request)));
+
+                String rawResponse = miniMaxRestClient.post()
                         .uri(uri)
                         .body(request)
                         .retrieve()
-                        .body(Map.class);
+                        .body(String.class);
+
+                if (!StringUtils.hasText(rawResponse)) {
+                    throw new JeecgBootBizTipException("MiniMax " + apiName + " empty response body");
+                }
+                log.info("[MINIMAX_RES] traceId={} api={} attempt={}/{} body={}",
+                        traceId, apiName, attempt, maxAttempts, clip(rawResponse));
+                return JSONObject.parseObject(rawResponse, Map.class);
             } catch (RestClientResponseException e) {
                 lastException = e;
+                log.error("[MINIMAX_ERR] traceId={} api={} attempt={}/{} status={} body={}",
+                        traceId, apiName, attempt, maxAttempts, e.getStatusCode().value(), clip(e.getResponseBodyAsString()));
                 if (!shouldRetryByStatus(e.getStatusCode().value(), attempt, maxAttempts)) {
                     throw new JeecgBootBizTipException("MiniMax " + apiName + " request failed: " + e.getStatusCode().value());
                 }
                 sleepBeforeRetry();
             } catch (ResourceAccessException e) {
                 lastException = e;
+                log.error("[MINIMAX_ERR] traceId={} api={} attempt={}/{} type=ResourceAccessException msg={}",
+                        traceId, apiName, attempt, maxAttempts, clip(e.getMessage()));
                 if (attempt >= maxAttempts) {
                     break;
                 }
                 sleepBeforeRetry();
             } catch (RuntimeException e) {
                 lastException = e;
+                log.error("[MINIMAX_ERR] traceId={} api={} attempt={}/{} type={} msg={}",
+                        traceId, apiName, attempt, maxAttempts, e.getClass().getSimpleName(), clip(e.getMessage()));
                 if (attempt >= maxAttempts) {
                     break;
                 }
@@ -140,6 +162,17 @@ public class MiniMaxMediaServiceImpl implements IMiniMaxMediaService {
         }
         String message = lastException == null ? "unknown error" : lastException.getMessage();
         throw new JeecgBootBizTipException("MiniMax " + apiName + " request failed: " + message);
+    }
+
+    private String clip(String value) {
+        if (!StringUtils.hasText(value)) {
+            return "";
+        }
+        String text = value.trim();
+        if (text.length() <= LOG_MAX_LEN) {
+            return text;
+        }
+        return text.substring(0, LOG_MAX_LEN) + "...(truncated)";
     }
 
     private boolean shouldRetryByStatus(int statusCode, int attempt, int maxAttempts) {

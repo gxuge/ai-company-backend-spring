@@ -10,6 +10,7 @@ import org.jeecg.modules.system.entity.TsVoiceProfile;
 import org.jeecg.modules.system.entity.TsVoiceProfileTag;
 import org.jeecg.modules.system.entity.TsVoiceTag;
 import org.jeecg.modules.system.mapper.TsUserVoiceConfigMapper;
+import org.jeecg.modules.system.mapper.TsUserVoiceProfileMapper;
 import org.jeecg.modules.system.mapper.TsVoiceProfileMapper;
 import org.jeecg.modules.system.mapper.TsVoiceProfileTagMapper;
 import org.jeecg.modules.system.mapper.TsVoiceTagMapper;
@@ -44,6 +45,9 @@ public class TsUserVoiceConfigServiceImpl extends ServiceImpl<TsUserVoiceConfigM
 
     @Resource
     private TsVoiceTagMapper tsVoiceTagMapper;
+
+    @Resource
+    private TsUserVoiceProfileMapper tsUserVoiceProfileMapper;
     @Override
     public Result<TsUserVoiceConfigVo> getCurrentConfig(LoginUser user) {
         String userId = user.getId();
@@ -124,6 +128,10 @@ public class TsUserVoiceConfigServiceImpl extends ServiceImpl<TsUserVoiceConfigM
             savePo.applyTo(config);
             config.setUpdatedAt(now);
             this.updateById(config);
+        }
+
+        if (config.getSelectedVoiceProfileId() != null) {
+            tsUserVoiceProfileMapper.insertOrReactivate(userId, config.getSelectedVoiceProfileId(), now);
         }
 
         TsVoiceProfileVo selectedVoiceProfile = null;

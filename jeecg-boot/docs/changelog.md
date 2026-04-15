@@ -27,3 +27,4 @@
 - [2026-04-02] [refactor] [ts-role] 一键生成服务提取 `PromptRuntimeUtil`/`RoleGenerateSnapshotUtil`/`VoiceProfileMatchUtil` 三个工具类（含中文注释）；图片地址提取逻辑改为在业务方法内联
 - [2026-04-02] [refactor] [ts-role] 继续收敛 `TsRoleOneClickGenerateServiceImpl`：移除全部业务私有 helper，仅保留三个业务入口方法；其余能力统一下沉到 utils
 - [2026-04-02] [feat] [ts-role] 新增 `POST /sys/ts-roles/generate-role` 随机完整角色编排接口（设定+形象+声音），`storySetting/storyBackground` 改为非必填，并新增模板 `role_generate_role_v1`
+- [2026-04-14] [feat] [ts-voice] 新增“我的音色库”接口：`GET /sys/ts-user-voice-profiles`、`PUT /sys/ts-user-voice-profiles/{id}`、`DELETE /sys/ts-user-voice-profiles/{id}`，并同步 `docs/api/ts-api.md` 与 `db/ai-company.sql`

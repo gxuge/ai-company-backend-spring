@@ -24,14 +24,18 @@ public class TsChatAiReplyDto {
     /** 指定 MiniMax 音色 ID（可选，优先级最高） */
     private String voiceId;
 
+    /** 是否生成语音，默认 true。false 时仅生成文本回复 */
+    private Boolean generateVoice;
+
     /** 规范化默认参数，避免历史窗口过大或非法 */
     public void applyDefaults() {
         if (this.historyCount == null || this.historyCount <= 0) {
             this.historyCount = 12;
-            return;
-        }
-        if (this.historyCount > 30) {
+        } else if (this.historyCount > 30) {
             this.historyCount = 30;
+        }
+        if (this.generateVoice == null) {
+            this.generateVoice = Boolean.TRUE;
         }
     }
 }
