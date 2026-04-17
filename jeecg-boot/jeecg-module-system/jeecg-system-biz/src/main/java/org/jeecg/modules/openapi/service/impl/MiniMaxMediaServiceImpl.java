@@ -15,6 +15,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -47,19 +48,33 @@ public class MiniMaxMediaServiceImpl implements IMiniMaxMediaService {
 
     @SuppressWarnings("unchecked")
     @Override
-    public String textToSpeech(String text, String voiceId) {
+    public String textToSpeech(String text, String voiceId, Double speed, Double pitch, Double volume) {
         if (!StringUtils.hasText(text)) {
             throw new JeecgBootBizTipException("text must not be blank");
         }
         if (!StringUtils.hasText(voiceId)) {
             throw new JeecgBootBizTipException("voiceId must not be blank");
         }
+        Double normalizedSpeed = normalizeSpeed(speed);
+        Double normalizedPitch = normalizePitch(pitch);
+        Double normalizedVolume = normalizeVolume(volume);
+        Map<String, Object> voiceSetting = new LinkedHashMap<>();
+        voiceSetting.put("voice_id", voiceId);
+        if (normalizedSpeed != null) {
+            voiceSetting.put("speed", normalizedSpeed);
+        }
+        if (normalizedPitch != null) {
+            voiceSetting.put("pitch", normalizedPitch);
+        }
+        if (normalizedVolume != null) {
+            voiceSetting.put("vol", normalizedVolume);
+        }
         Map<String, Object> req = Map.of(
                 "model", config.getTtsModel(),
                 "text", text,
                 "stream", false,
                 "output_format", "hex",
-                "voice_setting", Map.of("voice_id", voiceId),
+                "voice_setting", voiceSetting,
                 "audio_setting", Map.of("format", "mp3")
         );
         Map<String, Object> resp = postForMap("/v1/t2a_v2", req, "tts");
@@ -71,6 +86,25 @@ public class MiniMaxMediaServiceImpl implements IMiniMaxMediaService {
             throw new JeecgBootBizTipException("MiniMax TTS response missing audio field");
         }
         return audio.toString();
+    }
+
+    private Double normalizeSpeed(Double value) {
+        return clamp(value, 0.8D, 1.2D);
+    }
+
+    private Double normalizePitch(Double value) {
+        return clamp(value, -6D, 6D);
+    }
+
+    private Double normalizeVolume(Double value) {
+        return clamp(value, 0.8D, 1.2D);
+    }
+
+    private Double clamp(Double value, double min, double max) {
+        if (value == null) {
+            return null;
+        }
+        return Math.max(min, Math.min(max, value));
     }
 
     @SuppressWarnings("unchecked")

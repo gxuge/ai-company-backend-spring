@@ -20,10 +20,17 @@ import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickVoiceGenerateDto;
 import org.jeecg.modules.system.dto.tsuserimageasset.TsUserImageAssetSaveDto;
 import org.jeecg.modules.system.entity.TsRoleImageGenerateRecord;
 import org.jeecg.modules.system.entity.TsRole;
+import org.jeecg.modules.system.entity.TsUserVoiceConfig;
 import org.jeecg.modules.system.entity.TsVoiceProfile;
+import org.jeecg.modules.system.entity.TsVoiceProfileTag;
+import org.jeecg.modules.system.entity.TsVoiceTag;
 import org.jeecg.modules.system.mapper.TsRoleImageGenerateRecordMapper;
 import org.jeecg.modules.system.mapper.TsRoleMapper;
+import org.jeecg.modules.system.mapper.TsUserVoiceConfigMapper;
+import org.jeecg.modules.system.mapper.TsUserVoiceProfileMapper;
 import org.jeecg.modules.system.mapper.TsVoiceProfileMapper;
+import org.jeecg.modules.system.mapper.TsVoiceProfileTagMapper;
+import org.jeecg.modules.system.mapper.TsVoiceTagMapper;
 import org.jeecg.modules.system.service.ITsRoleGenerateService;
 import org.jeecg.modules.system.service.ITsUserImageAssetService;
 import org.jeecg.modules.system.util.PromptRuntimeUtil;
@@ -35,15 +42,27 @@ import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickImageGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickSettingGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickVoiceGenerateVo;
 import org.jeecg.modules.system.vo.tsuserimageasset.TsUserImageAssetVo;
+import org.jeecg.modules.system.vo.tsvoiceprofile.TsVoiceProfileVo;
+import org.jeecg.modules.system.vo.tsvoiceprofile.TsVoiceProfileVoConverter;
+import org.jeecg.modules.system.vo.tsvoicetag.TsVoiceTagVo;
+import org.jeecg.modules.system.vo.tsvoicetag.TsVoiceTagVoConverter;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 角色一键生成服务实现。
@@ -70,6 +89,9 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
     private static final String IMAGE_GENERATE_STATUS_SUCCESS = "success";
     private static final String IMAGE_GENERATE_STATUS_FAILED = "failed";
     private static final int IMAGE_FAIL_REASON_MAX_LENGTH = 500;
+    private static final int VOICE_CANDIDATE_LIMIT = 20;
+    private static final BigDecimal DEFAULT_VOICE_PITCH_PERCENT = BigDecimal.ZERO;
+    private static final BigDecimal DEFAULT_VOICE_SPEED_RATE = new BigDecimal("1.00");
 
     @Resource
     private IMiniMaxDemoService miniMaxDemoService;
@@ -79,6 +101,14 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
     private ITsUserImageAssetService tsUserImageAssetService;
     @Resource
     private TsVoiceProfileMapper tsVoiceProfileMapper;
+    @Resource
+    private TsVoiceProfileTagMapper tsVoiceProfileTagMapper;
+    @Resource
+    private TsVoiceTagMapper tsVoiceTagMapper;
+    @Resource
+    private TsUserVoiceProfileMapper tsUserVoiceProfileMapper;
+    @Resource
+    private TsUserVoiceConfigMapper tsUserVoiceConfigMapper;
     @Resource
     private TsRoleMapper tsRoleMapper;
     @Resource

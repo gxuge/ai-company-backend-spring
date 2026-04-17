@@ -221,8 +221,10 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         boolean shouldGenerateVoice = Boolean.TRUE.equals(request.getGenerateVoice());
         Long resolvedVoiceProfileId = request.getVoiceProfileId();
         String resolvedVoiceId;
+        String voiceMatchSource;
         if (shouldGenerateVoice && StringUtils.hasText(request.getVoiceId())) {
             resolvedVoiceId = request.getVoiceId().trim();
+            voiceMatchSource = "VOICE_ID_DIRECT";
         } else if (shouldGenerateVoice) {
             Long voiceProfileId = request.getVoiceProfileId();
             if (voiceProfileId == null) {
@@ -243,9 +245,11 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
             }
             resolvedVoiceId = voiceProfile.getProviderVoiceId().trim();
             resolvedVoiceProfileId = voiceProfile.getId();
+            voiceMatchSource = "VOICE_PROFILE";
         } else {
             resolvedVoiceId = null;
             resolvedVoiceProfileId = null;
+            voiceMatchSource = null;
         }
 
         String audioUrl = null;
@@ -255,6 +259,9 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
             MiniMaxTtsRequestDto ttsRequest = new MiniMaxTtsRequestDto();
             ttsRequest.setText(assistantContent);
             ttsRequest.setVoiceId(resolvedVoiceId);
+            ttsRequest.setSpeed(request.getSpeed());
+            ttsRequest.setPitch(request.getPitch());
+            ttsRequest.setVolume(request.getVolume());
             ttsResponse = miniMaxDemoService.tts(ttsRequest);
             audioUrl = ttsResponse == null ? null : ttsResponse.getAudioUrl();
         if (!StringUtils.hasText(audioUrl)) {
@@ -264,6 +271,11 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         assistantContentJson = new JSONObject();
         assistantContentJson.put("audioUrl", audioUrl);
         assistantContentJson.put("voiceId", resolvedVoiceId);
+        assistantContentJson.put("voiceProfileId", resolvedVoiceProfileId);
+        assistantContentJson.put("matchSource", voiceMatchSource);
+        assistantContentJson.put("speed", request.getSpeed());
+        assistantContentJson.put("pitch", request.getPitch());
+        assistantContentJson.put("volume", request.getVolume());
         assistantContentJson.put("mimeType", MIME_TYPE_AUDIO_MPEG);
         }
 

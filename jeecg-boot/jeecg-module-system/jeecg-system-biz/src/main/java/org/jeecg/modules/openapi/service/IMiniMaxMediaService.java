@@ -12,9 +12,12 @@ public interface IMiniMaxMediaService {
      *
      * @param text 文本内容
      * @param voiceId 音色ID
+     * @param speed 语速（可空）
+     * @param pitch 音调（可空）
+     * @param volume 音量（可空）
      * @return 音频十六进制内容
      */
-    String textToSpeech(String text, String voiceId);
+    String textToSpeech(String text, String voiceId, Double speed, Double pitch, Double volume);
 
     /**
      * 文生图。

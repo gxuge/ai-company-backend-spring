@@ -20,6 +20,7 @@ public class TsRoleSavePo {
     private String toneTendency;
     private String interactionMode;
     private String voiceName;
+    private Long voiceProfileId;
     private String extJson;
     private Integer isPublic;
     private Integer basicAiGenerated;
@@ -45,6 +46,7 @@ public class TsRoleSavePo {
         po.setToneTendency(trimToNull(request.getToneTendency()));
         po.setInteractionMode(trimToNull(request.getInteractionMode()));
         po.setVoiceName(trimToNull(request.getVoiceName()));
+        po.setVoiceProfileId(request.getVoiceProfileId());
         po.setExtJson(request.getExtJson());
         po.setIsPublic(request.getIsPublic());
         po.setBasicAiGenerated(request.getBasicAiGenerated());

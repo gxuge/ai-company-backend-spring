@@ -338,21 +338,39 @@ public class TsVoiceProfileServiceImpl extends ServiceImpl<TsVoiceProfileMapper,
     }
 
     @Override
-    @CheckTsVoiceProfileExists(message = MSG_VOICE_NOT_FOUND_OR_DISABLED)
     public Result<TsVoiceProfilePreviewVo> previewVoice(LoginUser user, TsVoiceProfilePreviewDto request) {
         request.normalize();
-        TsVoiceProfile profile = TsVoiceProfileValidationAspect.VOICE_PROFILE_CONTEXT.get();
-        if (profile == null) {
-            throw new JeecgBootException(MSG_VOICE_NOT_FOUND_OR_DISABLED);
-        }
-        if (!StringUtils.hasText(profile.getProviderVoiceId())) {
-            throw new JeecgBootException("\u5F53\u524D\u97F3\u8272\u672A\u914D\u7F6E providerVoiceId\uFF0C\u65E0\u6CD5\u8FDB\u884C\u8BED\u97F3\u5408\u6210");
+        TsVoiceProfile profile = null;
+        String providerVoiceId = null;
+        String matchSource = null;
+
+        if (StringUtils.hasText(request.getVoiceId())) {
+            providerVoiceId = request.getVoiceId().trim();
+            matchSource = "VOICE_ID_DIRECT";
+            if (request.getVoiceProfileId() != null) {
+                profile = baseMapper.selectActiveById(request.getVoiceProfileId());
+            }
+        } else if (request.getVoiceProfileId() != null) {
+            profile = baseMapper.selectActiveById(request.getVoiceProfileId());
+            if (profile == null) {
+                throw new JeecgBootException(MSG_VOICE_NOT_FOUND_OR_DISABLED);
+            }
+            if (!StringUtils.hasText(profile.getProviderVoiceId())) {
+                throw new JeecgBootException("\u5F53\u524D\u97F3\u8272\u672A\u914D\u7F6E providerVoiceId\uFF0C\u65E0\u6CD5\u8FDB\u884C\u8BED\u97F3\u5408\u6210");
+            }
+            providerVoiceId = profile.getProviderVoiceId().trim();
+            matchSource = "VOICE_PROFILE";
+        } else {
+            throw new JeecgBootException("voiceId 与 voiceProfileId 至少传一个");
         }
 
         String previewText = StringUtils.hasText(request.getPreviewText()) ? request.getPreviewText() : DEFAULT_PREVIEW_TEXT;
         MiniMaxTtsRequestDto ttsRequest = new MiniMaxTtsRequestDto();
         ttsRequest.setText(previewText);
-        ttsRequest.setVoiceId(profile.getProviderVoiceId().trim());
+        ttsRequest.setVoiceId(providerVoiceId);
+        ttsRequest.setSpeed(request.getSpeed());
+        ttsRequest.setPitch(request.getPitch());
+        ttsRequest.setVolume(request.getVolume());
         MiniMaxTtsResponseVo ttsResponse = miniMaxDemoService.tts(ttsRequest);
         String audioUrl = ttsResponse == null ? null : ttsResponse.getAudioUrl();
         if (!StringUtils.hasText(audioUrl)) {
@@ -360,9 +378,10 @@ public class TsVoiceProfileServiceImpl extends ServiceImpl<TsVoiceProfileMapper,
         }
 
         TsVoiceProfilePreviewVo vo = new TsVoiceProfilePreviewVo();
-        vo.setVoiceProfileId(profile.getId());
-        vo.setVoiceName(profile.getName());
-        vo.setProviderVoiceId(profile.getProviderVoiceId());
+        vo.setVoiceProfileId(profile == null ? request.getVoiceProfileId() : profile.getId());
+        vo.setVoiceName(profile == null ? null : profile.getName());
+        vo.setProviderVoiceId(providerVoiceId);
+        vo.setMatchSource(matchSource);
         vo.setPreviewText(previewText);
         vo.setPreviewAudioUrl(audioUrl);
         return Result.OK(vo);

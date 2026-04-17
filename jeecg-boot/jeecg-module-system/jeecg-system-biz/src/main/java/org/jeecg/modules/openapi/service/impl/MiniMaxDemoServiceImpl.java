@@ -91,6 +91,7 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
      */
     @Override
     public MiniMaxTtsResponseVo tts(MiniMaxTtsRequestDto requestDto) {
+        requestDto.normalize();
         if (!StringUtils.hasText(requestDto.getText())) {
             throw new JeecgBootBizTipException("text不能为空");
         }
@@ -100,7 +101,13 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
         if (requestDto.getText().length() > guardConfig.getMaxTtsChars()) {
             throw new JeecgBootBizTipException("text长度超过限制");
         }
-        String audioHex = miniMaxMediaService.textToSpeech(requestDto.getText(), requestDto.getVoiceId());
+        String audioHex = miniMaxMediaService.textToSpeech(
+                requestDto.getText(),
+                requestDto.getVoiceId(),
+                requestDto.getSpeed(),
+                requestDto.getPitch(),
+                requestDto.getVolume()
+        );
         MiniMaxTtsResponseVo responseVo = new MiniMaxTtsResponseVo();
         responseVo.setAudioHex(audioHex);
         if (miniMaxDemoConfig.isUploadGeneratedMedia()) {

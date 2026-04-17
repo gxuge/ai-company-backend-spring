@@ -26,6 +26,7 @@ public class TsRoleSaveDto {
     private String toneTendency;
     private String interactionMode;
     private String voiceName;
+    private Long voiceProfileId;
     private String extJson;
     private Integer isPublic;
     private Integer basicAiGenerated;

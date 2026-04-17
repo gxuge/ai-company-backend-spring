@@ -10,6 +10,7 @@ public class TsVoiceProfilePreviewVo {
     private String voiceName;
     /** 提供商音色 ID */
     private String providerVoiceId;
+    private String matchSource;
     /** 试听文案 */
     private String previewText;
     /** 试听音频 URL */
