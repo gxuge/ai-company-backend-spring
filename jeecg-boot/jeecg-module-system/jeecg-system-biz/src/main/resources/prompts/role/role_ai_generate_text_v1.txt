@@ -15,6 +15,7 @@ Rules:
 4. `generated_text` should be 40-120 Chinese characters and include appearance, style, and personality cues.
 5. If `reference_image_url` is provided, mention it as style reference only. Do not invent copyrighted character names.
 6. If `idea_input` exists, expand from it first; otherwise synthesize from other variables.
+7. 除了参数外，回答的内容必须使用中文。
 
 SECTION::user_prompt_template
 Generate text from variables:

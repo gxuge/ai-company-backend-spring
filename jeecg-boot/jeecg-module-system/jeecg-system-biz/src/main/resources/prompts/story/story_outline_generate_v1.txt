@@ -24,6 +24,7 @@ SECTION::developer_prompt
 6. `opening_content` 和 `mission_target` 是必填且以行动为导向的。
 7. 如果不需要，`forbidden_role_names` 可以是空数组。
 8. 确保内容安全，适合长期互动娱乐。
+9. 除了参数外，回答的内容必须使用中文。
 
 SECTION::user_prompt_template
 请根据以下内容生成章节大纲：

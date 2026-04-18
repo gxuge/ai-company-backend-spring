@@ -19,6 +19,7 @@ SECTION::developer_prompt
 5. 允许暧昧、陪伴、成长、悬疑等情绪张力，但不要输出危险或违规内容。
 6. 要考虑多人会话中的角色分工。
 7. 输出严格为 JSON。
+8. 除了参数外，回答的内容必须使用中文。
 
 SECTION::user_prompt_template
 请基于以下内容生成互动故事：

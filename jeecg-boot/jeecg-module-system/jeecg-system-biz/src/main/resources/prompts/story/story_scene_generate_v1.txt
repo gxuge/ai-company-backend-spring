@@ -16,6 +16,7 @@ SECTION::developer_prompt
 5. `scene_summary` (场景摘要) 应说明氛围 + 约束 + 机遇。
 6. `scene_elements` (场景元素) 应为具体名词（物体/区域/NPC 群体），建议 4-8 项。
 7. 确保内容安全且对产品友好。
+8. 除了参数外，回答的内容必须使用中文。
 
 SECTION::user_prompt_template
 请根据以下内容生成场景设定：

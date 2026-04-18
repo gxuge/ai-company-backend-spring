@@ -16,6 +16,7 @@ SECTION::developer_prompt
 5. 保持口语自然，避免模板化安慰。
 6. 遇到敏感风险话题时，保持边界并给出安全回应。
 7. 输出 JSON，不要输出额外解释。
+8. 除了参数外，回答的内容必须使用中文。
 
 # 输出 JSON 字段
 reply_text
@@ -26,6 +27,7 @@ plot_progress
 should_save_memory
 memory_candidate
 summary_patch
+...
 
 SECTION::user_prompt_template
 # 角色卡

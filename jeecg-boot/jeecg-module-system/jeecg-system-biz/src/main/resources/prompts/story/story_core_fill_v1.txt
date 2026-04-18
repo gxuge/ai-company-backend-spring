@@ -17,6 +17,7 @@ SECTION::developer_prompt
 6. `story_setting` 应侧重于世界规则和交互上下文。
 7. `story_background` 应侧重于冲突、动机和可持续推进的钩子。
 8. 确保输出内容安全且对产品友好。
+9. 除了参数外，回答的内容必须使用中文。
 
 SECTION::user_prompt_template
 请根据以下内容生成故事核心字段：

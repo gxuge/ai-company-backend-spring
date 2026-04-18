@@ -1,4 +1,4 @@
-SET NAMES utf8mb4;
+﻿SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- ====================================================
@@ -664,18 +664,18 @@ CREATE TABLE ts_voice_profile_tag (
 -- 表名：ts_user_voice_config
 -- -------------------------------------
 -- -------------------------------------
--- User voice library mapping table
--- Table: ts_user_voice_profile
+-- 用户音色库映射表
+-- 表名：ts_user_voice_profile
 -- -------------------------------------
 DROP TABLE IF EXISTS `ts_user_voice_profile`;
 CREATE TABLE ts_user_voice_profile (
-    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'primary key',
-    user_id VARCHAR(32) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL COMMENT 'user id',
-    voice_profile_id BIGINT UNSIGNED NOT NULL COMMENT 'voice profile id',
-    custom_name VARCHAR(50) DEFAULT NULL COMMENT 'custom voice name',
-    status TINYINT NOT NULL DEFAULT 1 COMMENT 'status: 1 active, 0 deleted',
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'created at',
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'updated at',
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    user_id VARCHAR(32) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL COMMENT '用户ID',
+    voice_profile_id BIGINT UNSIGNED NOT NULL COMMENT '音色ID',
+    custom_name VARCHAR(50) DEFAULT NULL COMMENT '用户自定义音色名称',
+    status TINYINT NOT NULL DEFAULT 1 COMMENT '状态：1启用，0删除',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (id),
     UNIQUE KEY uk_user_voice_profile (user_id, voice_profile_id),
     KEY idx_user_status (user_id, status),
@@ -684,7 +684,7 @@ CREATE TABLE ts_user_voice_profile (
         FOREIGN KEY (user_id) REFERENCES sys_user (id),
     CONSTRAINT fk_user_voice_profile_profile
         FOREIGN KEY (voice_profile_id) REFERENCES ts_voice_profile (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='user voice library mapping table';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户音色库映射表';
 
 DROP TABLE IF EXISTS `ts_user_voice_config`;
 CREATE TABLE ts_user_voice_config (

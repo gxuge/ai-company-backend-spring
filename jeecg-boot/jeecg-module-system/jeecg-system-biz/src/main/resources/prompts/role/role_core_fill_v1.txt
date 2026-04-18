@@ -17,6 +17,7 @@ SECTION::developer_prompt
 6. role_name 要有辨识度且可读；occupation 要与 background_story 的经历、能力、气质一致。
 7. background_story 用中文 120-260 字，必须包含：成长经历、当前处境、性格动机、一个可延展剧情钩子。
 8. 风格需综合 style_hint 与 keywords；若二者为 `null`，默认生成“写实、可共情、可长期陪伴”的角色设定。
+9. 除了参数外，回答的内容必须使用中文。
 
 SECTION::user_prompt_template
 请根据下列变量生成角色核心设定：

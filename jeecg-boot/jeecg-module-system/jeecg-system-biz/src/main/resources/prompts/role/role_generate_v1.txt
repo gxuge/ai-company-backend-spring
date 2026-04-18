@@ -22,6 +22,7 @@ SECTION::developer_prompt
 8. dialogue_preview 要体现真实聊天口吻，不是介绍文。
 9. tone_tendency、interaction_mode、dialogue_length 要给出明确可枚举值。
 10. tags 只输出短标签数组。
+11. 除了参数外，回答的内容必须使用中文。
 
 输出目标字段：
 role_name
