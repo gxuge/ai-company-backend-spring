@@ -55,9 +55,9 @@ public class MiniMaxMediaServiceImpl implements IMiniMaxMediaService {
         if (!StringUtils.hasText(voiceId)) {
             throw new JeecgBootBizTipException("voiceId must not be blank");
         }
-        Double normalizedSpeed = normalizeSpeed(speed);
-        Double normalizedPitch = normalizePitch(pitch);
-        Double normalizedVolume = normalizeVolume(volume);
+        Long normalizedSpeed = normalizeIntParam(speed, 0.8D, 1.2D, "speed");
+        Long normalizedPitch = normalizeIntParam(pitch, -6D, 6D, "pitch");
+        Long normalizedVolume = normalizeIntParam(volume, 0.8D, 1.2D, "vol");
         Map<String, Object> voiceSetting = new LinkedHashMap<>();
         voiceSetting.put("voice_id", voiceId);
         if (normalizedSpeed != null) {
@@ -78,33 +78,59 @@ public class MiniMaxMediaServiceImpl implements IMiniMaxMediaService {
                 "audio_setting", Map.of("format", "mp3")
         );
         Map<String, Object> resp = postForMap("/v1/t2a_v2", req, "tts");
-        if (resp == null || !(resp.get("data") instanceof Map<?, ?> data)) {
+        if (resp == null || resp.isEmpty()) {
             throw new JeecgBootBizTipException("MiniMax TTS response is empty");
         }
+        if (resp.get("base_resp") instanceof Map<?, ?> baseResp) {
+            Object statusCodeObj = baseResp.get("status_code");
+            int statusCode = toInt(statusCodeObj, 0);
+            if (statusCode != 0) {
+                Object statusMsgObj = baseResp.get("status_msg");
+                String statusMsg = statusMsgObj == null ? "" : String.valueOf(statusMsgObj).trim();
+                if (!StringUtils.hasText(statusMsg)) {
+                    statusMsg = "unknown error";
+                }
+                throw new JeecgBootBizTipException("MiniMax TTS business error: " + statusCode + " - " + statusMsg);
+            }
+        }
+        if (!(resp.get("data") instanceof Map<?, ?> data)) {
+            throw new JeecgBootBizTipException("MiniMax TTS response missing data object");
+        }
         Object audio = data.get("audio");
+        if (audio == null) {
+            // 部分回包场景可能返回 audio_hex 字段
+            audio = data.get("audio_hex");
+        }
         if (audio == null) {
             throw new JeecgBootBizTipException("MiniMax TTS response missing audio field");
         }
         return audio.toString();
     }
 
-    private Double normalizeSpeed(Double value) {
-        return clamp(value, 0.8D, 1.2D);
-    }
-
-    private Double normalizePitch(Double value) {
-        return clamp(value, -6D, 6D);
-    }
-
-    private Double normalizeVolume(Double value) {
-        return clamp(value, 0.8D, 1.2D);
-    }
-
-    private Double clamp(Double value, double min, double max) {
+    private Long normalizeIntParam(Double value, double min, double max, String fieldName) {
         if (value == null) {
             return null;
         }
-        return Math.max(min, Math.min(max, value));
+        double clamped = Math.max(min, Math.min(max, value));
+        long intValue = Math.round(clamped);
+        if (Math.abs(clamped - intValue) > 1e-9) {
+            log.warn("MiniMax tts param '{}' expects int64, rounded {} -> {}", fieldName, value, intValue);
+        }
+        return intValue;
+    }
+
+    private int toInt(Object value, int defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        try {
+            return Integer.parseInt(String.valueOf(value).trim());
+        } catch (Exception ex) {
+            return defaultValue;
+        }
     }
 
     @SuppressWarnings("unchecked")

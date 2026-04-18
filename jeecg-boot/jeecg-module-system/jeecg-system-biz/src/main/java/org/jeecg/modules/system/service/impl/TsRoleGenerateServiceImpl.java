@@ -63,6 +63,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.UUID;
 
 /**
  * 角色一键生成服务实现。
@@ -129,13 +130,37 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         String renderedPrompt = promptRenderService.renderPrompt(PROMPT_PATH_SETTING,
                 PromptRuntimeUtil.buildSettingVars(dto.getRoleName(), dto.getGender(), dto.getOccupation(), dto.getBackgroundStory(),
                         dto.getStyleHint(), dto.getKeywords()));
-        JSONObject modelJson = PromptRuntimeUtil.callPromptChat(miniMaxDemoService, renderedPrompt);
+        JSONObject modelJson;
+        try {
+            modelJson = PromptRuntimeUtil.callPromptChat(miniMaxDemoService, renderedPrompt);
+        } catch (Exception ex) {
+            log.warn("Role setting JSON parse failed, fallback to request/default values. roleId={}, reason={}", dto.getRoleId(), ex.getMessage());
+            modelJson = new JSONObject();
+            modelJson.put("fallback", true);
+            modelJson.put("fallbackReason", PromptRuntimeUtil.trimToNull(ex.getMessage()));
+        }
 
         // 从模型结果中读取角色设定四核心字段。
-        String roleName = PromptRuntimeUtil.trimToNull(modelJson.getString("role_name"));
-        String gender = PromptRuntimeUtil.normalizeGender(modelJson.getString("gender"));
-        String occupation = PromptRuntimeUtil.trimToNull(modelJson.getString("occupation"));
-        String backgroundStory = PromptRuntimeUtil.trimToNull(modelJson.getString("background_story"));
+        String roleName = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("role_name")),
+                dto.getRoleName(),
+                "角色" + System.currentTimeMillis()
+        );
+        String gender = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.normalizeGender(modelJson.getString("gender")),
+                dto.getGender(),
+                "unknown"
+        );
+        String occupation = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("occupation")),
+                dto.getOccupation(),
+                "待定职业"
+        );
+        String backgroundStory = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("background_story")),
+                dto.getBackgroundStory(),
+                "这是一个等待你继续完善背景设定的角色。"
+        );
 
         // 生成并保存快照：记录渲染后的 prompt、模型原始响应与结构化结果，便于追溯。
         JSONObject snapshot = new JSONObject();
@@ -418,22 +443,36 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         String recommendedGender;
         String previewText;
         String recommendation;
+        String traceId = "role-voice-" + UUID.randomUUID().toString().replace("-", "");
+        String schemaVersion = "v1";
+        String matchSource = "ai_json";
         try {
             modelJson = PromptRuntimeUtil.callPromptChat(miniMaxDemoService, renderedPrompt);
-            preferredVoiceName = PromptRuntimeUtil.firstNonBlank(dto.getPreferredVoiceName(), PromptRuntimeUtil.trimToNull(modelJson.getString("voice_name")));
-            recommendedGender = PromptRuntimeUtil.firstNonBlank(dto.getGender(), PromptRuntimeUtil.normalizeGender(modelJson.getString("gender")));
-            previewText = PromptRuntimeUtil.firstNonBlank(dto.getPreviewText(), PromptRuntimeUtil.trimToNull(modelJson.getString("preview_text")), DEFAULT_PREVIEW_TEXT);
-            recommendation = PromptRuntimeUtil.trimToNull(modelJson.getString("selection_reason"));
+            String aiVoiceName = PromptRuntimeUtil.trimToNull(modelJson.getString("voice_name"));
+            String aiGender = PromptRuntimeUtil.normalizeGender(modelJson.getString("gender"));
+            String aiPreviewText = PromptRuntimeUtil.trimToNull(modelJson.getString("preview_text"));
+            String aiSelectionReason = PromptRuntimeUtil.trimToNull(modelJson.getString("selection_reason"));
+            if (!StringUtils.hasText(aiVoiceName) && !StringUtils.hasText(dto.getPreferredVoiceName())) {
+                throw new JeecgBootException("voice_name missing");
+            }
+            if (!StringUtils.hasText(aiPreviewText) && !StringUtils.hasText(dto.getPreviewText())) {
+                throw new JeecgBootException("preview_text missing");
+            }
+            preferredVoiceName = PromptRuntimeUtil.firstNonBlank(dto.getPreferredVoiceName(), aiVoiceName);
+            recommendedGender = PromptRuntimeUtil.firstNonBlank(dto.getGender(), aiGender);
+            previewText = PromptRuntimeUtil.firstNonBlank(dto.getPreviewText(), aiPreviewText, DEFAULT_PREVIEW_TEXT);
+            recommendation = PromptRuntimeUtil.firstNonBlank(aiSelectionReason, "根据角色信息匹配推荐音色");
         } catch (Exception ex) {
             // 兜底：模型未返回有效 JSON 时，使用入参与默认值继续匹配音色，避免接口整体失败
             log.warn("Role voice JSON parse failed, fallback to request parameters. roleId={}, reason={}", dto.getRoleId(), ex.getMessage());
+            matchSource = "fallback_rule";
             modelJson = new JSONObject();
             modelJson.put("fallback", true);
             modelJson.put("fallbackReason", PromptRuntimeUtil.trimToNull(ex.getMessage()));
             preferredVoiceName = PromptRuntimeUtil.trimToNull(dto.getPreferredVoiceName());
             recommendedGender = PromptRuntimeUtil.normalizeGender(dto.getGender());
             previewText = PromptRuntimeUtil.firstNonBlank(dto.getPreviewText(), DEFAULT_PREVIEW_TEXT);
-            recommendation = "AI recommendation parse failed; matched voice by default rules";
+            recommendation = "AI推荐解析失败，已按默认规则匹配音色";
         }
 
         // 从本地音色库匹配可用音色：先按性别主候选，再做无性别兜底。
@@ -472,11 +511,28 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         snapshot.put("voiceProfileId", selected.getId());
         snapshot.put("voiceName", selected.getName());
         snapshot.put("previewAudioUrl", previewAudioUrl);
+        snapshot.put("recommendedGender", recommendedGender);
+        snapshot.put("selectionReason", recommendation);
+        snapshot.put("matchSource", matchSource);
+        snapshot.put("traceId", traceId);
+        snapshot.put("schemaVersion", schemaVersion);
         String snapshotKey = RoleGenerateSnapshotUtil.saveSnapshot(redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS,
                 "voice", user.getId(), snapshot);
 
         // 组装响应给前端。
         TsRoleOneClickVoiceGenerateVo vo = new TsRoleOneClickVoiceGenerateVo();
+        TsRoleOneClickVoiceGenerateVo.VoiceMeta voiceMeta = new TsRoleOneClickVoiceGenerateVo.VoiceMeta();
+        voiceMeta.setVoiceName(selected.getName());
+        voiceMeta.setVoiceGender(PromptRuntimeUtil.firstNonBlank(recommendedGender, "unknown"));
+        voiceMeta.setVoiceProfileId(selected.getId());
+        voiceMeta.setProviderVoiceId(selected.getProviderVoiceId());
+        voiceMeta.setPreviewText(previewText);
+        voiceMeta.setPreviewAudioUrl(previewAudioUrl);
+        voiceMeta.setSelectionReason(recommendation);
+        voiceMeta.setMatchSource(matchSource);
+        voiceMeta.setTraceId(traceId);
+        voiceMeta.setSchemaVersion(schemaVersion);
+        vo.setVoice(voiceMeta);
         vo.setVoiceProfileId(selected.getId());
         vo.setVoiceName(selected.getName());
         vo.setProviderVoiceId(selected.getProviderVoiceId());
@@ -487,6 +543,9 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         vo.setPromptVersion(PROMPT_VERSION);
         vo.setRenderedPrompt(renderedPrompt);
         vo.setSnapshotKey(snapshotKey);
+        vo.setMatchSource(matchSource);
+        vo.setTraceId(traceId);
+        vo.setSchemaVersion(schemaVersion);
         return vo;
     }
 

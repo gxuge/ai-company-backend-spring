@@ -45,6 +45,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Base64;
 
 @Service
 public class TsVoiceProfileServiceImpl extends ServiceImpl<TsVoiceProfileMapper, TsVoiceProfile>
@@ -373,8 +374,11 @@ public class TsVoiceProfileServiceImpl extends ServiceImpl<TsVoiceProfileMapper,
         ttsRequest.setVolume(request.getVolume());
         MiniMaxTtsResponseVo ttsResponse = miniMaxDemoService.tts(ttsRequest);
         String audioUrl = ttsResponse == null ? null : ttsResponse.getAudioUrl();
+        if (!StringUtils.hasText(audioUrl) && ttsResponse != null && StringUtils.hasText(ttsResponse.getAudioHex())) {
+            audioUrl = buildDataAudioUrl(ttsResponse.getAudioHex());
+        }
         if (!StringUtils.hasText(audioUrl)) {
-            throw new JeecgBootException("\u8BD5\u542C\u751F\u6210\u6210\u529F\u4F46\u672A\u8FD4\u56DE\u53EF\u64AD\u653E\u5730\u5740\uFF0C\u8BF7\u68C0\u67E5 AIRAG_MINIMAX_UPLOAD_GENERATED_MEDIA \u914D\u7F6E");
+            throw new JeecgBootException("\u8BD5\u542C\u751F\u6210\u6210\u529F\u4F46\u672A\u8FD4\u56DE\u53EF\u64AD\u653E\u5730\u5740");
         }
 
         TsVoiceProfilePreviewVo vo = new TsVoiceProfilePreviewVo();
@@ -385,5 +389,38 @@ public class TsVoiceProfileServiceImpl extends ServiceImpl<TsVoiceProfileMapper,
         vo.setPreviewText(previewText);
         vo.setPreviewAudioUrl(audioUrl);
         return Result.OK(vo);
+    }
+
+    private String buildDataAudioUrl(String audioHex) {
+        byte[] audioBytes = hexToBytes(audioHex);
+        if (audioBytes == null || audioBytes.length == 0) {
+            return null;
+        }
+        return "data:audio/mpeg;base64," + Base64.getEncoder().encodeToString(audioBytes);
+    }
+
+    private byte[] hexToBytes(String hexValue) {
+        if (!StringUtils.hasText(hexValue)) {
+            return new byte[0];
+        }
+        String cleanHex = hexValue.trim();
+        if (cleanHex.startsWith("0x") || cleanHex.startsWith("0X")) {
+            cleanHex = cleanHex.substring(2);
+        }
+        cleanHex = cleanHex.replaceAll("\\s+", "");
+        if ((cleanHex.length() & 1) == 1) {
+            cleanHex = "0" + cleanHex;
+        }
+        int length = cleanHex.length();
+        byte[] result = new byte[length / 2];
+        for (int i = 0; i < length; i += 2) {
+            int high = Character.digit(cleanHex.charAt(i), 16);
+            int low = Character.digit(cleanHex.charAt(i + 1), 16);
+            if (high < 0 || low < 0) {
+                throw new JeecgBootException("\u8BD5\u542C\u97F3\u9891\u5185\u5BB9\u683C\u5F0F\u5F02\u5E38");
+            }
+            result[i / 2] = (byte) ((high << 4) + low);
+        }
+        return result;
     }
 }

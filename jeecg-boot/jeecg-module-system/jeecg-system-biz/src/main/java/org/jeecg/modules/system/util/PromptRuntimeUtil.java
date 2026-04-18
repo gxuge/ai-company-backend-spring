@@ -1,11 +1,12 @@
 package org.jeecg.modules.system.util;
 
 import com.alibaba.fastjson.JSONObject;
+import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.modules.airag.prompts.service.IAiragPromptTemplateService;
 import org.jeecg.modules.airag.prompts.vo.AiragPromptTemplateVo;
-import org.jeecg.modules.openapi.service.IMiniMaxDemoService;
 import org.jeecg.modules.openapi.dto.MiniMaxChatRequestDto;
+import org.jeecg.modules.openapi.service.IMiniMaxDemoService;
 import org.jeecg.modules.openapi.vo.MiniMaxChatResponseVo;
 import org.springframework.util.StringUtils;
 
@@ -17,6 +18,7 @@ import java.util.Map;
  * Prompt 运行时工具类。
  * 用途：统一封装“模板渲染 + LLM 调用 + JSON 解析”流程，避免业务代码重复。
  */
+@Slf4j
 public class PromptRuntimeUtil {
     private PromptRuntimeUtil() {
     }
@@ -34,33 +36,34 @@ public class PromptRuntimeUtil {
 
     /**
      * 调用 MiniMax 文本模型并解析为 JSON。
+     * 若首轮输出不是合法 JSON，会自动进行一次“JSON修复”重试。
      */
     public static JSONObject callPromptChat(IMiniMaxDemoService miniMaxDemoService, String prompt) {
-        MiniMaxChatRequestDto request = new MiniMaxChatRequestDto();
-        request.setPrompt(prompt);
-        MiniMaxChatResponseVo response = miniMaxDemoService.chat(request);
-        String rawContent = response == null ? null : trimToNull(response.getContent());
-        if (!StringUtils.hasText(rawContent)) {
-            throw new JeecgBootException("AI回复为空");
+        String rawContent = callChatContent(miniMaxDemoService, prompt);
+        try {
+            JSONObject parsed = parseJsonObject(rawContent);
+            log.info("[MINIMAX_CHAT_JSON] stage=first-pass content={}", parsed.toJSONString());
+            return parsed;
+        } catch (JeecgBootException firstEx) {
+            log.warn("[MINIMAX_CHAT_RAW] stage=first-pass-parse-fail raw={}", rawContent);
+            String repairPrompt = buildJsonRepairPrompt(rawContent);
+            String repairedContent = callChatContent(miniMaxDemoService, repairPrompt);
+            try {
+                JSONObject repairedParsed = parseJsonObject(repairedContent);
+                log.info("[MINIMAX_CHAT_JSON] stage=repair-pass content={}", repairedParsed.toJSONString());
+                return repairedParsed;
+            } catch (JeecgBootException ignored) {
+                log.error("[MINIMAX_CHAT_RAW] stage=repair-pass-parse-fail raw={} repaired={}", rawContent, repairedContent);
+                throw new JeecgBootException("AI回复解析失败，非有效JSON");
+            }
         }
-        return parseJsonObject(rawContent);
     }
 
     /**
      * 兼容代码块包裹等情况，提取并解析 JSON 对象。
      */
     public static JSONObject parseJsonObject(String rawContent) {
-        String content = rawContent.trim();
-        if (content.startsWith("```")) {
-            int firstLineEnd = content.indexOf('\n');
-            if (firstLineEnd > -1) {
-                content = content.substring(firstLineEnd + 1);
-            }
-            if (content.endsWith("```")) {
-                content = content.substring(0, content.length() - 3);
-            }
-            content = content.trim();
-        }
+        String content = normalizeRawContent(rawContent);
         int start = content.indexOf('{');
         int end = content.lastIndexOf('}');
         if (start >= 0 && end > start) {
@@ -142,7 +145,9 @@ public class PromptRuntimeUtil {
      * 去空白并转换为 null。
      */
     public static String trimToNull(String value) {
-        if (value == null) return null;
+        if (value == null) {
+            return null;
+        }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
     }
@@ -151,9 +156,13 @@ public class PromptRuntimeUtil {
      * 返回第一个非空白字符串。
      */
     public static String firstNonBlank(String... values) {
-        if (values == null) return null;
+        if (values == null) {
+            return null;
+        }
         for (String value : values) {
-            if (StringUtils.hasText(value)) return value.trim();
+            if (StringUtils.hasText(value)) {
+                return value.trim();
+            }
         }
         return null;
     }
@@ -163,11 +172,51 @@ public class PromptRuntimeUtil {
      */
     public static String normalizeGender(String value) {
         String normalized = trimToNull(value);
-        if (!StringUtils.hasText(normalized)) return null;
+        if (!StringUtils.hasText(normalized)) {
+            return null;
+        }
         String lower = normalized.toLowerCase();
-        if (Arrays.asList("male", "female", "unknown").contains(lower)) return lower;
-        if ("random".equals(lower)) return null;
+        if (Arrays.asList("male", "female", "unknown").contains(lower)) {
+            return lower;
+        }
+        if ("random".equals(lower)) {
+            return null;
+        }
         return null;
+    }
+
+    private static String callChatContent(IMiniMaxDemoService miniMaxDemoService, String prompt) {
+        MiniMaxChatRequestDto request = new MiniMaxChatRequestDto();
+        request.setPrompt(prompt);
+        MiniMaxChatResponseVo response = miniMaxDemoService.chat(request);
+        String rawContent = response == null ? null : trimToNull(response.getContent());
+        if (!StringUtils.hasText(rawContent)) {
+            throw new JeecgBootException("AI回复为空");
+        }
+        return rawContent;
+    }
+
+    private static String buildJsonRepairPrompt(String rawContent) {
+        return "你是JSON修复器。请把下面文本修复为一个合法的JSON对象，只输出JSON对象本身，不要解释、不要Markdown代码块。\n"
+                + rawContent;
+    }
+
+    private static String normalizeRawContent(String rawContent) {
+        if (rawContent == null) {
+            throw new JeecgBootException("AI回复为空");
+        }
+        String content = rawContent.trim();
+        if (content.startsWith("```")) {
+            int firstLineEnd = content.indexOf('\n');
+            if (firstLineEnd > -1) {
+                content = content.substring(firstLineEnd + 1);
+            }
+            if (content.endsWith("```")) {
+                content = content.substring(0, content.length() - 3);
+            }
+            content = content.trim();
+        }
+        return content;
     }
 
     private static String trimToEmpty(String value) {
