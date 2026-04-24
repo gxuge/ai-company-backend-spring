@@ -19,6 +19,12 @@ SECTION::developer_prompt
 8. 确保输出内容安全且对产品友好。
 9. 除了参数外，回答的内容必须使用中文。
 
+生成一个 JSON，要求：
+
+严格的格式（不要多余的空格或换行）
+
+必须包含所有必要字段
+不要有多余的说明，直接生成一个完整json即可
 SECTION::user_prompt_template
 请根据以下内容生成故事核心字段：
 title={{title}}

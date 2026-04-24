@@ -7,11 +7,9 @@ import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.openapi.dto.MiniMaxImageRequestDto;
-import org.jeecg.modules.openapi.dto.MiniMaxTtsRequestDto;
 import org.jeecg.modules.openapi.service.IMiniMaxDemoService;
 import org.jeecg.modules.openapi.service.PromptRenderService;
 import org.jeecg.modules.openapi.vo.MiniMaxImageResponseVo;
-import org.jeecg.modules.openapi.vo.MiniMaxTtsResponseVo;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateRoleDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateTextByTemplateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickImageGenerateDto;
@@ -80,7 +78,6 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
     private static final String PROMPT_PATH_SETTING = "prompts/role/role_core_fill_v1.txt";
     private static final String PROMPT_PATH_GENERATE_ROLE = "prompts/role/role_generate_role_v1.txt";
     private static final String PROMPT_PATH_IMAGE = "prompts/role/role_image_generate_v1.txt";
-    private static final String PROMPT_PATH_VOICE = "prompts/role/role_voice_generate_v1.txt";
     private static final String PROMPT_PATH_TEXT_TEMPLATE = "prompts/role/role_ai_generate_text_v1.txt";
     private static final String REDIS_SNAPSHOT_PREFIX = "ts:role:generate:snapshot:";
     private static final long REDIS_SNAPSHOT_TTL_HOURS = 72L;
@@ -422,7 +419,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
      */
     @Override
     public TsRoleOneClickVoiceGenerateVo generateRoleVoice(LoginUser user, TsRoleOneClickVoiceGenerateDto request) {
-        // 请求归一化；如传 roleId 则做归属校验并加载角色实体。
+        // 请求归一化；若传 roleId 则做归属校验并加载角色实体。
         TsRoleOneClickVoiceGenerateDto dto = request == null ? new TsRoleOneClickVoiceGenerateDto() : request;
         dto.normalize();
 
@@ -434,66 +431,22 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
             }
         }
 
-        // 构建声音 prompt 并调用 LLM 获取推荐信息。
-        String renderedPrompt = promptRenderService.renderPrompt(PROMPT_PATH_VOICE,
-                PromptRuntimeUtil.buildVoiceVars(dto.getRoleName(), dto.getGender(), dto.getOccupation(), dto.getBackgroundStory(),
-                        dto.getPreferredVoiceName(), dto.getTargetTone(), dto.getPreviewText()));
-        JSONObject modelJson;
-        String preferredVoiceName;
-        String recommendedGender;
-        String previewText;
-        String recommendation;
+        // 新策略：随机选择可用音色 + 随机语音参数，接口快速返回；试听音频由前端后续调用预览接口获取。
+        String recommendedGender = PromptRuntimeUtil.normalizeGender(dto.getGender());
+        TsVoiceProfile selected = selectRandomVoiceProfile(recommendedGender);
+        if (selected == null) {
+            throw new JeecgBootException("未找到可用音色，请先维护公共音色并确保 providerVoiceId 可用");
+        }
+
+        String previewText = PromptRuntimeUtil.firstNonBlank(dto.getPreviewText(), DEFAULT_PREVIEW_TEXT);
+        Double speed = randomVoiceSpeed();
+        Double pitch = randomVoicePitch();
+        Double volume = randomVoiceVolume();
+        String recommendation = "已按随机策略生成声音参数，请前端调用试听接口获取音频";
         String traceId = "role-voice-" + UUID.randomUUID().toString().replace("-", "");
         String schemaVersion = "v1";
-        String matchSource = "ai_json";
-        try {
-            modelJson = PromptRuntimeUtil.callPromptChat(miniMaxDemoService, renderedPrompt);
-            String aiVoiceName = PromptRuntimeUtil.trimToNull(modelJson.getString("voice_name"));
-            String aiGender = PromptRuntimeUtil.normalizeGender(modelJson.getString("gender"));
-            String aiPreviewText = PromptRuntimeUtil.trimToNull(modelJson.getString("preview_text"));
-            String aiSelectionReason = PromptRuntimeUtil.trimToNull(modelJson.getString("selection_reason"));
-            if (!StringUtils.hasText(aiVoiceName) && !StringUtils.hasText(dto.getPreferredVoiceName())) {
-                throw new JeecgBootException("voice_name missing");
-            }
-            if (!StringUtils.hasText(aiPreviewText) && !StringUtils.hasText(dto.getPreviewText())) {
-                throw new JeecgBootException("preview_text missing");
-            }
-            preferredVoiceName = PromptRuntimeUtil.firstNonBlank(dto.getPreferredVoiceName(), aiVoiceName);
-            recommendedGender = PromptRuntimeUtil.firstNonBlank(dto.getGender(), aiGender);
-            previewText = PromptRuntimeUtil.firstNonBlank(dto.getPreviewText(), aiPreviewText, DEFAULT_PREVIEW_TEXT);
-            recommendation = PromptRuntimeUtil.firstNonBlank(aiSelectionReason, "根据角色信息匹配推荐音色");
-        } catch (Exception ex) {
-            // 兜底：模型未返回有效 JSON 时，使用入参与默认值继续匹配音色，避免接口整体失败
-            log.warn("Role voice JSON parse failed, fallback to request parameters. roleId={}, reason={}", dto.getRoleId(), ex.getMessage());
-            matchSource = "fallback_rule";
-            modelJson = new JSONObject();
-            modelJson.put("fallback", true);
-            modelJson.put("fallbackReason", PromptRuntimeUtil.trimToNull(ex.getMessage()));
-            preferredVoiceName = PromptRuntimeUtil.trimToNull(dto.getPreferredVoiceName());
-            recommendedGender = PromptRuntimeUtil.normalizeGender(dto.getGender());
-            previewText = PromptRuntimeUtil.firstNonBlank(dto.getPreviewText(), DEFAULT_PREVIEW_TEXT);
-            recommendation = "AI推荐解析失败，已按默认规则匹配音色";
-        }
-
-        // 从本地音色库匹配可用音色：先按性别主候选，再做无性别兜底。
-        List<TsVoiceProfile> primaryProfiles = VoiceProfileMatchUtil.queryVoiceProfiles(tsVoiceProfileMapper, recommendedGender, 20);
-        List<TsVoiceProfile> fallbackProfiles = StringUtils.hasText(recommendedGender)
-                ? VoiceProfileMatchUtil.queryVoiceProfiles(tsVoiceProfileMapper, null, 20)
-                : primaryProfiles;
-        TsVoiceProfile selected = VoiceProfileMatchUtil.selectBestVoiceProfile(primaryProfiles, fallbackProfiles, preferredVoiceName);
-        if (selected == null) {
-            throw new JeecgBootException("未找到可用音色，请先维护公共音色");
-        }
-
-        // 使用 providerVoiceId 调 MiniMax TTS 生成试听音频。
+        String matchSource = "random_pool";
         String previewAudioUrl = null;
-        if (StringUtils.hasText(selected.getProviderVoiceId())) {
-            MiniMaxTtsRequestDto ttsRequest = new MiniMaxTtsRequestDto();
-            ttsRequest.setText(previewText);
-            ttsRequest.setVoiceId(selected.getProviderVoiceId());
-            MiniMaxTtsResponseVo ttsResponse = miniMaxDemoService.tts(ttsRequest);
-            previewAudioUrl = ttsResponse == null ? null : PromptRuntimeUtil.trimToNull(ttsResponse.getAudioUrl());
-        }
 
         // 若绑定角色，则回写角色音色名。
         if (role != null) {
@@ -507,12 +460,15 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         snapshot.put("type", "voice");
         snapshot.put("promptCode", PROMPT_CODE_VOICE);
         snapshot.put("promptVersion", PROMPT_VERSION);
-        snapshot.put("promptRendered", renderedPrompt);
+        snapshot.put("promptRendered", null);
         snapshot.put("voiceProfileId", selected.getId());
         snapshot.put("voiceName", selected.getName());
         snapshot.put("previewAudioUrl", previewAudioUrl);
         snapshot.put("recommendedGender", recommendedGender);
         snapshot.put("selectionReason", recommendation);
+        snapshot.put("speed", speed);
+        snapshot.put("pitch", pitch);
+        snapshot.put("volume", volume);
         snapshot.put("matchSource", matchSource);
         snapshot.put("traceId", traceId);
         snapshot.put("schemaVersion", schemaVersion);
@@ -528,6 +484,9 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         voiceMeta.setProviderVoiceId(selected.getProviderVoiceId());
         voiceMeta.setPreviewText(previewText);
         voiceMeta.setPreviewAudioUrl(previewAudioUrl);
+        voiceMeta.setSpeed(speed);
+        voiceMeta.setPitch(pitch);
+        voiceMeta.setVolume(volume);
         voiceMeta.setSelectionReason(recommendation);
         voiceMeta.setMatchSource(matchSource);
         voiceMeta.setTraceId(traceId);
@@ -539,14 +498,66 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         vo.setRecommendation(recommendation);
         vo.setPreviewText(previewText);
         vo.setPreviewAudioUrl(previewAudioUrl);
+        vo.setSpeed(speed);
+        vo.setPitch(pitch);
+        vo.setVolume(volume);
         vo.setPromptCode(PROMPT_CODE_VOICE);
         vo.setPromptVersion(PROMPT_VERSION);
-        vo.setRenderedPrompt(renderedPrompt);
+        vo.setRenderedPrompt(null);
         vo.setSnapshotKey(snapshotKey);
         vo.setMatchSource(matchSource);
         vo.setTraceId(traceId);
         vo.setSchemaVersion(schemaVersion);
         return vo;
+    }
+
+    private TsVoiceProfile selectRandomVoiceProfile(String preferredGender) {
+        List<TsVoiceProfile> primaryProfiles = VoiceProfileMatchUtil.queryVoiceProfiles(tsVoiceProfileMapper, preferredGender, VOICE_CANDIDATE_LIMIT);
+        List<TsVoiceProfile> fallbackProfiles = StringUtils.hasText(preferredGender)
+                ? VoiceProfileMatchUtil.queryVoiceProfiles(tsVoiceProfileMapper, null, VOICE_CANDIDATE_LIMIT)
+                : Collections.emptyList();
+        List<TsVoiceProfile> candidates = new ArrayList<>();
+        Set<Long> profileIds = new HashSet<>();
+        appendVoiceCandidates(candidates, profileIds, primaryProfiles);
+        appendVoiceCandidates(candidates, profileIds, fallbackProfiles);
+        if (candidates.isEmpty()) {
+            return null;
+        }
+        int index = ThreadLocalRandom.current().nextInt(candidates.size());
+        return candidates.get(index);
+    }
+
+    private void appendVoiceCandidates(List<TsVoiceProfile> target, Set<Long> profileIds, List<TsVoiceProfile> source) {
+        if (source == null || source.isEmpty()) {
+            return;
+        }
+        for (TsVoiceProfile profile : source) {
+            if (profile == null || profile.getId() == null || !StringUtils.hasText(profile.getProviderVoiceId())) {
+                continue;
+            }
+            if (profileIds.add(profile.getId())) {
+                target.add(profile);
+            }
+        }
+    }
+
+    private Double randomVoiceSpeed() {
+        return randomWithStep(0.8D, 1.2D, 0.1D);
+    }
+
+    private Double randomVoicePitch() {
+        return (double) ThreadLocalRandom.current().nextInt(-6, 7);
+    }
+
+    private Double randomVoiceVolume() {
+        return randomWithStep(0.8D, 1.2D, 0.1D);
+    }
+
+    private Double randomWithStep(double min, double max, double step) {
+        int steps = (int) Math.round((max - min) / step);
+        int pick = ThreadLocalRandom.current().nextInt(steps + 1);
+        double value = min + pick * step;
+        return Math.round(value * 10D) / 10D;
     }
 
     @Override

@@ -14,6 +14,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientResponseException;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -182,12 +183,13 @@ public class MiniMaxMediaServiceImpl implements IMiniMaxMediaService {
                 log.info("[MINIMAX_REQ] traceId={} api={} attempt={}/{} uri={} payload={}",
                         traceId, apiName, attempt, maxAttempts, uri, clip(JSONObject.toJSONString(request)));
 
-                String rawResponse = miniMaxRestClient.post()
+                byte[] responseBytes = miniMaxRestClient.post()
                         .uri(uri)
                         .body(request)
                         .retrieve()
-                        .body(String.class);
+                        .body(byte[].class);
 
+                String rawResponse = responseBytes == null ? null : new String(responseBytes, StandardCharsets.UTF_8);
                 if (!StringUtils.hasText(rawResponse)) {
                     throw new JeecgBootBizTipException("MiniMax " + apiName + " empty response body");
                 }

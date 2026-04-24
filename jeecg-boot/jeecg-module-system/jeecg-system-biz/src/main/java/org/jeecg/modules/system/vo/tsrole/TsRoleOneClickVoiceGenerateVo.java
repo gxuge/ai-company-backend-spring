@@ -18,6 +18,12 @@ public class TsRoleOneClickVoiceGenerateVo {
     private String previewText;
     /** 试听音频URL（兼容旧字段） */
     private String previewAudioUrl;
+    /** 语速（0.8~1.2，兼容旧字段） */
+    private Double speed;
+    /** 音调（-6~6，兼容旧字段） */
+    private Double pitch;
+    /** 音量（0.8~1.2，兼容旧字段） */
+    private Double volume;
     /** 使用的Prompt编码 */
     private String promptCode;
     /** 使用的Prompt版本 */
@@ -26,7 +32,7 @@ public class TsRoleOneClickVoiceGenerateVo {
     private String renderedPrompt;
     /** Redis快照Key */
     private String snapshotKey;
-    /** 匹配来源：ai_json/fallback_rule/manual（兼容旧字段） */
+    /** 匹配来源：ai_json/fallback_rule/manual/random_pool（兼容旧字段） */
     private String matchSource;
     /** 追踪ID（兼容旧字段） */
     private String traceId;
@@ -47,9 +53,15 @@ public class TsRoleOneClickVoiceGenerateVo {
         private String previewText;
         /** 试听音频链接 */
         private String previewAudioUrl;
+        /** 语速（0.8~1.2） */
+        private Double speed;
+        /** 音调（-6~6） */
+        private Double pitch;
+        /** 音量（0.8~1.2） */
+        private Double volume;
         /** 推荐理由 */
         private String selectionReason;
-        /** 匹配来源：ai_json/fallback_rule/manual */
+        /** 匹配来源：ai_json/fallback_rule/manual/random_pool */
         private String matchSource;
         /** 追踪ID */
         private String traceId;
