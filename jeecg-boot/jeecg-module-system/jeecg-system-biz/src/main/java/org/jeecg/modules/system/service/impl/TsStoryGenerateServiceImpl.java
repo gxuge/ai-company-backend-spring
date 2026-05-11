@@ -4,7 +4,7 @@ import com.alibaba.fastjson.JSONObject;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.system.vo.LoginUser;
-import org.jeecg.modules.openapi.service.IMiniMaxDemoService;
+import org.jeecg.modules.openapi.service.IPromptChatService;
 import org.jeecg.modules.openapi.service.PromptRenderService;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickOutlineGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneGenerateDto;
@@ -42,7 +42,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     private static final String ENDPOINT_STORY_OUTLINE_GENERATE = "/sys/ts-stories/story--outline-generate";
 
     @Resource
-    private IMiniMaxDemoService miniMaxDemoService;
+    private IPromptChatService promptChatService;
     @Resource
     private PromptRenderService promptRenderService;
     @Resource
@@ -61,7 +61,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         boolean generated = true;
         String fallbackReason = null;
         try {
-            modelJson = PromptRuntimeUtil.callPromptChat(miniMaxDemoService, renderedPrompt);
+            modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, renderedPrompt);
         } catch (Exception ex) {
             modelJson = new JSONObject();
             modelJson.put("fallback", true);
@@ -69,7 +69,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
             modelJson.put("fallbackReason", fallbackReason);
             generated = false;
         }
-        logStoryMinimaxJson(ENDPOINT_STORY_SETTING_GENERATE, modelJson, generated, fallbackReason);
+        logStoryLlmJson(ENDPOINT_STORY_SETTING_GENERATE, modelJson, generated, fallbackReason);
 
         String title = PromptRuntimeUtil.firstNonBlank(
                 PromptRuntimeUtil.trimToNull(modelJson.getString("title")),
@@ -133,7 +133,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         boolean generated = true;
         String fallbackReason = null;
         try {
-            modelJson = PromptRuntimeUtil.callPromptChat(miniMaxDemoService, renderedPrompt);
+            modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, renderedPrompt);
         } catch (Exception ex) {
             modelJson = new JSONObject();
             modelJson.put("fallback", true);
@@ -141,7 +141,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
             modelJson.put("fallbackReason", fallbackReason);
             generated = false;
         }
-        logStoryMinimaxJson(ENDPOINT_STORY_SCENE_GENERATE, modelJson, generated, fallbackReason);
+        logStoryLlmJson(ENDPOINT_STORY_SCENE_GENERATE, modelJson, generated, fallbackReason);
 
         String sceneNameSnapshot = PromptRuntimeUtil.firstNonBlank(
                 PromptRuntimeUtil.trimToNull(modelJson.getString("scene_name_snapshot")),
@@ -192,14 +192,14 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         String renderedPrompt = promptRenderService.renderPrompt(PROMPT_PATH_OUTLINE, StoryPromptGenerateUtil.buildOutlineVars(dto));
         JSONObject modelJson;
         try {
-            modelJson = PromptRuntimeUtil.callPromptChat(miniMaxDemoService, renderedPrompt);
-            logStoryMinimaxJson(ENDPOINT_STORY_OUTLINE_GENERATE, modelJson, true, null);
+            modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, renderedPrompt);
+            logStoryLlmJson(ENDPOINT_STORY_OUTLINE_GENERATE, modelJson, true, null);
         } catch (Exception ex) {
             JSONObject fallbackJson = new JSONObject();
             String fallbackReason = PromptRuntimeUtil.trimToNull(ex.getMessage());
             fallbackJson.put("fallback", true);
             fallbackJson.put("fallbackReason", fallbackReason);
-            logStoryMinimaxJson(ENDPOINT_STORY_OUTLINE_GENERATE, fallbackJson, false, fallbackReason);
+            logStoryLlmJson(ENDPOINT_STORY_OUTLINE_GENERATE, fallbackJson, false, fallbackReason);
             throw ex;
         }
 
@@ -231,12 +231,13 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     /**
      * 统一打印故事一键生成场景下 MiniMax 的 JSON 输出，便于排查字段格式问题。
      */
-    private void logStoryMinimaxJson(String endpoint, JSONObject modelJson, boolean generated, String fallbackReason) {
+    private void logStoryLlmJson(String endpoint, JSONObject modelJson, boolean generated, String fallbackReason) {
         JSONObject logJson = new JSONObject();
         logJson.put("endpoint", endpoint);
         logJson.put("generated", generated);
         logJson.put("fallbackReason", fallbackReason);
+        logJson.put("provider", promptChatService == null ? null : promptChatService.provider());
         logJson.put("modelJson", modelJson);
-        log.info("[STORY_MINIMAX_JSON] {}", logJson.toJSONString());
+        log.info("[STORY_LLM_JSON] {}", logJson.toJSONString());
     }
 }

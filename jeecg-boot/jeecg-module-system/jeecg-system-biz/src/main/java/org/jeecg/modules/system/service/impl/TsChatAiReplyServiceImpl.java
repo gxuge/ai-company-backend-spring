@@ -11,6 +11,7 @@ import org.jeecg.modules.aop.TsChatSessionOwnershipAspect.CheckTsChatSessionOwne
 import org.jeecg.modules.openapi.dto.MiniMaxChatRequestDto;
 import org.jeecg.modules.openapi.dto.MiniMaxTtsRequestDto;
 import org.jeecg.modules.openapi.service.IMiniMaxDemoService;
+import org.jeecg.modules.openapi.service.IPromptChatService;
 import org.jeecg.modules.openapi.service.PromptRenderService;
 import org.jeecg.modules.openapi.vo.MiniMaxChatResponseVo;
 import org.jeecg.modules.openapi.vo.MiniMaxTtsResponseVo;
@@ -136,6 +137,8 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
 
     @Resource
     private IMiniMaxDemoService miniMaxDemoService;
+    @Resource
+    private IPromptChatService promptChatService;
 
     @Resource
     private PromptRenderService promptRenderService;
@@ -397,7 +400,7 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         variables.put("recent_messages_block", PromptRuntimeUtil.nullableToken(recentMessagesBlock));
 
         String renderedPrompt = promptRenderService.renderPrompt(PROMPT_PATH_REPLY_SUGGESTIONS, variables);
-        JSONObject modelJson = PromptRuntimeUtil.callPromptChat(miniMaxDemoService, renderedPrompt);
+        JSONObject modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, renderedPrompt);
 
         List<String> suggestions = new ArrayList<>();
         suggestions.addAll(normalizeSuggestionList(modelJson.get("suggestions")));

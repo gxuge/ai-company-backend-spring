@@ -5,9 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.modules.airag.prompts.service.IAiragPromptTemplateService;
 import org.jeecg.modules.airag.prompts.vo.AiragPromptTemplateVo;
-import org.jeecg.modules.openapi.dto.MiniMaxChatRequestDto;
-import org.jeecg.modules.openapi.service.IMiniMaxDemoService;
-import org.jeecg.modules.openapi.vo.MiniMaxChatResponseVo;
+import org.jeecg.modules.openapi.service.IPromptChatService;
 import org.springframework.util.StringUtils;
 
 import java.util.Arrays;
@@ -35,25 +33,25 @@ public class PromptRuntimeUtil {
     }
 
     /**
-     * 调用 MiniMax 文本模型并解析为 JSON。
+     * 调用文本模型并解析为 JSON。
      * 若首轮输出不是合法 JSON，会自动进行一次“JSON修复”重试。
      */
-    public static JSONObject callPromptChat(IMiniMaxDemoService miniMaxDemoService, String prompt) {
-        String rawContent = callChatContent(miniMaxDemoService, prompt);
+    public static JSONObject callPromptChat(IPromptChatService promptChatService, String prompt) {
+        String rawContent = callChatContent(promptChatService, prompt);
         try {
             JSONObject parsed = parseJsonObject(rawContent);
-            log.info("[MINIMAX_CHAT_JSON] stage=first-pass content={}", parsed.toJSONString());
+            log.info("[PROMPT_CHAT_JSON] stage=first-pass content={}", parsed.toJSONString());
             return parsed;
         } catch (JeecgBootException firstEx) {
-            log.warn("[MINIMAX_CHAT_RAW] stage=first-pass-parse-fail raw={}", rawContent);
+            log.warn("[PROMPT_CHAT_RAW] stage=first-pass-parse-fail raw={}", rawContent);
             String repairPrompt = buildJsonRepairPrompt(rawContent);
-            String repairedContent = callChatContent(miniMaxDemoService, repairPrompt);
+            String repairedContent = callChatContent(promptChatService, repairPrompt);
             try {
                 JSONObject repairedParsed = parseJsonObject(repairedContent);
-                log.info("[MINIMAX_CHAT_JSON] stage=repair-pass content={}", repairedParsed.toJSONString());
+                log.info("[PROMPT_CHAT_JSON] stage=repair-pass content={}", repairedParsed.toJSONString());
                 return repairedParsed;
             } catch (JeecgBootException ignored) {
-                log.error("[MINIMAX_CHAT_RAW] stage=repair-pass-parse-fail raw={} repaired={}", rawContent, repairedContent);
+                log.error("[PROMPT_CHAT_RAW] stage=repair-pass-parse-fail raw={} repaired={}", rawContent, repairedContent);
                 throw new JeecgBootException("AI回复解析失败，非有效JSON");
             }
         }
@@ -185,11 +183,8 @@ public class PromptRuntimeUtil {
         return null;
     }
 
-    private static String callChatContent(IMiniMaxDemoService miniMaxDemoService, String prompt) {
-        MiniMaxChatRequestDto request = new MiniMaxChatRequestDto();
-        request.setPrompt(prompt);
-        MiniMaxChatResponseVo response = miniMaxDemoService.chat(request);
-        String rawContent = response == null ? null : trimToNull(response.getContent());
+    private static String callChatContent(IPromptChatService promptChatService, String prompt) {
+        String rawContent = promptChatService == null ? null : trimToNull(promptChatService.chat(prompt));
         if (!StringUtils.hasText(rawContent)) {
             throw new JeecgBootException("AI回复为空");
         }

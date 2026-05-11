@@ -8,6 +8,7 @@ import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.openapi.dto.MiniMaxImageRequestDto;
 import org.jeecg.modules.openapi.service.IMiniMaxDemoService;
+import org.jeecg.modules.openapi.service.IPromptChatService;
 import org.jeecg.modules.openapi.service.PromptRenderService;
 import org.jeecg.modules.openapi.vo.MiniMaxImageResponseVo;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateRoleDto;
@@ -94,6 +95,8 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
     @Resource
     private IMiniMaxDemoService miniMaxDemoService;
     @Resource
+    private IPromptChatService promptChatService;
+    @Resource
     private PromptRenderService promptRenderService;
     @Resource
     private ITsUserImageAssetService tsUserImageAssetService;
@@ -129,7 +132,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
                         dto.getStyleHint(), dto.getKeywords()));
         JSONObject modelJson;
         try {
-            modelJson = PromptRuntimeUtil.callPromptChat(miniMaxDemoService, renderedPrompt);
+            modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, renderedPrompt);
         } catch (Exception ex) {
             log.warn("Role setting JSON parse failed, fallback to request/default values. roleId={}, reason={}", dto.getRoleId(), ex.getMessage());
             modelJson = new JSONObject();
@@ -273,7 +276,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         JSONObject modelJson;
         String imagePrompt;
         try {
-            modelJson = PromptRuntimeUtil.callPromptChat(miniMaxDemoService, renderedPrompt);
+            modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, renderedPrompt);
             imagePrompt = PromptRuntimeUtil.firstNonBlank(PromptRuntimeUtil.trimToNull(modelJson.getString("visual_prompt")), renderedPrompt);
         } catch (Exception ex) {
             // 兜底：模型未返回有效 JSON 时，使用渲染提示词继续生图，避免任务整体失败。
@@ -583,7 +586,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         }
 
         String renderedPrompt = promptRenderService.renderPrompt(promptPath, variables);
-        JSONObject modelJson = PromptRuntimeUtil.callPromptChat(miniMaxDemoService, renderedPrompt);
+        JSONObject modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, renderedPrompt);
         String generatedText = PromptRuntimeUtil.firstNonBlank(
                 PromptRuntimeUtil.trimToNull(modelJson.getString("generated_text")),
                 PromptRuntimeUtil.trimToNull(modelJson.getString("text")),
@@ -625,7 +628,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         dto.normalize();
         String renderedPrompt = promptRenderService.renderPrompt(PROMPT_PATH_GENERATE_ROLE,
                 PromptRuntimeUtil.buildGenerateRoleVars(dto.getStorySetting(), dto.getStoryBackground()));
-        JSONObject modelJson = PromptRuntimeUtil.callPromptChat(miniMaxDemoService, renderedPrompt);
+        JSONObject modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, renderedPrompt);
 
         // 抽取模型结果，并为关键字段提供最小兜底，确保可创建完整角色。
         String roleName = PromptRuntimeUtil.firstNonBlank(PromptRuntimeUtil.trimToNull(modelJson.getString("role_name")),
