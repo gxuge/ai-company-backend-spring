@@ -43,6 +43,8 @@ public class LLMConsts {
      */
     public static final String MODEL_TYPE_IMAGE = "IMAGE";
 
+    public static final String MODEL_TYPE_VOICE = "VOICE";
+
     /**
      * 向量模型：默认维度
      */

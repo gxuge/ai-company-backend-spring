@@ -53,6 +53,7 @@
                     <span v-if="item === 'LLM'">语言模型</span>
                     <span v-else-if="item === 'EMBED'">向量模型</span>
                     <span v-else-if="item === 'IMAGE'">图像模型</span>
+                    <span v-else-if="item === 'VOICE'">语音模型</span>
                   </a-select-option>
                 </a-select>
               </template>
@@ -72,6 +73,7 @@
                           <a-tag v-if="type && type.split(',').includes('image')" color="#C3D9DC">图像分析</a-tag>
                           <a-tag v-if="type && type.split(',').includes('vector')" color="#D4E0D8">向量</a-tag>
                           <a-tag v-if="type && type.split(',').includes('embeddings')" color="#FFEBD3">文本嵌入</a-tag>
+                          <a-tag v-if="type && type.split(',').includes('audio')" color="#E6F4FF">语音</a-tag>
                         </div>
                       </div>
                     </a-tooltip>

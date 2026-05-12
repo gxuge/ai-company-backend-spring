@@ -1,5 +1,6 @@
 package org.jeecg.modules.airag.llm.controller;
 
+import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -24,11 +25,13 @@ import org.jeecg.modules.airag.llm.handler.AIChatHandler;
 import org.jeecg.modules.airag.llm.handler.EmbeddingHandler;
 import org.jeecg.modules.airag.llm.service.IAiragModelService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.ModelAndView;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Collections;
 
@@ -43,11 +46,16 @@ import java.util.Collections;
 @RequestMapping("/airag/airagModel")
 @Slf4j
 public class AiragModelController extends JeecgController<AiragModel, IAiragModelService> {
+    private static final String DEFAULT_MINIMAX_VOICE_ID = "Chinese (Mandarin)_Wise_Women";
+
     @Autowired
     private IAiragModelService airagModelService;
 
     @Autowired
     AIChatHandler aiChatHandler;
+
+    @Autowired
+    private ApplicationContext applicationContext;
 
     /**
      * 分页列表查询
@@ -181,6 +189,10 @@ public class AiragModelController extends JeecgController<AiragModel, IAiragMode
             }else if(LLMConsts.MODEL_TYPE_IMAGE.equals(airagModel.getModelType())){
                 AIChatParams aiChatParams = new AIChatParams();
                 aiChatHandler.imageGenerate(airagModel, "To test whether it can be successfully called, simply return success", aiChatParams);
+            }else if(LLMConsts.MODEL_TYPE_VOICE.equals(airagModel.getModelType())){
+                this.testVoiceModel(airagModel);
+            }else{
+                throw new IllegalArgumentException("不支持的模型类型: " + airagModel.getModelType());
             }
             //update-end---author:wangshuai---date:2026-01-07---for:【QQYUN-12145】【AI】AI 绘画创作---
         }catch (Exception e){
@@ -191,6 +203,72 @@ public class AiragModelController extends JeecgController<AiragModel, IAiragMode
         airagModel.setActivateFlag(1);
         airagModelService.updateById(airagModel);
         return Result.OK("");
+    }
+
+    /**
+     * VOICE 模型健康检查（当前按 MiniMax TTS 调用）。
+     * 说明：为避免模块间编译依赖，这里通过反射调用 IMiniMaxDemoService#tts。
+     */
+    private void testVoiceModel(AiragModel airagModel) throws Exception {
+        String provider = airagModel.getProvider();
+        if (!"MINIMAX".equalsIgnoreCase(provider)) {
+            throw new IllegalArgumentException("VOICE 模型当前仅支持 provider=MINIMAX，当前为: " + provider);
+        }
+
+        JSONObject modelParams = null;
+        if (oConvertUtils.isObjectNotEmpty(airagModel.getModelParams())) {
+            modelParams = JSONObject.parseObject(airagModel.getModelParams());
+        }
+        String voiceId = modelParams == null ? null : modelParams.getString("voiceId");
+        if (oConvertUtils.isEmpty(voiceId) && modelParams != null) {
+            voiceId = modelParams.getString("providerVoiceId");
+        }
+        if (oConvertUtils.isEmpty(voiceId)) {
+            voiceId = DEFAULT_MINIMAX_VOICE_ID;
+        }
+        if (oConvertUtils.isEmpty(voiceId)) {
+            throw new IllegalArgumentException("VOICE 模型测试失败：请在 modelParams 中配置 voiceId 或 providerVoiceId");
+        }
+
+        Double speed = modelParams == null ? null : modelParams.getDouble("speed");
+        Double pitch = modelParams == null ? null : modelParams.getDouble("pitch");
+        Double volume = modelParams == null ? null : modelParams.getDouble("volume");
+
+        Class<?> serviceType = Class.forName("org.jeecg.modules.openapi.service.IMiniMaxDemoService");
+        Object miniMaxDemoService = applicationContext.getBean(serviceType);
+        if (miniMaxDemoService == null) {
+            throw new IllegalStateException("未找到 IMiniMaxDemoService，请确认 MiniMax 服务已启用");
+        }
+
+        Class<?> requestType = Class.forName("org.jeecg.modules.openapi.dto.MiniMaxTtsRequestDto");
+        Object request = requestType.getDeclaredConstructor().newInstance();
+        requestType.getMethod("setText", String.class).invoke(request, "VOICE_HEALTH_CHECK");
+        requestType.getMethod("setVoiceId", String.class).invoke(request, voiceId);
+        if (speed != null) {
+            requestType.getMethod("setSpeed", Double.class).invoke(request, speed);
+        }
+        if (pitch != null) {
+            requestType.getMethod("setPitch", Double.class).invoke(request, pitch);
+        }
+        if (volume != null) {
+            requestType.getMethod("setVolume", Double.class).invoke(request, volume);
+        }
+
+        Method ttsMethod = serviceType.getMethod("tts", requestType);
+        Object response = ttsMethod.invoke(miniMaxDemoService, request);
+        if (response == null) {
+            throw new IllegalStateException("VOICE 模型测试失败：TTS 返回为空");
+        }
+
+        String audioUrl = toStringSafely(response.getClass().getMethod("getAudioUrl").invoke(response));
+        String audioHex = toStringSafely(response.getClass().getMethod("getAudioHex").invoke(response));
+        if (oConvertUtils.isEmpty(audioUrl) && oConvertUtils.isEmpty(audioHex)) {
+            throw new IllegalStateException("VOICE 模型测试失败：TTS 未返回 audioUrl/audioHex");
+        }
+    }
+
+    private String toStringSafely(Object value) {
+        return value == null ? null : String.valueOf(value).trim();
     }
 
 }

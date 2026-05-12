@@ -29,6 +29,30 @@
       "LLMDefaultValue": "deepseek-chat"
     },
     {
+      "title": "MiniMax",
+      "value": "MINIMAX",
+      "LLM": [
+        {"label": "MiniMax-M2.7", "value": "MiniMax-M2.7", "descr": "MiniMax latest flagship text model.", "type": "text"},
+        {"label": "MiniMax-M2.7-highspeed", "value": "MiniMax-M2.7-highspeed", "descr": "MiniMax high-speed text model.", "type": "text"},
+        {"label": "MiniMax-M2.5", "value": "MiniMax-M2.5", "descr": "MiniMax balanced text model.", "type": "text"}
+      ],
+      "IMAGE": [
+        {"label": "image-01", "value": "image-01", "descr": "MiniMax image generation model.", "type": "imageGen"},
+        {"label": "image-01-live", "value": "image-01-live", "descr": "MiniMax image generation model with style controls.", "type": "imageGen"}
+      ],
+      "VOICE": [
+        {"label": "speech-2.8-hd", "value": "speech-2.8-hd", "descr": "MiniMax HD TTS model.", "type": "audio"},
+        {"label": "speech-2.8-turbo", "value": "speech-2.8-turbo", "descr": "MiniMax Turbo TTS model.", "type": "audio"},
+        {"label": "speech-2.6-hd", "value": "speech-2.6-hd", "descr": "MiniMax 2.6 HD TTS model.", "type": "audio"},
+        {"label": "speech-2.6-turbo", "value": "speech-2.6-turbo", "descr": "MiniMax 2.6 Turbo TTS model.", "type": "audio"}
+      ],
+      "type": ["LLM", "IMAGE", "VOICE"],
+      "baseUrl": "https://api.minimaxi.com/v1",
+      "LLMDefaultValue": "MiniMax-M2.7",
+      "IMAGEDefaultValue": "image-01",
+      "VOICEDefaultValue": "speech-2.8-hd"
+    },
+    {
       "title": "Ollama",
       "value": "OLLAMA",
       "LLM": [
