@@ -22,6 +22,13 @@ public interface IAiragPromptTemplateService {
     AiragPromptTemplateVo getTemplate(String code, String version);
 
     /**
+     * 获取 classpath 中加载的全部模板（不含数据库覆盖）。
+     *
+     * @return templateKey -> template
+     */
+    Map<String, AiragPromptTemplateVo> listClasspathTemplates();
+
+    /**
      * 渲染指定 section（仅替换 {{key}} 占位符）
      *
      * @param code 模板编码

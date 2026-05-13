@@ -222,27 +222,8 @@ jeecg:
     timeout: 60
   airag:
     prompt-chat:
-      provider: ${AIRAG_PROMPT_CHAT_PROVIDER:qwen}
-      deepseek:
-        api-key: ${DEEPSEEK_API_KEY:}
-        base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
-        model: ${DEEPSEEK_MODEL:deepseek-v4-pro}
-        temperature: ${DEEPSEEK_TEMPERATURE:0.7}
-        reasoning-effort: ${DEEPSEEK_REASONING_EFFORT:}
-        thinking-type: ${DEEPSEEK_THINKING_TYPE:}
-        connect-timeout-ms: ${DEEPSEEK_CONNECT_TIMEOUT_MS:3000}
-        read-timeout-ms: ${DEEPSEEK_READ_TIMEOUT_MS:30000}
-        retry-max-attempts: ${DEEPSEEK_RETRY_MAX_ATTEMPTS:2}
-        retry-backoff-ms: ${DEEPSEEK_RETRY_BACKOFF_MS:300}
-      qwen:
-        api-key: ${QWEN_API_KEY:}
-        base-url: ${QWEN_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
-        model: ${QWEN_MODEL:qwen-max}
-        temperature: ${QWEN_TEMPERATURE:0.7}
-        connect-timeout-ms: ${QWEN_CONNECT_TIMEOUT_MS:3000}
-        read-timeout-ms: ${QWEN_READ_TIMEOUT_MS:30000}
-        retry-max-attempts: ${QWEN_RETRY_MAX_ATTEMPTS:2}
-        retry-backoff-ms: ${QWEN_RETRY_BACKOFF_MS:300}
+      app-id: ${AIRAG_PROMPT_CHAT_APP_ID:}
+      model-id: ${AIRAG_PROMPT_CHAT_MODEL_ID:}
     minimax:
       demo:
         enabled: ${AIRAG_MINIMAX_DEMO_ENABLED:false}

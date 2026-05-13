@@ -10,6 +10,7 @@ import dev.langchain4j.data.message.UserMessage;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.api.vo.Result;
+import org.jeecg.common.constant.CommonConstant;
 import org.jeecg.common.util.AssertUtils;
 import org.jeecg.common.util.CommonUtils;
 import org.jeecg.common.util.oConvertUtils;
@@ -21,8 +22,10 @@ import org.jeecg.modules.airag.prompts.entity.AiragExtData;
 import org.jeecg.modules.airag.prompts.entity.AiragPrompts;
 import org.jeecg.modules.airag.prompts.mapper.AiragPromptsMapper;
 import org.jeecg.modules.airag.prompts.service.IAiragExtDataService;
+import org.jeecg.modules.airag.prompts.service.IAiragPromptTemplateService;
 import org.jeecg.modules.airag.prompts.service.IAiragPromptsService;
 import org.jeecg.modules.airag.prompts.vo.AiragExperimentVo;
+import org.jeecg.modules.airag.prompts.vo.AiragPromptTemplateVo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -48,6 +51,9 @@ public class AiragPromptsServiceImpl extends ServiceImpl<AiragPromptsMapper, Air
 
     @Autowired
     IAiragExtDataService airagExtDataService;
+
+    @Autowired
+    private IAiragPromptTemplateService airagPromptTemplateService;
 
     @Autowired
     private JeecgBaseConfig jeecgBaseConfig;
@@ -358,6 +364,80 @@ public class AiragPromptsServiceImpl extends ServiceImpl<AiragPromptsMapper, Air
             log.error("获取答案评分失败", e);
             return null;
         }
+    }
+
+    @Override
+    public int syncClasspathTemplatesToDb() {
+        Map<String, AiragPromptTemplateVo> templates = airagPromptTemplateService.listClasspathTemplates();
+        if (CollectionUtils.isEmpty(templates)) {
+            return 0;
+        }
+        int synced = 0;
+        for (AiragPromptTemplateVo template : templates.values()) {
+            if (template == null || CollectionUtils.isEmpty(template.getSections())) {
+                continue;
+            }
+            String code = template.getCode();
+            String version = template.getVersion();
+            Map<String, String> sections = template.getSections();
+
+            JSONObject modelParam = new JSONObject();
+            modelParam.put("meta", sections.get("meta"));
+            modelParam.put("developer_prompt", sections.get("developer_prompt"));
+            modelParam.put("output_schema_hint", sections.get("output_schema_hint"));
+            if (sections.containsKey("output_field_notes")) {
+                modelParam.put("output_field_notes", sections.get("output_field_notes"));
+            }
+
+            AiragPrompts exists = this.getOne(
+                    new LambdaQueryWrapper<AiragPrompts>()
+                            .eq(AiragPrompts::getPromptKey, code)
+                            .eq(AiragPrompts::getVersion, version)
+                            .last("limit 1"),
+                    false
+            );
+
+            if (exists == null) {
+                exists = new AiragPrompts();
+                exists.setPromptKey(code);
+                exists.setVersion(version);
+                exists.setName(code);
+                exists.setCategory(resolveCategory(code));
+                exists.setStatus("1");
+                exists.setDelFlag(CommonConstant.DEL_FLAG_0);
+                exists.setContent(sections.get("user_prompt_template"));
+                exists.setModelParam(modelParam.toJSONString());
+                this.save(exists);
+            } else {
+                exists.setContent(sections.get("user_prompt_template"));
+                exists.setModelParam(modelParam.toJSONString());
+                if (oConvertUtils.isEmpty(exists.getName())) {
+                    exists.setName(code);
+                }
+                if (oConvertUtils.isEmpty(exists.getCategory())) {
+                    exists.setCategory(resolveCategory(code));
+                }
+                this.updateById(exists);
+            }
+            synced++;
+        }
+        return synced;
+    }
+
+    private String resolveCategory(String promptKey) {
+        if (oConvertUtils.isEmpty(promptKey)) {
+            return "default";
+        }
+        if (promptKey.startsWith("chat_")) {
+            return "chat";
+        }
+        if (promptKey.startsWith("role_")) {
+            return "role";
+        }
+        if (promptKey.startsWith("story_")) {
+            return "story";
+        }
+        return "default";
     }
 
     /**

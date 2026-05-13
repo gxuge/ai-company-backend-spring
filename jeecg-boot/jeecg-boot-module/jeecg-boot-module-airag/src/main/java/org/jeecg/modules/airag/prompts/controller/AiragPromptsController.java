@@ -161,6 +161,13 @@ public class AiragPromptsController extends JeecgController<AiragPrompts, IAirag
 		AiragPromptTemplateVo template = airagPromptTemplateService.getTemplate(code, version);
 		return Result.OK(template);
 	}
+
+	@Operation(summary = "airag_prompts-同步classpath模板到提示词管理")
+	@PostMapping(value = "/template/syncClasspathToDb")
+	public Result<Integer> syncClasspathTemplatesToDb() {
+		int synced = airagPromptsService.syncClasspathTemplatesToDb();
+		return Result.OK("同步成功", synced);
+	}
     /**
     * 导出excel
     *

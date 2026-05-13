@@ -10347,4 +10347,74 @@ END
 ;;
 delimiter ;
 
+-- ----------------------------
+-- AIRAG app voice model + default app
+-- ----------------------------
+ALTER TABLE `airag_app`
+ADD COLUMN `voice_model_id` varchar(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '语音模型id' AFTER `model_id`;
+
+INSERT INTO `airag_app` (
+  `id`,
+  `create_by`,
+  `create_time`,
+  `update_by`,
+  `update_time`,
+  `sys_org_code`,
+  `tenant_id`,
+  `name`,
+  `descr`,
+  `icon`,
+  `type`,
+  `prologue`,
+  `prompt`,
+  `model_id`,
+  `voice_model_id`,
+  `knowledge_ids`,
+  `flow_id`,
+  `status`,
+  `msg_num`,
+  `metadata`,
+  `preset_question`,
+  `quick_command`,
+  `plugins`,
+  `memory_id`,
+  `variables`,
+  `iz_open_memory`,
+  `memory_prompt`
+)
+SELECT
+  '2026051300000000001',
+  'admin',
+  NOW(),
+  'admin',
+  NOW(),
+  'A01',
+  NULL,
+  '探拾',
+  '默认AI应用（文本/绘画/语音模型待配置）',
+  NULL,
+  'chatSimple',
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  'enable',
+  10,
+  '{"izDraw":"0","izVoice":"0"}',
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  0,
+  NULL
+FROM DUAL
+WHERE NOT EXISTS (
+  SELECT 1 FROM `airag_app`
+  WHERE `name` = '探拾'
+    AND (`tenant_id` IS NULL OR `tenant_id` = '')
+);
+
 SET FOREIGN_KEY_CHECKS = 1;

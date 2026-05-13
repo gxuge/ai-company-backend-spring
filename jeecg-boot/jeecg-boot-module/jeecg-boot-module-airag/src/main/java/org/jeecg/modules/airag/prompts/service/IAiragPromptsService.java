@@ -15,4 +15,11 @@ import org.jeecg.modules.airag.prompts.vo.AiragExperimentVo;
 public interface IAiragPromptsService extends IService<AiragPrompts> {
 
     Result<?> promptExperiment(AiragExperimentVo experimentVo, HttpServletRequest request);
+
+    /**
+     * 将 classpath 模板批量同步到 airag_prompts（存在则更新，不存在则新增）。
+     *
+     * @return 同步数量
+     */
+    int syncClasspathTemplatesToDb();
 }

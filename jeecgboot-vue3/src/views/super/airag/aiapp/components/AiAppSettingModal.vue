@@ -442,6 +442,28 @@
                         </a-form-item>
                       </a-col>
                     </a-row>
+                    <a-row>
+                      <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol">
+                        <div style="display: flex;margin-top: 10px">
+                          <div style="margin-left: 2px">语音能力：</div>
+                          <a-switch :disabled="isRelease" v-model:checked="izVoiceChecked" checked-children="开" un-checked-children="关" @change="handleVoiceChange"></a-switch>
+                        </div>
+                      </a-form-item>
+                    </a-row>
+                    <a-row v-if="izVoiceChecked" class="mt-10">
+                      <a-col :span="24">
+                        <a-form-item :labelCol="labelCol" :wrapperCol="wrapperCol" v-bind="validateInfos.voiceModelId">
+                          <span style="margin-left: 2px; margin-bottom: 5px">语音模型：</span>
+                          <JDictSelectTag
+                              v-model:value="formState.voiceModelId"
+                              :disabled="isRelease"
+                              placeholder="请选择语音模型"
+                              dict-code="airag_model where model_type = 'VOICE' and activate_flag = 1,name,id"
+                              @change="handleVoiceModelChange"
+                          ></JDictSelectTag>
+                        </a-form-item>
+                      </a-col>
+                    </a-row>
                   </div>
                 </a-col>
               </a-row>
@@ -577,6 +599,7 @@
         izOpenMemory: 1,
         memoryPrompt: '',
         drawModelId: '',
+        voiceModelId: '',
       });
 
       //表单验证
@@ -584,9 +607,9 @@
         name: [{ required: true, message: '请输入应用名称!' }],
         modelId: [{ required: true, message: '请选择AI模型!' }],
         flowId:[{ required: true, message: '请选择AI流程!' }],
-        drawModelId: [{  required: true, message: '请选择绘画模型!' }]
+        drawModelId: [{ required: true, message: '请选择绘画模型!' }],
+        voiceModelId: [{ required: true, message: '请选择语音模型!' }],
       });
-      //注册form
       const useForm = Form.useForm;
       const { resetFields, validate, validateInfos } = useForm(formState, validatorRules, { immediate: false });
       const labelCol = ref<any>({ span: 24 });
@@ -622,6 +645,8 @@
       const multiSessionChecked = ref<boolean>(true);
       //开启会话能力
       const izDrawChecked = ref<boolean>(false);
+      //voice capability switch
+      const izVoiceChecked = ref<boolean>(false);
       // 是否已发布
       const isRelease = ref<boolean>(false);
       //对话设置弹窗ref
@@ -1179,6 +1204,8 @@
         quickCommandList.value = [];
         quickCommand.value = '';
         multiSessionChecked.value = true;
+        izDrawChecked.value = false;
+        izVoiceChecked.value = false;
         variablesList.value = [];
         izOpenMemoryChecked.value = false;
         memoryLoading.value = false;
@@ -1210,6 +1237,14 @@
           }
           if(metadata.value?.drawModelId){
             formState.drawModelId = metadata.value.drawModelId;
+          }
+          if(metadata.value?.izVoice){
+            izVoiceChecked.value = metadata.value.izVoice === '1';
+          }else{
+            izVoiceChecked.value = false;
+          }
+          if(metadata.value?.voiceModelId){
+            formState.voiceModelId = metadata.value.voiceModelId;
           }
         }
         if(data.presetQuestion){
@@ -1611,6 +1646,29 @@
       }
       //================================================ end 开启绘画 ========================================================
 
+
+      //================================================ begin voice capability =========================================================
+      /**
+       * voice capability switch callback
+       */
+      function handleVoiceChange(checked){
+        if(checked){
+          metadata.value.izVoice = "1";
+        }else{
+          metadata.value.izVoice = "0";
+        }
+        formState.metadata = JSON.stringify(metadata.value);
+      }
+
+      /**
+       * voice model changed callback
+       */
+      function handleVoiceModelChange(val){
+        metadata.value.voiceModelId = val;
+        formState.metadata = JSON.stringify(metadata.value);
+      }
+      //================================================ end voice capability =========================================================
+
       return {
         registerModal,
         title,
@@ -1705,6 +1763,9 @@
         izDrawChecked,
         handleDrawChange,
         handleDrawModelChange,
+        izVoiceChecked,
+        handleVoiceChange,
+        handleVoiceModelChange,
       };
     },
   };

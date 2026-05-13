@@ -1,8 +1,12 @@
 package org.jeecg.modules.airag.prompts.service.impl;
 
+import com.alibaba.fastjson2.JSONObject;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.exception.JeecgBootBizTipException;
 import org.jeecg.common.util.AssertUtils;
+import org.jeecg.modules.airag.prompts.entity.AiragPrompts;
+import org.jeecg.modules.airag.prompts.service.IAiragPromptsService;
 import org.jeecg.modules.airag.prompts.service.IAiragPromptTemplateService;
 import org.jeecg.modules.airag.prompts.vo.AiragPromptTemplateVo;
 import org.springframework.core.io.Resource;
@@ -49,11 +53,19 @@ public class AiragPromptTemplateServiceImpl implements IAiragPromptTemplateServi
     private static final Pattern SECTION_PATTERN = Pattern.compile("^SECTION::([\\w-]+)$");
 
     private final ResourceLoader resourceLoader;
+    private final IAiragPromptsService airagPromptsService;
 
     private volatile Map<String, AiragPromptTemplateVo> templateCache = Collections.emptyMap();
 
-    public AiragPromptTemplateServiceImpl(ResourceLoader resourceLoader) {
+    public AiragPromptTemplateServiceImpl(ResourceLoader resourceLoader,
+                                          IAiragPromptsService airagPromptsService) {
         this.resourceLoader = resourceLoader;
+        this.airagPromptsService = airagPromptsService;
+    }
+
+    @Override
+    public Map<String, AiragPromptTemplateVo> listClasspathTemplates() {
+        return templateCache;
     }
 
     /**
@@ -74,6 +86,10 @@ public class AiragPromptTemplateServiceImpl implements IAiragPromptTemplateServi
     public AiragPromptTemplateVo getTemplate(String code, String version) {
         AssertUtils.assertNotEmpty("模板编码不能为空", code);
         AssertUtils.assertNotEmpty("模板版本不能为空", version);
+        AiragPromptTemplateVo dbTemplate = loadTemplateFromDb(code, version);
+        if (dbTemplate != null) {
+            return dbTemplate;
+        }
         String key = buildTemplateKey(code, version);
         AiragPromptTemplateVo template = templateCache.get(key);
         if (template == null) {
@@ -290,6 +306,73 @@ public class AiragPromptTemplateServiceImpl implements IAiragPromptTemplateServi
     /**
      * 生成模板缓存 key
      */
+    private AiragPromptTemplateVo loadTemplateFromDb(String code, String version) {
+        AiragPrompts prompts = airagPromptsService.getOne(
+                new LambdaQueryWrapper<AiragPrompts>()
+                        .eq(AiragPrompts::getPromptKey, code)
+                        .eq(AiragPrompts::getVersion, version)
+                        .orderByDesc(AiragPrompts::getUpdateTime)
+                        .orderByDesc(AiragPrompts::getCreateTime)
+                        .last("limit 1"),
+                false
+        );
+        if (prompts == null) {
+            return null;
+        }
+        Map<String, String> sections = buildSectionsFromDb(prompts);
+        if (!isValidSections(code, sections)) {
+            String key = buildTemplateKey(code, version);
+            throw new JeecgBootBizTipException("提示词配置不完整：" + key + "，请先在提示词管理中补齐必填段落");
+        }
+        AiragPromptTemplateVo templateVo = new AiragPromptTemplateVo();
+        templateVo.setCode(code);
+        templateVo.setVersion(version);
+        templateVo.setSections(Collections.unmodifiableMap(sections));
+        return templateVo;
+    }
+
+    private Map<String, String> buildSectionsFromDb(AiragPrompts prompts) {
+        Map<String, String> sections = new LinkedHashMap<>();
+        sections.put("meta", "");
+        sections.put("developer_prompt", "");
+        sections.put("user_prompt_template", prompts.getContent());
+        sections.put("output_schema_hint", "");
+        sections.put("output_field_notes", "");
+        if (!StringUtils.hasText(prompts.getModelParam())) {
+            return sections;
+        }
+        try {
+            JSONObject modelParam = JSONObject.parseObject(prompts.getModelParam());
+            putIfPresent(modelParam, sections, "meta");
+            putIfPresent(modelParam, sections, "developer_prompt");
+            putIfPresent(modelParam, sections, "output_schema_hint");
+            putIfPresent(modelParam, sections, "output_field_notes");
+            putIfPresent(modelParam, sections, "user_prompt_template");
+        } catch (Exception ex) {
+            log.warn("解析 airag_prompts.model_param 失败，将使用默认段落，promptId={}", prompts.getId(), ex);
+        }
+        return sections;
+    }
+
+    private void putIfPresent(JSONObject source, Map<String, String> target, String key) {
+        String value = source.getString(key);
+        if (value != null) {
+            target.put(key, value);
+        }
+    }
+
+    private boolean isValidSections(String code, Map<String, String> sections) {
+        for (String requiredSection : BASE_REQUIRED_SECTIONS) {
+            if (!StringUtils.hasText(sections.get(requiredSection))) {
+                return false;
+            }
+        }
+        if (CHAT_RUNTIME_CODE.equals(code) && !StringUtils.hasText(sections.get(SECTION_OUTPUT_FIELD_NOTES))) {
+            return false;
+        }
+        return true;
+    }
+
     private String buildTemplateKey(String code, String version) {
         return code + TEMPLATE_KEY_SPLIT + version;
     }

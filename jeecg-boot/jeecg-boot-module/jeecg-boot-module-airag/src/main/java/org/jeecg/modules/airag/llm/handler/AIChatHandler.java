@@ -27,7 +27,12 @@ import org.jeecg.modules.airag.llm.mapper.AiragModelMapper;
 import org.jeecg.config.AiRagConfigBean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.io.File;
 import java.io.IOException;
@@ -249,7 +254,7 @@ public class AIChatHandler implements IAIChatHandler {
             params = new AIChatParams();
         }
 
-        params.setProvider(airagModel.getProvider());
+        params.setProvider(resolveProviderForInvoke(airagModel));
         params.setModelName(airagModel.getModelName());
         params.setBaseUrl(airagModel.getBaseUrl());
         if (oConvertUtils.isObjectNotEmpty(airagModel.getCredential())) {
@@ -307,6 +312,19 @@ public class AIChatHandler implements IAIChatHandler {
         }
 
         return params;
+    }
+
+    private String resolveProviderForInvoke(AiragModel airagModel) {
+        if (airagModel == null || oConvertUtils.isEmpty(airagModel.getProvider())) {
+            return airagModel == null ? null : airagModel.getProvider();
+        }
+        String provider = airagModel.getProvider().trim();
+        String modelType = airagModel.getModelType();
+        if ("MINIMAX".equalsIgnoreCase(provider)
+                && LLMConsts.MODEL_TYPE_LLM.equalsIgnoreCase(modelType)) {
+            return "OPENAI";
+        }
+        return provider;
     }
 
     /**
@@ -451,6 +469,9 @@ public class AIChatHandler implements IAIChatHandler {
     public List<Map<String, Object>> imageGenerate(AiragModel airagModel, String messages, AIChatParams params) {
         params = mergeParams(airagModel, params);
         try {
+            if (isMiniMaxImageModel(airagModel)) {
+                return miniMaxImageGenerate(airagModel, messages);
+            }
             return llmHandler.imageGenerate(messages, params);
         } catch (Exception e) {
             String errMsg = "调用绘画AI接口失败，详情请查看后台日志。";
@@ -548,6 +569,162 @@ public class AIChatHandler implements IAIChatHandler {
             }
         }
         return originalImageBase64List;
+    }
+
+    private boolean isMiniMaxImageModel(AiragModel airagModel) {
+        return airagModel != null
+                && "MINIMAX".equalsIgnoreCase(oConvertUtils.getString(airagModel.getProvider()))
+                && LLMConsts.MODEL_TYPE_IMAGE.equalsIgnoreCase(oConvertUtils.getString(airagModel.getModelType()));
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> miniMaxImageGenerate(AiragModel airagModel, String prompt) {
+        String modelName = oConvertUtils.getString(airagModel.getModelName());
+        String baseUrl = normalizeMiniMaxBaseUrl(airagModel.getBaseUrl());
+        String apiKey = extractApiKey(airagModel.getCredential());
+
+        if (!StringUtils.hasText(modelName)) {
+            throw new JeecgBootException("MiniMax image model name is required");
+        }
+        if (!StringUtils.hasText(apiKey)) {
+            throw new JeecgBootException("MiniMax apiKey is required");
+        }
+        if (!StringUtils.hasText(prompt)) {
+            throw new JeecgBootException("MiniMax image prompt is required");
+        }
+
+        Map<String, Object> req = new LinkedHashMap<>();
+        req.put("model", modelName);
+        req.put("prompt", prompt);
+        req.put("response_format", "url");
+        String aspectRatio = extractImageAspectRatio(airagModel.getModelParams());
+        if (StringUtils.hasText(aspectRatio)) {
+            req.put("aspect_ratio", aspectRatio);
+        }
+
+        RestClient restClient = RestClient.builder()
+                .baseUrl(baseUrl)
+                .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey.trim())
+                .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
+                .build();
+
+        Map<String, Object> resp;
+        try {
+            resp = restClient.post()
+                    .uri("/image_generation")
+                    .body(req)
+                    .retrieve()
+                    .body(Map.class);
+        } catch (RestClientResponseException ex) {
+            String body = ex.getResponseBodyAsString();
+            String message = "MiniMax image http " + ex.getStatusCode().value();
+            if (StringUtils.hasText(body)) {
+                message += ": " + body;
+            }
+            throw new JeecgBootException(message);
+        } catch (Exception ex) {
+            throw new JeecgBootException("MiniMax image request failed: " + ex.getMessage());
+        }
+
+        if (resp == null) {
+            throw new JeecgBootException("MiniMax image response is empty");
+        }
+
+        Object baseRespObj = resp.get("base_resp");
+        if (baseRespObj instanceof Map<?, ?> baseResp) {
+            int statusCode = toInt(baseResp.get("status_code"), 0);
+            if (statusCode != 0) {
+                String statusMsg = oConvertUtils.getString(baseResp.get("status_msg"));
+                throw new JeecgBootException("MiniMax image business error: " + statusCode + " - " + statusMsg);
+            }
+        }
+
+        Object dataObj = resp.get("data");
+        if (!(dataObj instanceof Map<?, ?> dataMap)) {
+            throw new JeecgBootException("MiniMax image response missing data");
+        }
+        Object imageUrlsObj = dataMap.get("image_urls");
+        List<Map<String, Object>> result = new ArrayList<>();
+        if (imageUrlsObj instanceof List<?> imageUrls) {
+            for (Object item : imageUrls) {
+                String url = null;
+                if (item instanceof String str && StringUtils.hasText(str)) {
+                    url = str;
+                } else if (item instanceof Map<?, ?> itemMap) {
+                    Object urlObj = itemMap.get("url");
+                    if (!(urlObj instanceof String) || !StringUtils.hasText((String) urlObj)) {
+                        urlObj = itemMap.get("image_url");
+                    }
+                    if (urlObj instanceof String urlStr && StringUtils.hasText(urlStr)) {
+                        url = urlStr;
+                    }
+                }
+                if (StringUtils.hasText(url)) {
+                    Map<String, Object> image = new HashMap<>(2);
+                    image.put("type", "http");
+                    image.put("value", url);
+                    result.add(image);
+                }
+            }
+        }
+        return result;
+    }
+
+    private String normalizeMiniMaxBaseUrl(String baseUrl) {
+        String value = StringUtils.hasText(baseUrl) ? baseUrl.trim() : "https://api.minimaxi.com/v1";
+        while (value.endsWith("/")) {
+            value = value.substring(0, value.length() - 1);
+        }
+        return value;
+    }
+
+    private String extractApiKey(String credential) {
+        if (!StringUtils.hasText(credential)) {
+            return null;
+        }
+        try {
+            JSONObject credentialJson = JSONObject.parseObject(credential);
+            if (credentialJson == null) {
+                return null;
+            }
+            return credentialJson.getString("apiKey");
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String extractImageAspectRatio(String modelParams) {
+        if (!StringUtils.hasText(modelParams)) {
+            return null;
+        }
+        try {
+            JSONObject json = JSONObject.parseObject(modelParams);
+            if (json == null) {
+                return null;
+            }
+            String aspectRatio = json.getString("aspectRatio");
+            if (!StringUtils.hasText(aspectRatio)) {
+                aspectRatio = json.getString("aspect_ratio");
+            }
+            return aspectRatio;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private int toInt(Object value, int defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        try {
+            return Integer.parseInt(String.valueOf(value).trim());
+        } catch (Exception ex) {
+            return defaultValue;
+        }
     }
     //================================================= end 【QQYUN-12145】【AI】AI 绘画创作 ========================================
 }

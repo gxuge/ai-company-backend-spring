@@ -127,6 +127,13 @@ public class AiragApp implements Serializable {
     @Schema(description = "模型配置")
     private java.lang.String modelId;
     /**
+     * 语音模型配置
+     */
+    @Excel(name = "语音模型配置", width = 15, dictTable = "airag_model where model_type = 'VOICE' ", dicText = "name", dicCode = "id")
+    @Dict(dictTable = "airag_model where model_type = 'VOICE' ", dicText = "name", dicCode = "id")
+    @Schema(description = "语音模型配置")
+    private java.lang.String voiceModelId;
+    /**
      * 历史消息数
      */
     @Excel(name = "历史消息数", width = 15)
