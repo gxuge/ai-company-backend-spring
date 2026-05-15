@@ -53,6 +53,8 @@ export const searchFormSchema: FormSchema[] = [
 export const NAME_MAX_LENGTH = 40;
 // 编码最大长度
 export const CODE_MAX_LENGTH = 50;
+// 描述最大长度（后端字段 varchar(255)）
+export const DESC_MAX_LENGTH = 255;
 //表单数据
 export const formSchema: FormSchema[] = [
   {
@@ -74,7 +76,15 @@ export const formSchema: FormSchema[] = [
             nonZh: 'consecutive',
           }).join('_');
           code = code.replace(/[^a-zA-Z0-9_\-]/g, '');
-          formModel.promptKey = code;
+          const versionMatch = code.match(/^(.*)_(v[\w.-]+)$/i);
+          if (versionMatch && versionMatch[1]) {
+            formModel.promptKey = versionMatch[1];
+            if (!formModel.version) {
+              formModel.version = versionMatch[2].toLowerCase();
+            }
+          } else {
+            formModel.promptKey = code;
+          }
         },
       };
     },
@@ -122,9 +132,55 @@ export const formSchema: FormSchema[] = [
     }
   },
   {
+    label: '版本',
+    field: 'version',
+    component: 'Input',
+    defaultValue: 'v1',
+    dynamicRules() {
+      return [
+        { required: true, message: '请输入版本号，例如 v1' },
+        {
+          validator(_, value) {
+            const pattern = /^v[\w.-]+$/i;
+            if (!pattern.test(value || '')) {
+              return Promise.reject('版本格式应为 v1 / v2 / v1.0');
+            }
+            return Promise.resolve();
+          },
+        },
+      ];
+    },
+  },
+  {
     label: '提示词功能描述',
     field: 'description',
     component: 'InputTextArea',
+    componentProps: {
+      maxlength: DESC_MAX_LENGTH,
+      showCount: true,
+      rows: 3,
+      placeholder: '简短说明（不超过255字符）',
+    },
+    dynamicRules() {
+      return [
+        {
+          max: DESC_MAX_LENGTH,
+          message: `描述长度不能超过${DESC_MAX_LENGTH}个字符`,
+        },
+      ];
+    },
+  },
+  {
+    label: '模板内容',
+    field: 'content',
+    component: 'InputTextArea',
+    componentProps: {
+      rows: 10,
+      placeholder: '请输入完整模板文本（含 TEMPLATE_BEGIN / SECTION / TEMPLATE_END）',
+    },
+    dynamicRules() {
+      return [{ required: true, message: '请输入模板内容' }];
+    },
   },
   {
     label: '',

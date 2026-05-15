@@ -1,0 +1,117 @@
+TEMPLATE_BEGIN::story_core_fill::v2
+SECTION::meta
+code=story_core_fill
+version=v2
+scenario=story
+description=Generate story core fields via tool call.
+output_mode=tool_call
+tool_name=submit_story_core_fill
+strict=true
+
+SECTION::developer_prompt
+你是互动式 AI 故事策划助手。
+目标：为长期会话场景生成稳定、可重用的故事核心字段。
+规则：
+1. 必须通过 tool call 输出，禁止输出普通解释文本。
+2. 仅允许调用一次工具：submit_story_core_fill。
+3. 输入变量若为字面量 null，视为缺失并进行生成。
+4. 输入变量若非 null，保持其意图一致，仅做轻微措辞优化。
+5. story_mode 仅允许 normal 或 chapter。
+6. story_intro 保持简洁，建议 40-100 个汉字。
+7. story_setting 侧重世界规则和交互上下文。
+8. story_background 侧重冲突、动机和可持续推进钩子。
+9. 确保内容安全、可用于产品长期互动。
+10. 除参数值外，输出内容必须使用中文。
+
+SECTION::user_prompt_template
+{
+  "输入参数": {
+    "title": {
+      "value": "{{title}}",
+      "含义": "故事标题，若非 null 需保持核心意图"
+    },
+    "story_mode": {
+      "value": "{{story_mode}}",
+      "含义": "故事模式，允许 normal 或 chapter"
+    },
+    "story_intro": {
+      "value": "{{story_intro}}",
+      "含义": "故事简介，建议简洁清晰"
+    },
+    "story_setting": {
+      "value": "{{story_setting}}",
+      "含义": "世界规则与交互上下文"
+    },
+    "story_background": {
+      "value": "{{story_background}}",
+      "含义": "冲突、动机与剧情钩子"
+    },
+    "idea_input": {
+      "value": "{{idea_input}}",
+      "含义": "用户创意输入，可作为补充生成依据"
+    },
+    "style_hint": {
+      "value": "{{style_hint}}",
+      "含义": "风格提示，用于统一文风"
+    }
+  }
+}
+
+SECTION::tool_schema
+{
+  "name": "submit_story_core_fill",
+  "description": "提交故事核心字段结果。严格要求：必须仅通过 tool call 返回结构化 JSON 参数，不得输出解释、Markdown 或其他前后缀文本；JSON 字段名必须与 schema 一致，禁止新增未定义字段；required 字段必须全部返回，枚举值必须严格命中 schema。",
+  "output_extract": {
+    "title": "返回给前端的故事标题。",
+    "story_intro": "返回给前端的故事简介。",
+    "story_mode": "返回给前端的故事模式。",
+    "story_setting": "返回给前端的故事设定。",
+    "story_background": "返回给前端的故事背景。",
+    "reason": "可选说明。"
+  },
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "title": {
+        "type": "string",
+        "description": "故事标题"
+      },
+      "story_intro": {
+        "type": "string",
+        "description": "故事简介，建议 40-100 个汉字",
+        "minLength": 40,
+        "maxLength": 100
+      },
+      "story_mode": {
+        "type": "string",
+        "description": "故事模式枚举",
+        "oneOf": [
+          { "const": "normal", "description": "普通连续模式" },
+          { "const": "chapter", "description": "章节模式" }
+        ]
+      },
+      "story_setting": {
+        "type": "string",
+        "description": "世界规则和交互上下文设定"
+      },
+      "story_background": {
+        "type": "string",
+        "description": "冲突、动机和可持续推进钩子"
+      },
+      "reason": {
+        "type": "string",
+        "description": "可选：简述本次故事核心生成依据",
+        "maxLength": 200
+      }
+    },
+    "required": [
+      "title",
+      "story_intro",
+      "story_mode",
+      "story_setting",
+      "story_background"
+    ]
+  }
+}
+TEMPLATE_END::story_core_fill::v2

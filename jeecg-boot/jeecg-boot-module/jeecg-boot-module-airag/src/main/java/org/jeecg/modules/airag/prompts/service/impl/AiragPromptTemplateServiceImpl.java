@@ -319,6 +319,10 @@ public class AiragPromptTemplateServiceImpl implements IAiragPromptTemplateServi
         if (prompts == null) {
             return null;
         }
+        AiragPromptTemplateVo fullTemplate = parseTemplateFromDbContent(prompts, code, version);
+        if (fullTemplate != null) {
+            return fullTemplate;
+        }
         Map<String, String> sections = buildSectionsFromDb(prompts);
         if (!isValidSections(code, sections)) {
             String key = buildTemplateKey(code, version);
@@ -329,6 +333,32 @@ public class AiragPromptTemplateServiceImpl implements IAiragPromptTemplateServi
         templateVo.setVersion(version);
         templateVo.setSections(Collections.unmodifiableMap(sections));
         return templateVo;
+    }
+
+    private AiragPromptTemplateVo parseTemplateFromDbContent(AiragPrompts prompts, String code, String version) {
+        if (!StringUtils.hasText(prompts.getContent())) {
+            return null;
+        }
+        String templateText = prompts.getContent();
+        if (!templateText.contains("TEMPLATE_BEGIN::")) {
+            return null;
+        }
+        String key = buildTemplateKey(code, version);
+        try {
+            Map<String, AiragPromptTemplateVo> parsed = parseTemplates(templateText, "db:" + prompts.getId());
+            AiragPromptTemplateVo templateVo = parsed.get(key);
+            if (templateVo == null) {
+                throw new JeecgBootBizTipException("description中的模板编码/版本不匹配: " + key);
+            }
+            if (!isValidSections(code, templateVo.getSections())) {
+                throw new JeecgBootBizTipException("description中的模板缺少必填SECTION: " + key);
+            }
+            return templateVo;
+        } catch (JeecgBootBizTipException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new JeecgBootBizTipException("description中的模板格式错误: " + key);
+        }
     }
 
     private Map<String, String> buildSectionsFromDb(AiragPrompts prompts) {

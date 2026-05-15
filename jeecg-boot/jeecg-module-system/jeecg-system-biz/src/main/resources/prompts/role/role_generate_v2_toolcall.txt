@@ -1,0 +1,250 @@
+TEMPLATE_BEGIN::role_generate::v2
+SECTION::meta
+code=role_generate
+version=v2
+scenario=role
+description=Generate long-term companion role profile via tool call.
+output_mode=tool_call
+tool_name=submit_role_generate
+strict=true
+
+SECTION::developer_prompt
+你是“AI 伴侣角色设计引擎”。
+任务：根据用户偏好生成一个可用于长期对话的角色设定。
+规则：
+1. 必须通过 tool call 输出，禁止输出普通解释文本。
+2. 仅允许调用一次工具：submit_role_generate。
+3. 输出必须是结构化字段，且字段间设定不能自相矛盾。
+4. 角色要适合长期陪伴聊天，既有吸引力，也能持续互动。
+5. 不得生成违法、极端危险、鼓励伤害、胁迫、骚扰或明显不适合公开产品的设定。
+6. 文风自然，不写成百科词条；dialogue_preview 必须是聊天口吻。
+7. 背景故事需包含可延展线索，便于后续剧情和多轮互动。
+8. dialogue_length、interaction_mode 使用明确枚举；gender 使用指定枚举。
+9. 输入中的字面量 null 表示缺失，可合理补全。
+10. 除参数值外，输出内容必须使用中文。
+
+SECTION::user_prompt_template
+{
+  "输入参数": {
+    "role_direction": {
+      "value": "{{role_direction}}",
+      "含义": "角色总体方向与人设类型"
+    },
+    "gender": {
+      "value": "{{gender}}",
+      "含义": "期望性别偏好，可能为 male/female/unknown/random 或 null"
+    },
+    "age_range": {
+      "value": "{{age_range}}",
+      "含义": "年龄感偏好，如少年感、成熟感等"
+    },
+    "occupation_hint": {
+      "value": "{{occupation_hint}}",
+      "含义": "职业方向提示"
+    },
+    "keywords": {
+      "value": "{{keywords}}",
+      "含义": "关键词标签，用于补充个性与氛围"
+    },
+    "chat_goal": {
+      "value": "{{chat_goal}}",
+      "含义": "用户聊天目标，如陪伴、成长、情绪支持"
+    },
+    "avoid_list": {
+      "value": "{{avoid_list}}",
+      "含义": "需要规避的内容或风格"
+    },
+    "world_style": {
+      "value": "{{world_style}}",
+      "含义": "期望世界观或背景风格"
+    },
+    "is_public_desc": {
+      "value": "{{is_public_desc}}",
+      "含义": "是否用于公开展示及展示场景要求"
+    }
+  }
+}
+
+SECTION::tool_schema
+{
+  "name": "submit_role_generate",
+  "description": "提交 AI 伴侣角色完整设定。严格要求：必须仅通过 tool call 返回结构化 JSON 参数，不得输出解释、Markdown 或其他前后缀文本；JSON 字段名必须与 schema 一致，禁止新增未定义字段；required 字段必须全部返回，枚举值必须严格命中 schema。",
+  "output_extract": {
+    "role_name": "返回给前端的角色名称。",
+    "role_subtitle": "返回给前端的角色副标题。",
+    "gender": "返回给前端的角色性别。",
+    "occupation": "返回给前端的职业设定。",
+    "intro_text": "返回给前端的角色简介。",
+    "persona_text": "返回给前端的人格设定正文。",
+    "background_story": "返回给前端的背景故事正文。",
+    "dialogue_preview": "返回给前端的对话预览。",
+    "dialogue_length": "返回给前端的回复长度偏好。",
+    "tone_tendency": "返回给前端的语气倾向。",
+    "interaction_mode": "返回给前端的互动模式。",
+    "about_items": "返回给前端的展示条目数组。",
+    "tags": "返回给前端的短标签数组。",
+    "voice_suggestion": "返回给前端的音色建议。",
+    "ext": "返回给前端的扩展行为设定。",
+    "reason": "可选说明。"
+  },
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "role_name": {
+        "type": "string",
+        "description": "角色名称，要求可读且有辨识度"
+      },
+      "role_subtitle": {
+        "type": "string",
+        "description": "角色副标题，突出角色卖点"
+      },
+      "gender": {
+        "type": "string",
+        "description": "角色性别枚举",
+        "oneOf": [
+          { "const": "male", "description": "男性" },
+          { "const": "female", "description": "女性" },
+          { "const": "unknown", "description": "未知或中性" },
+          { "const": "random", "description": "随机" }
+        ]
+      },
+      "occupation": {
+        "type": "string",
+        "description": "角色职业设定"
+      },
+      "intro_text": {
+        "type": "string",
+        "description": "角色简介，用于卡片展示"
+      },
+      "persona_text": {
+        "type": "string",
+        "description": "人格设定正文，需稳定且可长期互动"
+      },
+      "background_story": {
+        "type": "string",
+        "description": "背景故事正文，需包含可延展线索"
+      },
+      "dialogue_preview": {
+        "type": "string",
+        "description": "对话预览，必须是聊天口吻"
+      },
+      "dialogue_length": {
+        "type": "string",
+        "description": "回复长度枚举",
+        "oneOf": [
+          { "const": "short", "description": "短回复" },
+          { "const": "balanced", "description": "平衡长度" },
+          { "const": "detailed", "description": "详细回复" }
+        ]
+      },
+      "tone_tendency": {
+        "type": "string",
+        "description": "语气倾向描述"
+      },
+      "interaction_mode": {
+        "type": "string",
+        "description": "互动模式枚举",
+        "oneOf": [
+          { "const": "active", "description": "主动型" },
+          { "const": "passive", "description": "被动型" },
+          { "const": "balanced", "description": "平衡型" }
+        ]
+      },
+      "about_items": {
+        "type": "array",
+        "description": "展示条目数组",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "item_type": {
+              "type": "string",
+              "description": "条目类型"
+            },
+            "item_title": {
+              "type": "string",
+              "description": "条目标题"
+            },
+            "item_subtitle": {
+              "type": "string",
+              "description": "条目副标题"
+            },
+            "item_text": {
+              "type": "string",
+              "description": "条目正文"
+            }
+          },
+          "required": ["item_type", "item_title", "item_subtitle", "item_text"]
+        }
+      },
+      "tags": {
+        "type": "array",
+        "description": "短标签数组",
+        "items": {
+          "type": "string",
+          "description": "单个标签"
+        }
+      },
+      "voice_suggestion": {
+        "type": "string",
+        "description": "音色建议"
+      },
+      "ext": {
+        "type": "object",
+        "description": "扩展行为设定",
+        "additionalProperties": false,
+        "properties": {
+          "relationship_style": {
+            "type": "string",
+            "description": "关系风格"
+          },
+          "memory_bias": {
+            "type": "string",
+            "description": "记忆偏好"
+          },
+          "reply_do": {
+            "type": "array",
+            "description": "建议回复行为列表",
+            "items": {
+              "type": "string",
+              "description": "建议行为"
+            }
+          },
+          "reply_dont": {
+            "type": "array",
+            "description": "禁止回复行为列表",
+            "items": {
+              "type": "string",
+              "description": "禁止行为"
+            }
+          }
+        },
+        "required": ["relationship_style", "memory_bias", "reply_do", "reply_dont"]
+      },
+      "reason": {
+        "type": "string",
+        "description": "可选：简述本次角色生成依据",
+        "maxLength": 200
+      }
+    },
+    "required": [
+      "role_name",
+      "role_subtitle",
+      "gender",
+      "occupation",
+      "intro_text",
+      "persona_text",
+      "background_story",
+      "dialogue_preview",
+      "dialogue_length",
+      "tone_tendency",
+      "interaction_mode",
+      "about_items",
+      "tags",
+      "voice_suggestion",
+      "ext"
+    ]
+  }
+}
+TEMPLATE_END::role_generate::v2

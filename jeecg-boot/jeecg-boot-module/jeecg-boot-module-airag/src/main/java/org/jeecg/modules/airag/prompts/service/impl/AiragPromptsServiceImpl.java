@@ -27,6 +27,7 @@ import org.jeecg.modules.airag.prompts.service.IAiragPromptsService;
 import org.jeecg.modules.airag.prompts.vo.AiragExperimentVo;
 import org.jeecg.modules.airag.prompts.vo.AiragPromptTemplateVo;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -53,6 +54,7 @@ public class AiragPromptsServiceImpl extends ServiceImpl<AiragPromptsMapper, Air
     IAiragExtDataService airagExtDataService;
 
     @Autowired
+    @Lazy
     private IAiragPromptTemplateService airagPromptTemplateService;
 
     @Autowired
@@ -380,6 +382,7 @@ public class AiragPromptsServiceImpl extends ServiceImpl<AiragPromptsMapper, Air
             String code = template.getCode();
             String version = template.getVersion();
             Map<String, String> sections = template.getSections();
+            String fullTemplateText = buildTemplateText(code, version, sections);
 
             JSONObject modelParam = new JSONObject();
             modelParam.put("meta", sections.get("meta"));
@@ -405,11 +408,11 @@ public class AiragPromptsServiceImpl extends ServiceImpl<AiragPromptsMapper, Air
                 exists.setCategory(resolveCategory(code));
                 exists.setStatus("1");
                 exists.setDelFlag(CommonConstant.DEL_FLAG_0);
-                exists.setContent(sections.get("user_prompt_template"));
+                exists.setContent(fullTemplateText);
                 exists.setModelParam(modelParam.toJSONString());
                 this.save(exists);
             } else {
-                exists.setContent(sections.get("user_prompt_template"));
+                exists.setContent(fullTemplateText);
                 exists.setModelParam(modelParam.toJSONString());
                 if (oConvertUtils.isEmpty(exists.getName())) {
                     exists.setName(code);
@@ -422,6 +425,28 @@ public class AiragPromptsServiceImpl extends ServiceImpl<AiragPromptsMapper, Air
             synced++;
         }
         return synced;
+    }
+
+    private String buildTemplateText(String code, String version, Map<String, String> sections) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("TEMPLATE_BEGIN::").append(code).append("::").append(version).append('\n');
+        appendSection(sb, "meta", sections.get("meta"));
+        appendSection(sb, "developer_prompt", sections.get("developer_prompt"));
+        appendSection(sb, "user_prompt_template", sections.get("user_prompt_template"));
+        appendSection(sb, "output_schema_hint", sections.get("output_schema_hint"));
+        if (sections.containsKey("output_field_notes")) {
+            appendSection(sb, "output_field_notes", sections.get("output_field_notes"));
+        }
+        sb.append("TEMPLATE_END::").append(code).append("::").append(version);
+        return sb.toString();
+    }
+
+    private void appendSection(StringBuilder sb, String sectionName, String sectionContent) {
+        sb.append("SECTION::").append(sectionName).append('\n');
+        if (sectionContent != null) {
+            sb.append(sectionContent);
+        }
+        sb.append('\n').append('\n');
     }
 
     private String resolveCategory(String promptKey) {

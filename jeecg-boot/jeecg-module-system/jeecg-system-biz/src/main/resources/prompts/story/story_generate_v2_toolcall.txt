@@ -1,0 +1,190 @@
+TEMPLATE_BEGIN::story_generate::v2
+SECTION::meta
+code=story_generate
+version=v2
+scenario=story
+description=Generate interactive story and chapter outline via tool call.
+output_mode=tool_call
+tool_name=submit_story_generate
+strict=true
+
+SECTION::developer_prompt
+你是互动叙事策划引擎。
+任务：基于给定角色资料和用户偏好，生成适合 AI 伴侣 App 的互动故事。
+规则：
+1. 必须通过 tool call 输出，禁止输出普通解释文本。
+2. 仅允许调用一次工具：submit_story_generate。
+3. 故事必须服务于长期聊天，而不是一次性短篇小说。
+4. 每一章都必须包含 opening_content 与 mission_target。
+5. 章节之间要有可推进感，但不能推进过快。
+6. 角色关系要清晰，避免角色动机混乱。
+7. 允许暧昧、陪伴、成长、悬疑等情绪张力，但不得输出危险或违规内容。
+8. 要考虑多人会话中的角色分工。
+9. 除参数值外，输出内容必须使用中文。
+
+SECTION::user_prompt_template
+{
+  "输入参数": {
+    "main_role_block": {
+      "value": "{{main_role_block}}",
+      "含义": "主角色资料块，包含核心角色人设与能力信息"
+    },
+    "user_goal": {
+      "value": "{{user_goal}}",
+      "含义": "用户目标，约束故事走向与互动重点"
+    },
+    "story_background_style": {
+      "value": "{{story_background_style}}",
+      "含义": "故事背景风格偏好"
+    },
+    "user_participation_mode": {
+      "value": "{{user_participation_mode}}",
+      "含义": "用户参与方式，决定互动结构"
+    },
+    "chapter_count_range": {
+      "value": "{{chapter_count_range}}",
+      "含义": "章节数量范围偏好"
+    },
+    "relationship_pacing": {
+      "value": "{{relationship_pacing}}",
+      "含义": "关系推进节奏偏好"
+    },
+    "avoid_story_style": {
+      "value": "{{avoid_story_style}}",
+      "含义": "需要规避的故事风格"
+    }
+  }
+}
+
+SECTION::tool_schema
+{
+  "name": "submit_story_generate",
+  "description": "提交互动故事生成结果。严格要求：必须仅通过 tool call 返回结构化 JSON 参数，不得输出解释、Markdown 或其他前后缀文本；JSON 字段名必须与 schema 一致，禁止新增未定义字段；required 字段必须全部返回，枚举值必须严格命中 schema。",
+  "output_extract": {
+    "title": "返回给前端的故事标题。",
+    "story_intro": "返回给前端的故事简介。",
+    "story_setting": "返回给前端的故事设定。",
+    "story_background": "返回给前端的故事背景。",
+    "roles": "返回给前端的角色参与列表。",
+    "chapters": "返回给前端的章节大纲列表。",
+    "reason": "可选说明。"
+  },
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "title": {
+        "type": "string",
+        "description": "互动故事标题"
+      },
+      "story_intro": {
+        "type": "string",
+        "description": "故事简介，用于开场展示"
+      },
+      "story_setting": {
+        "type": "string",
+        "description": "世界规则与互动上下文"
+      },
+      "story_background": {
+        "type": "string",
+        "description": "冲突背景、动机与长期推进钩子"
+      },
+      "roles": {
+        "type": "array",
+        "description": "故事参与角色列表",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "role_name": {
+              "type": "string",
+              "description": "角色名称"
+            },
+            "role_type": {
+              "type": "string",
+              "description": "角色类型枚举",
+              "oneOf": [
+                { "const": "user", "description": "用户角色" },
+                { "const": "main", "description": "主角色" },
+                { "const": "support", "description": "支援角色" },
+                { "const": "npc", "description": "场景角色" }
+              ]
+            },
+            "is_required": {
+              "type": "boolean",
+              "description": "该角色是否为必需参与角色"
+            }
+          },
+          "required": ["role_name", "role_type", "is_required"]
+        }
+      },
+      "chapters": {
+        "type": "array",
+        "description": "章节大纲列表",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "chapter_no": {
+              "type": "integer",
+              "description": "章节编号"
+            },
+            "chapter_title": {
+              "type": "string",
+              "description": "章节标题"
+            },
+            "chapter_desc": {
+              "type": "string",
+              "description": "章节描述"
+            },
+            "opening_content": {
+              "type": "string",
+              "description": "章节开场白内容"
+            },
+            "opening_role_name": {
+              "type": "string",
+              "description": "章节开场角色名称"
+            },
+            "mission_target": {
+              "type": "string",
+              "description": "章节任务目标"
+            },
+            "forbidden_role_names": {
+              "type": "array",
+              "description": "本章节禁用角色名称列表，可为空数组",
+              "items": {
+                "type": "string",
+                "description": "禁用角色名称"
+              }
+            }
+          },
+          "required": [
+            "chapter_no",
+            "chapter_title",
+            "chapter_desc",
+            "opening_content",
+            "opening_role_name",
+            "mission_target",
+            "forbidden_role_names"
+          ]
+        }
+      },
+      "reason": {
+        "type": "string",
+        "description": "可选：简述本次故事生成依据",
+        "maxLength": 200
+      }
+    },
+    "required": [
+      "title",
+      "story_intro",
+      "story_setting",
+      "story_background",
+      "roles",
+      "chapters"
+    ]
+  }
+}
+TEMPLATE_END::story_generate::v2
