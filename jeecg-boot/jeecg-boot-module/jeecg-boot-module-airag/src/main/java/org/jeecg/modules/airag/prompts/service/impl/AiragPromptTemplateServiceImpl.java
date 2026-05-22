@@ -31,7 +31,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * AIRAG classpath prompt 模板服务
+ * AIRAG Prompt 模板服务
  *
  * @author chenrui
  * @date 2026/3/31
@@ -44,9 +44,14 @@ public class AiragPromptTemplateServiceImpl implements IAiragPromptTemplateServi
     private static final String TEMPLATE_KEY_SPLIT = "::";
     private static final String CHAT_RUNTIME_CODE = "chat_runtime";
     private static final String SECTION_OUTPUT_FIELD_NOTES = "output_field_notes";
+    private static final String SECTION_TOOL_SCHEMA = "tool_schema";
+    private static final String SECTION_OUTPUT_SCHEMA_HINT = "output_schema_hint";
+    private static final String SECTION_META = "meta";
+    private static final String META_OUTPUT_MODE = "output_mode";
+    private static final String META_OUTPUT_MODE_TOOL_CALL = "tool_call";
 
     private static final List<String> BASE_REQUIRED_SECTIONS =
-            Arrays.asList("meta", "developer_prompt", "user_prompt_template", "output_schema_hint");
+            Arrays.asList("meta", "developer_prompt", "user_prompt_template");
 
     private static final Pattern TEMPLATE_BEGIN_PATTERN = Pattern.compile("^TEMPLATE_BEGIN::([\\w-]+)::([\\w.-]+)$");
     private static final Pattern TEMPLATE_END_PATTERN = Pattern.compile("^TEMPLATE_END::([\\w-]+)::([\\w.-]+)$");
@@ -69,14 +74,11 @@ public class AiragPromptTemplateServiceImpl implements IAiragPromptTemplateServi
     }
 
     /**
-     * 启动加载 classpath 模板并校验
+     * 启动初始化（当前不做 classpath 扫描）
      */
     @PostConstruct
     public void init() {
-        Map<String, AiragPromptTemplateVo> parsedTemplates = loadTemplatesFromResources();
-        validateRequiredSections(parsedTemplates);
-        this.templateCache = Collections.unmodifiableMap(parsedTemplates);
-        log.info("AIRAG prompt 模板加载完成，resourceGlob={}, templateCount={}", RESOURCE_GLOB, this.templateCache.size());
+        // no-op: templates are loaded on demand
     }
 
     /**
@@ -157,7 +159,7 @@ public class AiragPromptTemplateServiceImpl implements IAiragPromptTemplateServi
                                 entry.getKey(), resource.getDescription());
                         continue;
                     }
-                    throw new IllegalStateException("模板编码重复且内容不一致：" + entry.getKey() + "，请检查文件 " + resource.getDescription());
+                    throw new IllegalStateException("模板编码重复且内容不一致：" + entry.getKey() + "，请检查文件：" + resource.getDescription());
                 }
                 mergedTemplates.put(entry.getKey(), entry.getValue());
             }
@@ -265,7 +267,12 @@ public class AiragPromptTemplateServiceImpl implements IAiragPromptTemplateServi
     private void validateRequiredSections(Map<String, AiragPromptTemplateVo> templates) {
         for (AiragPromptTemplateVo template : templates.values()) {
             List<String> requiredSections = new ArrayList<>(BASE_REQUIRED_SECTIONS);
-            if (CHAT_RUNTIME_CODE.equals(template.getCode())) {
+            if (isToolCallTemplate(template.getSections())) {
+                requiredSections.add(SECTION_TOOL_SCHEMA);
+            } else {
+                requiredSections.add(SECTION_OUTPUT_SCHEMA_HINT);
+            }
+            if (CHAT_RUNTIME_CODE.equals(template.getCode()) && !isToolCallTemplate(template.getSections())) {
                 requiredSections.add(SECTION_OUTPUT_FIELD_NOTES);
             }
             for (String requiredSection : requiredSections) {
@@ -348,16 +355,16 @@ public class AiragPromptTemplateServiceImpl implements IAiragPromptTemplateServi
             Map<String, AiragPromptTemplateVo> parsed = parseTemplates(templateText, "db:" + prompts.getId());
             AiragPromptTemplateVo templateVo = parsed.get(key);
             if (templateVo == null) {
-                throw new JeecgBootBizTipException("description中的模板编码/版本不匹配: " + key);
+                throw new JeecgBootBizTipException("description 中的模板编码/版本不匹配: " + key);
             }
             if (!isValidSections(code, templateVo.getSections())) {
-                throw new JeecgBootBizTipException("description中的模板缺少必填SECTION: " + key);
+                throw new JeecgBootBizTipException("description 中的模板缺少必填 SECTION: " + key);
             }
             return templateVo;
         } catch (JeecgBootBizTipException ex) {
             throw ex;
         } catch (Exception ex) {
-            throw new JeecgBootBizTipException("description中的模板格式错误: " + key);
+            throw new JeecgBootBizTipException("description 中的模板格式错误: " + key);
         }
     }
 
@@ -366,7 +373,8 @@ public class AiragPromptTemplateServiceImpl implements IAiragPromptTemplateServi
         sections.put("meta", "");
         sections.put("developer_prompt", "");
         sections.put("user_prompt_template", prompts.getContent());
-        sections.put("output_schema_hint", "");
+        sections.put(SECTION_OUTPUT_SCHEMA_HINT, "");
+        sections.put(SECTION_TOOL_SCHEMA, "");
         sections.put("output_field_notes", "");
         if (!StringUtils.hasText(prompts.getModelParam())) {
             return sections;
@@ -375,7 +383,8 @@ public class AiragPromptTemplateServiceImpl implements IAiragPromptTemplateServi
             JSONObject modelParam = JSONObject.parseObject(prompts.getModelParam());
             putIfPresent(modelParam, sections, "meta");
             putIfPresent(modelParam, sections, "developer_prompt");
-            putIfPresent(modelParam, sections, "output_schema_hint");
+            putIfPresent(modelParam, sections, SECTION_OUTPUT_SCHEMA_HINT);
+            putIfPresent(modelParam, sections, SECTION_TOOL_SCHEMA);
             putIfPresent(modelParam, sections, "output_field_notes");
             putIfPresent(modelParam, sections, "user_prompt_template");
         } catch (Exception ex) {
@@ -397,13 +406,48 @@ public class AiragPromptTemplateServiceImpl implements IAiragPromptTemplateServi
                 return false;
             }
         }
+        if (isToolCallTemplate(sections)) {
+            return StringUtils.hasText(sections.get(SECTION_TOOL_SCHEMA));
+        }
+        if (!StringUtils.hasText(sections.get(SECTION_OUTPUT_SCHEMA_HINT))) {
+            return false;
+        }
         if (CHAT_RUNTIME_CODE.equals(code) && !StringUtils.hasText(sections.get(SECTION_OUTPUT_FIELD_NOTES))) {
             return false;
         }
         return true;
     }
 
+    private boolean isToolCallTemplate(Map<String, String> sections) {
+        if (sections == null) {
+            return false;
+        }
+        String meta = sections.get(SECTION_META);
+        if (!StringUtils.hasText(meta)) {
+            return false;
+        }
+        String[] lines = meta.split("\\R");
+        for (String line : lines) {
+            String trimmed = line == null ? "" : line.trim();
+            if (!StringUtils.hasText(trimmed)) {
+                continue;
+            }
+            int eqIndex = trimmed.indexOf('=');
+            if (eqIndex <= 0) {
+                continue;
+            }
+            String key = trimmed.substring(0, eqIndex).trim();
+            String value = trimmed.substring(eqIndex + 1).trim();
+            if (META_OUTPUT_MODE.equalsIgnoreCase(key)) {
+                return META_OUTPUT_MODE_TOOL_CALL.equalsIgnoreCase(value);
+            }
+        }
+        return false;
+    }
+
     private String buildTemplateKey(String code, String version) {
         return code + TEMPLATE_KEY_SPLIT + version;
     }
 }
+
+

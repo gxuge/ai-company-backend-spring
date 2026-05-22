@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.openapi.service.IPromptChatService;
 import org.jeecg.modules.openapi.service.PromptRenderService;
+import org.jeecg.modules.openapi.vo.PromptRenderedSectionsVo;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickOutlineGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSettingGenerateDto;
@@ -28,13 +29,13 @@ import java.util.List;
 @Service
 @Slf4j
 public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
-    private static final String PROMPT_VERSION = "v1";
+    private static final String PROMPT_VERSION = "v2";
     private static final String PROMPT_CODE_SETTING = "story_core_fill";
     private static final String PROMPT_CODE_SCENE = "story_scene_generate";
     private static final String PROMPT_CODE_OUTLINE = "story_outline_generate";
-    private static final String PROMPT_PATH_SETTING = "prompts/story/story_core_fill_v1.txt";
-    private static final String PROMPT_PATH_SCENE = "prompts/story/story_scene_generate_v1.txt";
-    private static final String PROMPT_PATH_OUTLINE = "prompts/story/story_outline_generate_v1.txt";
+    private static final String PROMPT_PATH_SETTING = "prompts/story/story_core_fill_v2.txt";
+    private static final String PROMPT_PATH_SCENE = "prompts/story/story_scene_generate_v2.txt";
+    private static final String PROMPT_PATH_OUTLINE = "prompts/story/story_outline_generate_v2.txt";
     private static final String REDIS_SNAPSHOT_PREFIX = "ts:story:generate:snapshot:";
     private static final long REDIS_SNAPSHOT_TTL_HOURS = 72L;
     private static final String ENDPOINT_STORY_SETTING_GENERATE = "/sys/ts-stories/story-setting-generate";
@@ -56,12 +57,13 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         TsStoryOneClickSettingGenerateDto dto = request == null ? new TsStoryOneClickSettingGenerateDto() : request;
         dto.normalize();
 
-        String renderedPrompt = promptRenderService.renderPrompt(PROMPT_PATH_SETTING, StoryPromptGenerateUtil.buildSettingVars(dto));
+        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(PROMPT_PATH_SETTING, StoryPromptGenerateUtil.buildSettingVars(dto));
+        String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson;
         boolean generated = true;
         String fallbackReason = null;
         try {
-            modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, renderedPrompt);
+            modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, promptSections);
         } catch (Exception ex) {
             modelJson = new JSONObject();
             modelJson.put("fallback", true);
@@ -128,12 +130,13 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         TsStoryOneClickSceneGenerateDto dto = request == null ? new TsStoryOneClickSceneGenerateDto() : request;
         dto.normalize();
 
-        String renderedPrompt = promptRenderService.renderPrompt(PROMPT_PATH_SCENE, StoryPromptGenerateUtil.buildSceneVars(dto));
+        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(PROMPT_PATH_SCENE, StoryPromptGenerateUtil.buildSceneVars(dto));
+        String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson;
         boolean generated = true;
         String fallbackReason = null;
         try {
-            modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, renderedPrompt);
+            modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, promptSections);
         } catch (Exception ex) {
             modelJson = new JSONObject();
             modelJson.put("fallback", true);
@@ -189,10 +192,11 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         TsStoryOneClickOutlineGenerateDto dto = request == null ? new TsStoryOneClickOutlineGenerateDto() : request;
         dto.normalize();
 
-        String renderedPrompt = promptRenderService.renderPrompt(PROMPT_PATH_OUTLINE, StoryPromptGenerateUtil.buildOutlineVars(dto));
+        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(PROMPT_PATH_OUTLINE, StoryPromptGenerateUtil.buildOutlineVars(dto));
+        String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson;
         try {
-            modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, renderedPrompt);
+            modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, promptSections);
             logStoryLlmJson(ENDPOINT_STORY_OUTLINE_GENERATE, modelJson, true, null);
         } catch (Exception ex) {
             JSONObject fallbackJson = new JSONObject();
@@ -237,7 +241,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         logJson.put("generated", generated);
         logJson.put("fallbackReason", fallbackReason);
         logJson.put("provider", promptChatService == null ? null : promptChatService.provider());
-        logJson.put("modelJson", modelJson);
+        logJson.put("modelJson", PromptRuntimeUtil.sanitizeToolCallLogJson(modelJson));
         log.info("[STORY_LLM_JSON] {}", logJson.toJSONString());
     }
 }

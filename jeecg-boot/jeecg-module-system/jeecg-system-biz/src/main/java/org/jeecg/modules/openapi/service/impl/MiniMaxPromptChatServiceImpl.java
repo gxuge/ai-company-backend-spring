@@ -1,11 +1,18 @@
 package org.jeecg.modules.openapi.service.impl;
 
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
+import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
+import dev.langchain4j.service.tool.ToolExecutor;
 import jakarta.annotation.Resource;
 import org.jeecg.common.exception.JeecgBootBizTipException;
 import org.jeecg.modules.airag.app.entity.AiragApp;
 import org.jeecg.modules.airag.app.mapper.AiragAppMapper;
+import org.jeecg.modules.airag.common.handler.AIChatParams;
 import org.jeecg.modules.airag.common.handler.IAIChatHandler;
 import org.jeecg.modules.airag.llm.consts.LLMConsts;
 import org.jeecg.modules.airag.llm.entity.AiragModel;
@@ -15,13 +22,16 @@ import org.jeecg.modules.openapi.service.IPromptChatService;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Unified prompt chat service.
  *
- * Keeps the historical bean name while routing by AIRAG DB model config.
+ * Keeps historical bean name while routing model from AIRAG DB config.
  */
 @Service("miniMaxPromptChatService")
 public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
@@ -54,6 +64,117 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
             throw new JeecgBootBizTipException("Prompt chat response is empty");
         }
         return content.trim();
+    }
+
+    @Override
+    public String chatToolCall(String developerPrompt, String userPrompt, String toolSchema) {
+        if (!StringUtils.hasText(userPrompt)) {
+            throw new JeecgBootBizTipException("User prompt must not be blank");
+        }
+        AiragModel model = resolvePromptModel();
+
+        List<ChatMessage> messages = new ArrayList<>();
+        if (StringUtils.hasText(developerPrompt)) {
+            messages.add(SystemMessage.from(developerPrompt.trim()));
+        }
+        messages.add(UserMessage.from(userPrompt.trim()));
+
+        if (!StringUtils.hasText(toolSchema)) {
+            String content = aiChatHandler.completions(model.getId(), messages);
+            if (!StringUtils.hasText(content)) {
+                throw new JeecgBootBizTipException("Prompt chat response is empty");
+            }
+            return content.trim();
+        }
+
+        ToolSpecification toolSpecification = buildToolSpecification(toolSchema);
+        if (toolSpecification == null) {
+            String content = aiChatHandler.completions(model.getId(), messages);
+            if (!StringUtils.hasText(content)) {
+                throw new JeecgBootBizTipException("Prompt chat response is empty");
+            }
+            return content.trim();
+        }
+
+        AIChatParams params = new AIChatParams();
+        Map<ToolSpecification, ToolExecutor> tools = new LinkedHashMap<>();
+        tools.put(toolSpecification, (toolExecutionRequest, memoryId) -> toolExecutionRequest.arguments());
+        params.setTools(tools);
+
+        String content = aiChatHandler.completions(model.getId(), messages, params);
+        if (!StringUtils.hasText(content)) {
+            throw new JeecgBootBizTipException("Prompt chat response is empty");
+        }
+        return content.trim();
+    }
+
+    private ToolSpecification buildToolSpecification(String toolSchema) {
+        try {
+            JSONObject root = JSONObject.parseObject(toolSchema);
+            if (root == null) {
+                return null;
+            }
+            String name = trimToNull(root.getString("name"));
+            if (!StringUtils.hasText(name)) {
+                return null;
+            }
+            String description = trimToNull(root.getString("description"));
+            JSONObject parameters = root.getJSONObject("parameters");
+
+            JsonObjectSchema.Builder schemaBuilder = JsonObjectSchema.builder();
+            if (parameters != null) {
+                JSONObject properties = parameters.getJSONObject("properties");
+                if (properties != null) {
+                    for (String propName : properties.keySet()) {
+                        if (!StringUtils.hasText(propName)) {
+                            continue;
+                        }
+                        JSONObject prop = properties.getJSONObject(propName);
+                        if (prop == null) {
+                            schemaBuilder.addStringProperty(propName, "");
+                            continue;
+                        }
+                        String propType = trimToNull(prop.getString("type"));
+                        String propDesc = trimToNull(prop.getString("description"));
+                        if ("number".equalsIgnoreCase(propType) || "integer".equalsIgnoreCase(propType)) {
+                            schemaBuilder.addNumberProperty(propName, propDesc == null ? "" : propDesc);
+                        } else if ("boolean".equalsIgnoreCase(propType)) {
+                            schemaBuilder.addBooleanProperty(propName, propDesc == null ? "" : propDesc);
+                        } else {
+                            // string / array / object fallback to string for robust compatibility
+                            schemaBuilder.addStringProperty(propName, propDesc == null ? "" : propDesc);
+                        }
+                    }
+                }
+
+                JSONArray required = parameters.getJSONArray("required");
+                if (required != null && !required.isEmpty()) {
+                    List<String> requiredList = new ArrayList<>();
+                    for (Object item : required) {
+                        if (item == null) {
+                            continue;
+                        }
+                        String key = trimToNull(String.valueOf(item));
+                        if (StringUtils.hasText(key)) {
+                            requiredList.add(key);
+                        }
+                    }
+                    if (!requiredList.isEmpty()) {
+                        schemaBuilder.required(requiredList.toArray(new String[0]));
+                    }
+                }
+            }
+
+            ToolSpecification.Builder builder = ToolSpecification.builder()
+                    .name(name)
+                    .parameters(schemaBuilder.build());
+            if (StringUtils.hasText(description)) {
+                builder.description(description);
+            }
+            return builder.build();
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private AiragModel resolvePromptModel() {
@@ -93,3 +214,4 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
         return value.trim();
     }
 }
+

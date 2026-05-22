@@ -57,9 +57,9 @@ SECTION::tool_schema
   "name": "submit_story_scene_generate",
   "description": "提交故事场景设定结果。严格要求：必须仅通过 tool call 返回结构化 JSON 参数，不得输出解释、Markdown 或其他前后缀文本；JSON 字段名必须与 schema 一致，禁止新增未定义字段；required 字段必须全部返回，枚举值必须严格命中 schema。",
   "output_extract": {
-    "scene_name_snapshot": "返回给前端的场景名快照。",
-    "scene_summary": "返回给前端的场景摘要。",
-    "scene_elements": "返回给前端的场景元素列表。",
+    "scene_name_snapshot": "场景名快照。",
+    "scene_summary": "场景摘要。",
+    "scene_elements": "场景元素列表。",
     "reason": "可选说明。"
   },
   "parameters": {

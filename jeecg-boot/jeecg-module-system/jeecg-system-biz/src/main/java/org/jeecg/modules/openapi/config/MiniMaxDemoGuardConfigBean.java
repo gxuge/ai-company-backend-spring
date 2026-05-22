@@ -48,5 +48,5 @@ public class MiniMaxDemoGuardConfigBean {
     /**
      * 文生图提示词最大字符数。
      */
-    private int maxImagePromptChars = 1000;
+    private int maxImagePromptChars = 1300;
 }

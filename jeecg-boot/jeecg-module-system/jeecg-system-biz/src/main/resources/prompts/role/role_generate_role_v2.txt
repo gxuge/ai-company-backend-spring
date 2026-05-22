@@ -43,14 +43,14 @@ SECTION::tool_schema
   "name": "submit_role_generate_role",
   "description": "提交完整角色基础数据。严格要求：必须仅通过 tool call 返回结构化 JSON 参数，不得输出解释、Markdown 或其他前后缀文本；JSON 字段名必须与 schema 一致，禁止新增未定义字段；required 字段必须全部返回，枚举值必须严格命中 schema。",
   "output_extract": {
-    "role_name": "返回给前端的角色名称。",
-    "gender": "返回给前端的角色性别。",
-    "occupation": "返回给前端的角色职业。",
-    "background_story": "返回给前端的角色背景故事正文。",
-    "style_name": "返回给前端的视觉风格名称。",
-    "preferred_voice_name": "返回给前端的推荐音色关键词。",
-    "target_tone": "返回给前端的角色语气氛围。",
-    "preview_text": "返回给前端的试听台词。",
+    "role_name": "角色名称。",
+    "gender": "角色性别。",
+    "occupation": "角色职业。",
+    "background_story": "角色背景故事正文。",
+    "style_name": "视觉风格名称。",
+    "preferred_voice_name": "推荐音色关键词。",
+    "target_tone": "角色语气氛围。",
+    "preview_text": "试听台词。",
     "reason": "可选说明。"
   },
   "parameters": {

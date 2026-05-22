@@ -66,7 +66,7 @@ SECTION::tool_schema
   "name": "submit_story_outline_generate",
   "description": "提交章节大纲生成结果。严格要求：必须仅通过 tool call 返回结构化 JSON 参数，不得输出解释、Markdown 或其他前后缀文本；JSON 字段名必须与 schema 一致，禁止新增未定义字段；required 字段必须全部返回，枚举值必须严格命中 schema。",
   "output_extract": {
-    "chapters": "返回给前端的章节大纲列表。",
+    "chapters": "章节大纲列表。",
     "reason": "可选说明。"
   },
   "parameters": {

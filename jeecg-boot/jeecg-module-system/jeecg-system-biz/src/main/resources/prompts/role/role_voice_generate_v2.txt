@@ -62,10 +62,10 @@ SECTION::tool_schema
   "name": "submit_role_voice_generate",
   "description": "提交角色声音建议结果。严格要求：必须仅通过 tool call 返回结构化 JSON 参数，不得输出解释、Markdown 或其他前后缀文本；JSON 字段名必须与 schema 一致，禁止新增未定义字段；required 字段必须全部返回，枚举值必须严格命中 schema。",
   "output_extract": {
-    "voice_name": "返回给前端的推荐音色关键词。",
-    "gender": "返回给前端的角色性别。",
-    "preview_text": "返回给前端的试听台词。",
-    "selection_reason": "返回给前端的推荐理由。",
+    "voice_name": "推荐音色关键词。",
+    "gender": "角色性别。",
+    "preview_text": "试听台词。",
+    "selection_reason": "推荐理由。",
     "reason": "可选说明。"
   },
   "parameters": {

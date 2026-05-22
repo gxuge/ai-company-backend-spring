@@ -62,11 +62,11 @@ SECTION::tool_schema
   "name": "submit_story_core_fill",
   "description": "提交故事核心字段结果。严格要求：必须仅通过 tool call 返回结构化 JSON 参数，不得输出解释、Markdown 或其他前后缀文本；JSON 字段名必须与 schema 一致，禁止新增未定义字段；required 字段必须全部返回，枚举值必须严格命中 schema。",
   "output_extract": {
-    "title": "返回给前端的故事标题。",
-    "story_intro": "返回给前端的故事简介。",
-    "story_mode": "返回给前端的故事模式。",
-    "story_setting": "返回给前端的故事设定。",
-    "story_background": "返回给前端的故事背景。",
+    "title": "故事标题。",
+    "story_intro": "故事简介。",
+    "story_mode": "故事模式。",
+    "story_setting": "故事设定。",
+    "story_background": "故事背景。",
     "reason": "可选说明。"
   },
   "parameters": {

@@ -13,6 +13,7 @@ import org.jeecg.modules.openapi.dto.MiniMaxTtsRequestDto;
 import org.jeecg.modules.openapi.service.IMiniMaxDemoService;
 import org.jeecg.modules.openapi.service.IPromptChatService;
 import org.jeecg.modules.openapi.service.PromptRenderService;
+import org.jeecg.modules.openapi.vo.PromptRenderedSectionsVo;
 import org.jeecg.modules.openapi.vo.MiniMaxChatResponseVo;
 import org.jeecg.modules.openapi.vo.MiniMaxTtsResponseVo;
 import org.jeecg.modules.system.dto.tschatsession.TsChatAiReplyDto;
@@ -96,9 +97,9 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
     /** 候选回复模板编码。 */
     private static final String PROMPT_CODE_REPLY_SUGGESTIONS = "chat_reply_suggestions";
     /** 候选回复模板版本。 */
-    private static final String PROMPT_VERSION = "v1";
+    private static final String PROMPT_VERSION = "v2";
     /** 候选回复模板路径。 */
-    private static final String PROMPT_PATH_REPLY_SUGGESTIONS = "prompts/chat/chat_reply_suggestions_v1.txt";
+    private static final String PROMPT_PATH_REPLY_SUGGESTIONS = "prompts/chat/chat_reply_suggestions_v2.txt";
     /** 候选回复快照缓存前缀。 */
     private static final String REDIS_SNAPSHOT_PREFIX = "ts:chat:generate:snapshot:";
     /** 候选回复快照缓存 TTL（小时）。 */
@@ -399,20 +400,14 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         variables.put("last_assistant_message", PromptRuntimeUtil.nullableToken(lastAssistantMessage));
         variables.put("recent_messages_block", PromptRuntimeUtil.nullableToken(recentMessagesBlock));
 
-        String renderedPrompt = promptRenderService.renderPrompt(PROMPT_PATH_REPLY_SUGGESTIONS, variables);
-        JSONObject modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, renderedPrompt);
+        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(PROMPT_PATH_REPLY_SUGGESTIONS, variables);
+        String renderedPrompt = promptSections.getRenderedPrompt();
+        JSONObject modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, promptSections);
 
-        List<String> suggestions = new ArrayList<>();
-        suggestions.addAll(normalizeSuggestionList(modelJson.get("suggestions")));
+        List<String> suggestions = extractToolCallSuggestions(modelJson);
         if (suggestions.isEmpty()) {
-            suggestions.addAll(normalizeSuggestionList(modelJson.get("reply_suggestions")));
+            suggestions.addAll(normalizeSuggestionList(modelJson.get("suggestions")));
         }
-        if (suggestions.isEmpty()) {
-            suggestions.addAll(normalizeSuggestionList(modelJson.get("candidates")));
-        }
-        addSuggestionCandidate(suggestions, modelJson.getString("suggestion_1"));
-        addSuggestionCandidate(suggestions, modelJson.getString("suggestion_2"));
-        addSuggestionCandidate(suggestions, modelJson.getString("suggestion_3"));
         suggestions = ensureFixedSuggestions(suggestions);
 
         JSONObject snapshot = new JSONObject();
@@ -572,5 +567,105 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
             result.add(FALLBACK_SUGGESTION_3);
         }
         return result;
+    }
+
+    /**
+     * 从 tool call 结果结构中提取 suggestions，兼容 arguments/function.arguments/tool_calls。
+     */
+    private List<String> extractToolCallSuggestions(JSONObject modelJson) {
+        List<String> result = new ArrayList<>();
+        if (modelJson == null) {
+            return result;
+        }
+
+        // case 1: top-level arguments
+        collectSuggestionsFromArguments(result, modelJson.get("arguments"));
+        if (!result.isEmpty()) {
+            return result;
+        }
+
+        // case 2: tool_call.arguments or tool_call.function.arguments
+        JSONObject toolCall = toJsonObject(modelJson.get("tool_call"));
+        if (toolCall != null) {
+            collectSuggestionsFromArguments(result, toolCall.get("arguments"));
+            if (!result.isEmpty()) {
+                return result;
+            }
+            JSONObject function = toJsonObject(toolCall.get("function"));
+            if (function != null) {
+                collectSuggestionsFromArguments(result, function.get("arguments"));
+                if (!result.isEmpty()) {
+                    return result;
+                }
+            }
+        }
+
+        // case 3: tool_calls[].function.arguments
+        Object toolCallsObj = modelJson.get("tool_calls");
+        if (toolCallsObj instanceof JSONArray) {
+            JSONArray toolCalls = (JSONArray) toolCallsObj;
+            for (Object item : toolCalls) {
+                JSONObject oneCall = toJsonObject(item);
+                if (oneCall == null) {
+                    continue;
+                }
+                collectSuggestionsFromArguments(result, oneCall.get("arguments"));
+                if (!result.isEmpty()) {
+                    return result;
+                }
+                JSONObject function = toJsonObject(oneCall.get("function"));
+                if (function != null) {
+                    collectSuggestionsFromArguments(result, function.get("arguments"));
+                    if (!result.isEmpty()) {
+                        return result;
+                    }
+                }
+            }
+        }
+
+        // case 4: function_call.arguments
+        JSONObject functionCall = toJsonObject(modelJson.get("function_call"));
+        if (functionCall != null) {
+            collectSuggestionsFromArguments(result, functionCall.get("arguments"));
+        }
+        return result;
+    }
+
+    private void collectSuggestionsFromArguments(List<String> target, Object argumentsObj) {
+        JSONObject args = toJsonObject(argumentsObj);
+        if (args == null) {
+            return;
+        }
+        target.addAll(normalizeSuggestionList(args.get("suggestions")));
+    }
+
+    private JSONObject toJsonObject(Object raw) {
+        if (raw == null) {
+            return null;
+        }
+        if (raw instanceof JSONObject) {
+            return (JSONObject) raw;
+        }
+        if (raw instanceof Map) {
+            JSONObject json = new JSONObject();
+            Map<?, ?> map = (Map<?, ?>) raw;
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                String key = entry.getKey() == null ? "null" : String.valueOf(entry.getKey());
+                json.put(key, entry.getValue());
+            }
+            return json;
+        }
+        if (raw instanceof String) {
+            String text = PromptRuntimeUtil.trimToNull((String) raw);
+            if (!StringUtils.hasText(text)) {
+                return null;
+            }
+            try {
+                return JSONObject.parseObject(text);
+            } catch (Exception ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 }

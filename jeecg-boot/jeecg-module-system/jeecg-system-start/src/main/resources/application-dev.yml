@@ -234,7 +234,7 @@ jeecg:
           max-requests-per-minute: ${AIRAG_MINIMAX_RATE_LIMIT_PER_MINUTE:30}
           max-chat-chars: ${AIRAG_MINIMAX_MAX_CHAT_CHARS:4000}
           max-tts-chars: ${AIRAG_MINIMAX_MAX_TTS_CHARS:1000}
-          max-image-prompt-chars: ${AIRAG_MINIMAX_MAX_IMAGE_PROMPT_CHARS:1000}
+          max-image-prompt-chars: ${AIRAG_MINIMAX_MAX_IMAGE_PROMPT_CHARS:1300}
       api-key: ${MINIMAX_API_KEY:}
       api-base-url: ${AIRAG_MINIMAX_API_BASE_URL:https://api.minimaxi.com}
       tts-model: ${AIRAG_MINIMAX_TTS_MODEL:speech-2.8-hd}
