@@ -53,6 +53,22 @@
       "VOICEDefaultValue": "speech-2.8-hd"
     },
     {
+      "title": "Gemini",
+      "value": "GEMINI",
+      "LLM": [
+        {"label": "gemini-2.5-flash", "value": "gemini-2.5-flash", "descr": "Google Gemini fast multimodal model.", "type": "text,image"},
+        {"label": "gemini-2.5-pro", "value": "gemini-2.5-pro", "descr": "Google Gemini high-capability multimodal model.", "type": "text,image"}
+      ],
+      "IMAGE": [
+        {"label": "imagen-3.0-generate-002", "value": "imagen-3.0-generate-002", "descr": "Google Imagen image generation model (paid tier required).", "type": "imageGen"}
+      ],
+      "type": ["LLM", "IMAGE"],
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "baseImageUrl": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "LLMDefaultValue": "gemini-2.5-flash",
+      "IMAGEDefaultValue": "imagen-3.0-generate-002"
+    },
+    {
       "title": "Ollama",
       "value": "OLLAMA",
       "LLM": [

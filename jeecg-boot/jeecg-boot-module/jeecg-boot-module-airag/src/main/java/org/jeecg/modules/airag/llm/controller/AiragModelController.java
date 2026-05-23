@@ -188,7 +188,11 @@ public class AiragModelController extends JeecgController<AiragModel, IAiragMode
             //update-begin---author:wangshuai---date:2026-01-07---for:【QQYUN-12145】【AI】AI 绘画创作---=
             }else if(LLMConsts.MODEL_TYPE_IMAGE.equals(airagModel.getModelType())){
                 AIChatParams aiChatParams = new AIChatParams();
-                aiChatHandler.imageGenerate(airagModel, "To test whether it can be successfully called, simply return success", aiChatParams);
+                String testPrompt = "Generate a simple icon-style image of a blue bird on white background";
+                if (!"GEMINI".equalsIgnoreCase(oConvertUtils.getString(airagModel.getProvider()))) {
+                    testPrompt = "To test whether it can be successfully called, simply return success";
+                }
+                aiChatHandler.imageGenerate(airagModel, testPrompt, aiChatParams);
             }else if(LLMConsts.MODEL_TYPE_VOICE.equals(airagModel.getModelType())){
                 this.testVoiceModel(airagModel);
             }else{
@@ -197,7 +201,16 @@ public class AiragModelController extends JeecgController<AiragModel, IAiragMode
             //update-end---author:wangshuai---date:2026-01-07---for:【QQYUN-12145】【AI】AI 绘画创作---
         }catch (Exception e){
             log.error("测试模型连接失败", e);
-            return Result.error(e.getMessage());
+            String errMsg = e.getMessage();
+            if (LLMConsts.MODEL_TYPE_IMAGE.equals(airagModel.getModelType())
+                    && "GEMINI".equalsIgnoreCase(oConvertUtils.getString(airagModel.getProvider()))
+                    && oConvertUtils.isNotEmpty(errMsg)) {
+                String lower = errMsg.toLowerCase();
+                if (lower.contains("paid tier") || lower.contains("billing") || lower.contains("quota") || lower.contains("permission")) {
+                    errMsg = "Gemini 图片模型测试失败：请确认当前 API Key 已开通计费/付费层，并具备图片模型调用权限。原始错误：" + errMsg;
+                }
+            }
+            return Result.error(errMsg);
         }
         // 测试成功激活数据
         airagModel.setActivateFlag(1);

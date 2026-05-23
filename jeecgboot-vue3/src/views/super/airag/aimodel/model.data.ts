@@ -5,6 +5,7 @@ import deepspeek from './icon/deepspeek.png';
 import minimax from './icon/minimax.png';
 import ollama from './icon/ollama.png';
 import OpenAi from './icon/OpenAi.png';
+import gemini from './icon/gemini.png';
 import qianfan from './icon/qianfan.png';
 import qianwen from './icon/qianwen.png';
 import zhipuai from './icon/zhipuai.png';
@@ -69,7 +70,7 @@ export const formSchema: FormSchema[] = [
     ifShow: ({ values }) => {
       if(values.provider==='DEEPSEEK' || values.provider==="OLLAMA" || values.provider==="OPENAI"
         || values.provider==="ZHIPU" || values.provider==="QWEN" || values.provider==="ANTHROPIC"
-        || values.provider==="MINIMAX"){
+        || values.provider==="MINIMAX" || values.provider==="GEMINI"){
         return false;
       }
       return true;
@@ -94,6 +95,7 @@ export const imageList = ref<any>({
   MINIMAX: minimax,
   OLLAMA: ollama,
   OPENAI: OpenAi,
+  GEMINI: gemini,
   QIANFAN: qianfan,
   QWEN: qianwen,
   ZHIPU: zhipuai,

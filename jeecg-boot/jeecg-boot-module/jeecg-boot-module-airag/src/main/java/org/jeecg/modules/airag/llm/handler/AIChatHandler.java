@@ -324,6 +324,11 @@ public class AIChatHandler implements IAIChatHandler {
                 && LLMConsts.MODEL_TYPE_LLM.equalsIgnoreCase(modelType)) {
             return "OPENAI";
         }
+        if ("GEMINI".equalsIgnoreCase(provider)
+                && (LLMConsts.MODEL_TYPE_LLM.equalsIgnoreCase(modelType)
+                || LLMConsts.MODEL_TYPE_IMAGE.equalsIgnoreCase(modelType))) {
+            return "OPENAI";
+        }
         return provider;
     }
 
