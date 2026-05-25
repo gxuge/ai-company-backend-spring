@@ -19,6 +19,8 @@ import org.jeecg.modules.airag.common.consts.AiragConsts;
 import org.jeecg.modules.airag.common.handler.AIChatParams;
 import org.jeecg.modules.airag.common.handler.IAIChatHandler;
 import org.jeecg.modules.airag.common.handler.McpToolProviderWrapper;
+import org.jeecg.modules.airag.llm.adapter.ChatParamAdaptContext;
+import org.jeecg.modules.airag.llm.adapter.ChatProviderAdaptService;
 import org.jeecg.modules.airag.llm.consts.LLMConsts;
 import org.jeecg.modules.airag.llm.entity.AiragMcp;
 import org.jeecg.modules.airag.llm.entity.AiragModel;
@@ -36,6 +38,7 @@ import org.springframework.web.client.RestClientResponseException;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -64,6 +67,9 @@ public class AIChatHandler implements IAIChatHandler {
 
     @Autowired
     LLMHandler llmHandler;
+
+    @Autowired
+    ChatProviderAdaptService chatProviderAdaptService;
 
     @Autowired
     AiRagConfigBean aiRagConfigBean;
@@ -120,6 +126,10 @@ public class AIChatHandler implements IAIChatHandler {
      */
     public String completions(AiragModel airagModel, List<ChatMessage> messages, AIChatParams params) {
         params = mergeParams(airagModel, params);
+        ChatParamAdaptContext adaptContext = chatProviderAdaptService.adapt(airagModel, params);
+        chatProviderAdaptService.prepareModelCacheIfNeeded(adaptContext);
+        logAdaptWarnings(adaptContext);
+        logInvokeRequest("completions", airagModel, messages, params, adaptContext);
         String resp;
         try {
             resp = llmHandler.completions(messages, params);
@@ -220,7 +230,136 @@ public class AIChatHandler implements IAIChatHandler {
      */
     private TokenStream chat(AiragModel airagModel, List<ChatMessage> messages, AIChatParams params) {
         params = mergeParams(airagModel, params);
+        ChatParamAdaptContext adaptContext = chatProviderAdaptService.adapt(airagModel, params);
+        chatProviderAdaptService.prepareModelCacheIfNeeded(adaptContext);
+        logAdaptWarnings(adaptContext);
+        logInvokeRequest("chat_stream", airagModel, messages, params, adaptContext);
         return llmHandler.chat(messages, params);
+    }
+
+    private void logAdaptWarnings(ChatParamAdaptContext adaptContext) {
+        if (adaptContext == null || adaptContext.getWarnings().isEmpty()) {
+            return;
+        }
+        for (String warning : adaptContext.getWarnings()) {
+            log.warn("[LLM_ADAPTER] {}", warning);
+        }
+    }
+
+    private void logInvokeRequest(String scene,
+                                  AiragModel airagModel,
+                                  List<ChatMessage> messages,
+                                  AIChatParams params,
+                                  ChatParamAdaptContext adaptContext) {
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("scene", scene);
+            payload.put("provider", params == null ? null : params.getProvider());
+            payload.put("modelName", params == null ? null : params.getModelName());
+            payload.put("modelId", airagModel == null ? null : airagModel.getId());
+            payload.put("messageCount", messages == null ? 0 : messages.size());
+            payload.put("messageRoles", collectMessageRoles(messages));
+            payload.put("params", sanitizeSecrets(snapshotParams(params)));
+            payload.put("customParameters", adaptContext == null ? null : sanitizeSecrets(adaptContext.getOpenAiCustomParameters()));
+            payload.put("warnings", adaptContext == null ? Collections.emptyList() : adaptContext.getWarnings());
+            log.info("[LLM_REQUEST] {}", JSONObject.toJSONString(payload));
+        } catch (Exception e) {
+            log.warn("打印 LLM 请求参数失败: {}", e.getMessage());
+        }
+    }
+
+    private List<String> collectMessageRoles(List<ChatMessage> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> roles = new ArrayList<>(messages.size());
+        for (ChatMessage message : messages) {
+            if (message == null || message.type() == null) {
+                roles.add("unknown");
+            } else {
+                roles.add(message.type().name());
+            }
+        }
+        return roles;
+    }
+
+    private Object sanitizeSecrets(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> sanitized = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                String key = entry.getKey() == null ? "null" : String.valueOf(entry.getKey());
+                Object val = entry.getValue();
+                if (isSensitiveKey(key)) {
+                    sanitized.put(key, maskSecret(val));
+                } else {
+                    sanitized.put(key, sanitizeSecrets(val));
+                }
+            }
+            return sanitized;
+        }
+        if (value instanceof Collection<?> collection) {
+            List<Object> list = new ArrayList<>(collection.size());
+            for (Object item : collection) {
+                list.add(sanitizeSecrets(item));
+            }
+            return list;
+        }
+        return value;
+    }
+
+    private Map<String, Object> snapshotParams(AIChatParams params) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        if (params == null) {
+            return snapshot;
+        }
+        String[] fields = new String[]{
+                "provider", "modelName", "baseUrl",
+                "temperature", "topP", "presencePenalty", "frequencyPenalty",
+                "maxTokens", "timeout", "enableSearch",
+                "noThinking", "returnThinking", "reasoningEffort",
+                "pluginIds", "tools", "knowIds"
+        };
+        for (String field : fields) {
+            snapshot.put(field, invokeGetter(params, field));
+        }
+        return snapshot;
+    }
+
+    private Object invokeGetter(Object target, String field) {
+        if (target == null || !StringUtils.hasText(field)) {
+            return null;
+        }
+        String methodName = "get" + Character.toUpperCase(field.charAt(0)) + field.substring(1);
+        try {
+            Method method = target.getClass().getMethod(methodName);
+            return method.invoke(target);
+        } catch (Exception ignore) {
+            return null;
+        }
+    }
+
+    private boolean isSensitiveKey(String key) {
+        if (key == null) {
+            return false;
+        }
+        String lower = key.toLowerCase(Locale.ROOT);
+        return lower.contains("apikey")
+                || lower.contains("api_key")
+                || lower.contains("secret")
+                || lower.contains("token")
+                || lower.contains("authorization")
+                || lower.contains("password");
+    }
+
+    private String maskSecret(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value);
+        if (text.length() <= 8) {
+            return "****";
+        }
+        return text.substring(0, 4) + "****" + text.substring(text.length() - 4);
     }
 
     /**
@@ -327,6 +466,10 @@ public class AIChatHandler implements IAIChatHandler {
         if ("GEMINI".equalsIgnoreCase(provider)
                 && (LLMConsts.MODEL_TYPE_LLM.equalsIgnoreCase(modelType)
                 || LLMConsts.MODEL_TYPE_IMAGE.equalsIgnoreCase(modelType))) {
+            return "OPENAI";
+        }
+        if ("DEEPSEEK".equalsIgnoreCase(provider)
+                && LLMConsts.MODEL_TYPE_LLM.equalsIgnoreCase(modelType)) {
             return "OPENAI";
         }
         return provider;
@@ -473,6 +616,9 @@ public class AIChatHandler implements IAIChatHandler {
      */
     public List<Map<String, Object>> imageGenerate(AiragModel airagModel, String messages, AIChatParams params) {
         params = mergeParams(airagModel, params);
+        ChatParamAdaptContext adaptContext = chatProviderAdaptService.adapt(airagModel, params);
+        chatProviderAdaptService.prepareModelCacheIfNeeded(adaptContext);
+        logAdaptWarnings(adaptContext);
         try {
             if (isMiniMaxImageModel(airagModel)) {
                 return miniMaxImageGenerate(airagModel, messages);
@@ -510,6 +656,9 @@ public class AIChatHandler implements IAIChatHandler {
     public List<Map<String, Object>> imageEdit(String modelId, String messages, List<String> images, AIChatParams params) {
         AiragModel airagModel = airagModelMapper.getByIdIgnoreTenant(modelId);
         params = mergeParams(airagModel, params);
+        ChatParamAdaptContext adaptContext = chatProviderAdaptService.adapt(airagModel, params);
+        chatProviderAdaptService.prepareModelCacheIfNeeded(adaptContext);
+        logAdaptWarnings(adaptContext);
         List<String> originalImageBase64List = getFirstImageBase64(images);
         try {
             return llmHandler.imageEdit(messages, originalImageBase64List, params);

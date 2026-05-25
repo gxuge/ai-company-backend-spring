@@ -21,6 +21,7 @@ import org.jeecg.modules.openapi.config.PromptChatConfigBean;
 import org.jeecg.modules.openapi.service.IPromptChatService;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -34,6 +35,7 @@ import java.util.Map;
  * Keeps historical bean name while routing model from AIRAG DB config.
  */
 @Service("miniMaxPromptChatService")
+@Slf4j
 public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
 
     @Resource
@@ -58,8 +60,11 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
             throw new JeecgBootBizTipException("Prompt must not be blank");
         }
         AiragModel model = resolvePromptModel();
+        PromptProviderBranch branch = resolveProviderBranch(model);
+        logPromptRoute(model, branch, false);
+        AIChatParams params = buildBaseParams(model, branch);
         List<ChatMessage> messages = List.of(new UserMessage(prompt));
-        String content = aiChatHandler.completions(model.getId(), messages);
+        String content = aiChatHandler.completions(model.getId(), messages, params);
         if (!StringUtils.hasText(content)) {
             throw new JeecgBootBizTipException("Prompt chat response is empty");
         }
@@ -72,15 +77,18 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
             throw new JeecgBootBizTipException("User prompt must not be blank");
         }
         AiragModel model = resolvePromptModel();
+        PromptProviderBranch branch = resolveProviderBranch(model);
 
         List<ChatMessage> messages = new ArrayList<>();
         if (StringUtils.hasText(developerPrompt)) {
             messages.add(SystemMessage.from(developerPrompt.trim()));
         }
         messages.add(UserMessage.from(userPrompt.trim()));
+        AIChatParams params = buildBaseParams(model, branch);
 
         if (!StringUtils.hasText(toolSchema)) {
-            String content = aiChatHandler.completions(model.getId(), messages);
+            logPromptRoute(model, branch, false);
+            String content = aiChatHandler.completions(model.getId(), messages, params);
             if (!StringUtils.hasText(content)) {
                 throw new JeecgBootBizTipException("Prompt chat response is empty");
             }
@@ -89,18 +97,31 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
 
         ToolSpecification toolSpecification = buildToolSpecification(toolSchema);
         if (toolSpecification == null) {
-            String content = aiChatHandler.completions(model.getId(), messages);
+            logPromptRoute(model, branch, false);
+            String content = aiChatHandler.completions(model.getId(), messages, params);
             if (!StringUtils.hasText(content)) {
                 throw new JeecgBootBizTipException("Prompt chat response is empty");
             }
             return content.trim();
         }
 
-        AIChatParams params = new AIChatParams();
+        if (!supportsToolCall(model, branch)) {
+            if (Boolean.FALSE.equals(promptChatConfigBean.getToolCallAutoDowngrade())) {
+                throw new JeecgBootBizTipException("Current model does not support tool call, model=" + model.getModelName());
+            }
+            logPromptRoute(model, branch, false);
+            String content = aiChatHandler.completions(model.getId(), messages, params);
+            if (!StringUtils.hasText(content)) {
+                throw new JeecgBootBizTipException("Prompt chat response is empty");
+            }
+            return content.trim();
+        }
+
         Map<ToolSpecification, ToolExecutor> tools = new LinkedHashMap<>();
         tools.put(toolSpecification, (toolExecutionRequest, memoryId) -> toolExecutionRequest.arguments());
         params.setTools(tools);
 
+        logPromptRoute(model, branch, true);
         String content = aiChatHandler.completions(model.getId(), messages, params);
         if (!StringUtils.hasText(content)) {
             throw new JeecgBootBizTipException("Prompt chat response is empty");
@@ -213,5 +234,55 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
         }
         return value.trim();
     }
-}
 
+    private AIChatParams buildBaseParams(AiragModel model, PromptProviderBranch branch) {
+        AIChatParams params = new AIChatParams();
+        boolean noThink = promptChatConfigBean.getNoThinkDefault() == null || promptChatConfigBean.getNoThinkDefault();
+        params.setNoThinking(noThink);
+        params.setReturnThinking(false);
+        if (PromptProviderBranch.DEEPSEEK.equals(branch)) {
+            params.setNoThinking(true);
+            params.setReturnThinking(false);
+        }
+        return params;
+    }
+
+    private PromptProviderBranch resolveProviderBranch(AiragModel model) {
+        String provider = trimToNull(model.getProvider());
+        if (!StringUtils.hasText(provider)) {
+            return PromptProviderBranch.OPENAI_COMPATIBLE;
+        }
+        return switch (provider.toUpperCase(Locale.ROOT)) {
+            case "DEEPSEEK" -> PromptProviderBranch.DEEPSEEK;
+            case "MINIMAX" -> PromptProviderBranch.MINIMAX;
+            case "GEMINI" -> PromptProviderBranch.GEMINI;
+            default -> PromptProviderBranch.OPENAI_COMPATIBLE;
+        };
+    }
+
+    private boolean supportsToolCall(AiragModel model, PromptProviderBranch branch) {
+        if (PromptProviderBranch.DEEPSEEK.equals(branch)) {
+            String modelName = trimToNull(model.getModelName());
+            if (StringUtils.hasText(modelName)) {
+                return !LLMConsts.DEEPSEEK_REASONER.equalsIgnoreCase(modelName);
+            }
+        }
+        return true;
+    }
+
+    private void logPromptRoute(AiragModel model, PromptProviderBranch branch, boolean withTools) {
+        log.info("[PROMPT_CHAT_ROUTE] provider={} modelName={} modelType={} branch={} tools={}",
+                trimToNull(model.getProvider()),
+                trimToNull(model.getModelName()),
+                trimToNull(model.getModelType()),
+                branch.name(),
+                withTools);
+    }
+
+    private enum PromptProviderBranch {
+        DEEPSEEK,
+        MINIMAX,
+        GEMINI,
+        OPENAI_COMPATIBLE
+    }
+}

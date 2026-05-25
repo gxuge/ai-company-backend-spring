@@ -74,8 +74,10 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
         if (!StringUtils.hasText(requestDto.getPrompt())) {
             throw new JeecgBootBizTipException("prompt不能为空");
         }
-        if (requestDto.getPrompt().length() > guardConfig.getMaxChatChars()) {
-            throw new JeecgBootBizTipException("prompt长度超过限制");
+        int promptLength = countCodePoints(requestDto.getPrompt());
+        int maxChatChars = guardConfig.getMaxChatChars();
+        if (promptLength > maxChatChars) {
+            throw new JeecgBootBizTipException("prompt长度超过限制，当前长度=" + promptLength + "，上限=" + maxChatChars);
         }
         String content = invokeChatWithRetry(requestDto.getPrompt());
         MiniMaxChatResponseVo responseVo = new MiniMaxChatResponseVo();
@@ -127,8 +129,10 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
         if (!StringUtils.hasText(requestDto.getPrompt())) {
             throw new JeecgBootBizTipException("prompt不能为空");
         }
-        if (requestDto.getPrompt().length() > guardConfig.getMaxImagePromptChars()) {
-            throw new JeecgBootBizTipException("prompt长度超过限制");
+        int promptLength = countCodePoints(requestDto.getPrompt());
+        int maxImagePromptChars = guardConfig.getMaxImagePromptChars();
+        if (promptLength > maxImagePromptChars) {
+            throw new JeecgBootBizTipException("prompt长度超过限制，当前长度=" + promptLength + "，上限=" + maxImagePromptChars);
         }
         List<String> imageUrls = miniMaxMediaService.generateImage(requestDto.getPrompt());
         MiniMaxImageResponseVo responseVo = new MiniMaxImageResponseVo();
@@ -400,5 +404,15 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    /**
+     * 统计 Unicode 码点长度，避免 emoji/代理对导致的长度感知偏差。
+     *
+     * @param text 输入文本
+     * @return 码点长度
+     */
+    private int countCodePoints(String text) {
+        return text == null ? 0 : text.codePointCount(0, text.length());
     }
 }

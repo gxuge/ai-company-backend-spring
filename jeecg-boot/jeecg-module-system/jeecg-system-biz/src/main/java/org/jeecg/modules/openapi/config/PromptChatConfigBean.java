@@ -23,4 +23,14 @@ public class PromptChatConfigBean {
      * Optional explicit AIRAG model id. If set, this takes priority over appId.
      */
     private String modelId;
+
+    /**
+     * Prompt 文本模型默认是否禁用 think/reasoning 输出。
+     */
+    private Boolean noThinkDefault = true;
+
+    /**
+     * 工具调用不支持时是否自动降级为普通文本调用。
+     */
+    private Boolean toolCallAutoDowngrade = true;
 }

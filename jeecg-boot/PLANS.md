@@ -194,3 +194,59 @@
 
 ### 结果
 - 已完成 `pages/sound-edit` 对接所需后端接口基础能力，可进入前端真实联调。
+
+### 任务 ID
+`20260525-airag-llm-provider-adapter-v1`
+
+### 背景
+- 现有 `AIChatHandler` 在多供应商场景下存在参数处理分散、供应商差异硬编码、思考参数控制不统一的问题。
+- 需要在 `jeecg-boot-module-airag` 内构建可扩展的参数适配层，优先支持 `DEEPSEEK / MINIMAX / GEMINI`。
+
+### 目标
+- 在 `org.jeecg.modules.airag.llm` 下新增可配置化的 provider 参数适配骨架（capability + normalizer + adapter + registry）。
+- 将 `AIChatHandler` 接入该适配层，实现调用前统一裁剪、映射与 warning 留痕。
+- 优先完成 `deepseek / minimax / gemini` 三类 provider 的可运行适配。
+
+### 范围
+- 范围内：
+  - `jeecg-boot-module-airag/src/main/java/org/jeecg/modules/airag/llm/**`
+  - 适配层新增类与 `AIChatHandler` 接入改造
+- 范围外：
+  - 前端改造
+  - 非 airag 模块接口契约调整
+
+### 执行步骤
+1. 设计并落地适配层核心类型（capability、context、adapter、registry、normalizer）。
+2. 实现 `deepseek / minimax / gemini` provider 规则。
+3. 接入 `AIChatHandler`（completions/chat/image 链路）并保留兼容能力。
+4. 编译验证并记录风险、后续优化点。
+
+### 进度
+- [x] 步骤 1
+- [x] 步骤 2
+- [x] 步骤 3
+- [x] 步骤 4
+
+### 风险与回滚
+- 风险：
+  - 适配层引入后可能影响现有模型默认行为（如采样参数、thinking 开关）。
+  - 依赖 `LLMHandler` 缓存机制的模型注入逻辑存在版本耦合风险。
+- 监控/告警信号：
+  - 模型测试激活失败率异常升高。
+  - DeepSeek 二轮调用出现 `reasoning_content must be passed back` 错误回升。
+- 回滚步骤：
+  - 回退 `AIChatHandler` 对适配层的接入提交。
+  - 保留数据库模型配置不变，恢复旧调用链。
+
+### 验证记录
+- 编译验证：`D:\maven\bin\mvn -pl jeecg-boot-module/jeecg-boot-module-airag -am -DskipTests compile`
+- 结果：`BUILD SUCCESS`
+- 手工验证：
+  - `DEEPSEEK` 适配器会注入 `thinking.type` 自定义参数，并通过缓存键同时覆盖非流式与流式模型。
+  - `MINIMAX/GEMINI` 文本模型调用统一归一为 `OPENAI-compatible` provider 与 baseUrl 规范化。
+  - 能力不支持的参数（如 `temperature/topP/presencePenalty/frequencyPenalty/tools/search`）会按 capability 自动裁剪并记录 warning 日志。
+
+### 结果
+- 已在 `llm.adapter` 目录落地 provider 参数适配骨架，包含 capability/normalizer/adapter/registry/service。
+- 已接入 `AIChatHandler` 的 `completions/chat` 主链路，实现调用前统一适配与 warning 留痕。
+- 已优先实现 `deepseek/minimax/gemini` 三类 provider 规则，后续新增 provider 仅需新增 adapter。

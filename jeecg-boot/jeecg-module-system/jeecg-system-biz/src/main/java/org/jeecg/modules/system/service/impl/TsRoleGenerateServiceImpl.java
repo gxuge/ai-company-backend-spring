@@ -5,6 +5,7 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.exception.JeecgBootException;
+import org.jeecg.common.exception.JeecgBootBizTipException;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.openapi.dto.MiniMaxImageRequestDto;
 import org.jeecg.modules.openapi.service.IMiniMaxDemoService;
@@ -286,9 +287,11 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         JSONObject modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, promptSections);
         String visualPrompt = PromptRuntimeUtil.firstNonBlank(
                 PromptRuntimeUtil.trimToNull(modelJson.getString("visual_prompt")),
-                PromptRuntimeUtil.trimToNull(modelJson.getString("visualPrompt")),
-                renderedPrompt
+                PromptRuntimeUtil.trimToNull(modelJson.getString("visualPrompt"))
         );
+        if (!StringUtils.hasText(visualPrompt)) {
+            throw new JeecgBootBizTipException("模型未返回 visual_prompt，已取消回退渲染模板作为生图提示词");
+        }
         String imagePrompt = composeImagePrompt(visualPrompt, modelJson, dto);
 
         MiniMaxImageRequestDto imageRequest = new MiniMaxImageRequestDto();
