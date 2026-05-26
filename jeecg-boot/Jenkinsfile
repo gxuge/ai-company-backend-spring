@@ -80,7 +80,7 @@ pipeline {
                   exit 1
                 fi
                 for i in $(seq 1 60); do
-                  if docker compose -f ${BUNDLE_NAME}/docker-compose.yml --env-file ${BUNDLE_NAME}/.env exec -T -e MYSQL_PWD="$MYSQL_PASSWORD" jeecg-boot-mysql mysqladmin -uroot ping --silent >/dev/null 2>&1; then
+                  if docker compose -f ${BUNDLE_NAME}/docker-compose.yml --env-file ${BUNDLE_NAME}/.env exec -T -e MYSQL_PWD="$MYSQL_PASSWORD" jeecg-boot-mysql mysql -h127.0.0.1 -uroot -e "SELECT 1" >/dev/null 2>&1; then
                     echo "MySQL is ready"
                     break
                   fi
@@ -91,7 +91,7 @@ pipeline {
                   fi
                   sleep 2
                 done
-                docker compose -f ${BUNDLE_NAME}/docker-compose.yml --env-file ${BUNDLE_NAME}/.env exec -T -e MYSQL_PWD="$MYSQL_PASSWORD" jeecg-boot-mysql mysql -uroot -e "SHOW VARIABLES LIKE 'lower_case_table_names';"
+                docker compose -f ${BUNDLE_NAME}/docker-compose.yml --env-file ${BUNDLE_NAME}/.env exec -T -e MYSQL_PWD="$MYSQL_PASSWORD" jeecg-boot-mysql mysql -h127.0.0.1 -uroot -e "SHOW VARIABLES LIKE 'lower_case_table_names';"
               '''
             } else {
               if (params.RESET_MYSQL_DATA) {
@@ -113,7 +113,7 @@ pipeline {
                 }
                 $ready = $false
                 for ($i = 1; $i -le 60; $i++) {
-                  docker compose -f "$env:BUNDLE_NAME/docker-compose.yml" --env-file "$env:BUNDLE_NAME/.env" exec -T jeecg-boot-mysql mysqladmin -uroot ping --silent *> $null
+                  docker compose -f "$env:BUNDLE_NAME/docker-compose.yml" --env-file "$env:BUNDLE_NAME/.env" exec -T -e MYSQL_PWD="$env:MYSQL_PWD" jeecg-boot-mysql mysql -h127.0.0.1 -uroot -e "SELECT 1" *> $null
                   if ($LASTEXITCODE -eq 0) {
                     Write-Host "MySQL is ready"
                     $ready = $true
@@ -126,7 +126,7 @@ pipeline {
                   docker compose -f "$env:BUNDLE_NAME/docker-compose.yml" --env-file "$env:BUNDLE_NAME/.env" logs --tail 200 jeecg-boot-mysql
                   exit 1
                 }
-                docker compose -f "$env:BUNDLE_NAME/docker-compose.yml" --env-file "$env:BUNDLE_NAME/.env" exec -T jeecg-boot-mysql mysql -uroot -e "SHOW VARIABLES LIKE 'lower_case_table_names';"
+                docker compose -f "$env:BUNDLE_NAME/docker-compose.yml" --env-file "$env:BUNDLE_NAME/.env" exec -T -e MYSQL_PWD="$env:MYSQL_PWD" jeecg-boot-mysql mysql -h127.0.0.1 -uroot -e "SHOW VARIABLES LIKE 'lower_case_table_names';"
               '''
             }
           }
