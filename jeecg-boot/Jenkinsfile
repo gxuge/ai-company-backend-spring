@@ -7,7 +7,7 @@ pipeline {
 
   tools {
     // Update these names to match "Manage Jenkins -> Global Tool Configuration"
-    jdk 'JDK8'
+    jdk 'JDK17'
     maven 'Maven3'
   }
 
