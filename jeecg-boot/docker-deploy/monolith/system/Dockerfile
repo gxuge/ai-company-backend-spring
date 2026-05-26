@@ -1,4 +1,4 @@
-﻿FROM registry.cn-hangzhou.aliyuncs.com/jeecgdocker/alpine-java:8_server-jre_unlimited
+﻿﻿FROM eclipse-temurin:8-jre
 
 MAINTAINER jeecgos@163.com
 
