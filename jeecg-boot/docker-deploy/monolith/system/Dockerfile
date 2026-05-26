@@ -1,4 +1,4 @@
-﻿﻿FROM eclipse-temurin:8-jre
+FROM eclipse-temurin:8-jre
 
 MAINTAINER jeecgos@163.com
 
