@@ -30,11 +30,13 @@ pipeline {
 
     stage('Build') {
       steps {
-        script {
-          if (isUnix()) {
-            sh 'mvn -U -Pprod -DskipTests clean package -pl jeecg-module-system/jeecg-system-start -am'
-          } else {
-            bat 'mvn -U -Pprod -DskipTests clean package -pl jeecg-module-system/jeecg-system-start -am'
+        dir('jeecg-boot') {
+          script {
+            if (isUnix()) {
+              sh 'mvn -U -Pprod -DskipTests clean package -pl jeecg-module-system/jeecg-system-start -am'
+            } else {
+              bat 'mvn -U -Pprod -DskipTests clean package -pl jeecg-module-system/jeecg-system-start -am'
+            }
           }
         }
       }
