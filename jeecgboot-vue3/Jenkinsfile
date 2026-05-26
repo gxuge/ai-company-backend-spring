@@ -1,0 +1,89 @@
+pipeline {
+  agent any
+
+  parameters {
+    choice(
+      name: 'BUILD_MODE',
+      choices: ['production', 'docker', 'dockercloud'],
+      description: 'Frontend build mode'
+    )
+  }
+
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+  }
+
+  environment {
+    NODE_OPTIONS = '--max-old-space-size=8192'
+    PNPM_CACHE_DIR = '.pnpm-store'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Install') {
+      steps {
+        script {
+          if (isUnix()) {
+            sh '''
+              corepack enable
+              pnpm config set store-dir "${PNPM_CACHE_DIR}"
+              pnpm install --frozen-lockfile
+            '''
+          } else {
+            powershell '''
+              corepack enable
+              pnpm config set store-dir "$env:PNPM_CACHE_DIR"
+              pnpm install --frozen-lockfile
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Build') {
+      steps {
+        script {
+          if (isUnix()) {
+            if (params.BUILD_MODE == 'docker') {
+              sh 'pnpm run build:docker'
+            } else if (params.BUILD_MODE == 'dockercloud') {
+              sh 'pnpm run build:dockercloud'
+            } else {
+              sh 'pnpm run build'
+            }
+          } else {
+            if (params.BUILD_MODE == 'docker') {
+              powershell 'pnpm run build:docker'
+            } else if (params.BUILD_MODE == 'dockercloud') {
+              powershell 'pnpm run build:dockercloud'
+            } else {
+              powershell 'pnpm run build'
+            }
+          }
+        }
+      }
+    }
+
+    stage('Archive') {
+      steps {
+        archiveArtifacts artifacts: 'dist/**', fingerprint: true
+      }
+    }
+  }
+
+  post {
+    success {
+      echo 'Frontend build completed.'
+    }
+    failure {
+      echo 'Frontend build failed. Check build logs.'
+    }
+  }
+}
