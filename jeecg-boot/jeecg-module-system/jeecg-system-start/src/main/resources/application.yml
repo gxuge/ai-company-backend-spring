@@ -9,9 +9,6 @@ spring:
   profiles:
     active: '@profile.name@'
 
-liteflow:
-  enable: false
-
 management:
   tracing:
     enabled: ${MANAGEMENT_TRACING_ENABLED:false}
