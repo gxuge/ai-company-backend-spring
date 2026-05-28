@@ -4,6 +4,9 @@ server:
 spring:
   application:
     name: jeecg-system
+  autoconfigure:
+    exclude:
+      - com.yomahub.liteflow.springboot.LiteflowAutoConfiguration
   cloud:
     nacos:
       config:

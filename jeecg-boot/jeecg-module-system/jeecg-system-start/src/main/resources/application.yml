@@ -1,6 +1,9 @@
 spring:
   application:
     name: jeecg-system
+  autoconfigure:
+    exclude:
+      - com.yomahub.liteflow.springboot.LiteflowAutoConfiguration
   config:
     import: optional:classpath:config/application-liteflow.yml
   profiles:
