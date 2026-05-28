@@ -1,0 +1,17 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jeecgboot-vue3-web
+    ports:
+      - "${WEB_PORT:-8082}:80"
+    restart: unless-stopped
+    networks:
+      - backend-net
+
+networks:
+  backend-net:
+    external: true
+    name: ${BACKEND_DOCKER_NETWORK:-jeecg_boot}
+

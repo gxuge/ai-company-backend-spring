@@ -18,6 +18,7 @@ pipeline {
   environment {
     NODE_OPTIONS = '--max-old-space-size=8192'
     PNPM_CACHE_DIR = '.pnpm-store'
+    BACKEND_DOCKER_NETWORK = 'jeecg_boot'
   }
 
   stages {
@@ -66,6 +67,32 @@ pipeline {
             } else {
               powershell 'pnpm run build'
             }
+          }
+        }
+      }
+    }
+
+    stage('Deploy') {
+      when {
+        expression { params.BUILD_MODE == 'docker' || params.BUILD_MODE == 'dockercloud' }
+      }
+      steps {
+        script {
+          if (isUnix()) {
+            sh '''
+              docker network inspect "${BACKEND_DOCKER_NETWORK}" >/dev/null 2>&1 || docker network create "${BACKEND_DOCKER_NETWORK}"
+              docker compose -f docker-compose.yml down --remove-orphans || true
+              docker compose -f docker-compose.yml up -d --build
+            '''
+          } else {
+            powershell '''
+              docker network inspect "$env:BACKEND_DOCKER_NETWORK" *> $null
+              if ($LASTEXITCODE -ne 0) {
+                docker network create "$env:BACKEND_DOCKER_NETWORK"
+              }
+              docker compose -f docker-compose.yml down --remove-orphans
+              docker compose -f docker-compose.yml up -d --build
+            '''
           }
         }
       }
