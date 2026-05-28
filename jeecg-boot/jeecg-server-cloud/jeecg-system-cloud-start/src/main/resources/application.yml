@@ -26,6 +26,9 @@ spring:
       - optional:classpath:config/application-liteflow.yml
       - optional:nacos:jeecg.yaml
       - optional:nacos:jeecg-@profile.name@.yaml
+
+liteflow:
+  enable: false
 #  #shardingjdbc数据源
 #  datasource:
 #    dynamic:
