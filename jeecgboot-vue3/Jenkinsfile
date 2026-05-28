@@ -30,19 +30,21 @@ pipeline {
 
     stage('Install') {
       steps {
-        script {
-          if (isUnix()) {
-            sh '''
-              corepack enable
-              pnpm config set store-dir "${PNPM_CACHE_DIR}"
-              pnpm install --frozen-lockfile
-            '''
-          } else {
-            powershell '''
-              corepack enable
-              pnpm config set store-dir "$env:PNPM_CACHE_DIR"
-              pnpm install --frozen-lockfile
-            '''
+        dir('jeecgboot-vue3') {
+          script {
+            if (isUnix()) {
+              sh '''
+                corepack enable
+                pnpm config set store-dir "${PNPM_CACHE_DIR}"
+                pnpm install --frozen-lockfile
+              '''
+            } else {
+              powershell '''
+                corepack enable
+                pnpm config set store-dir "$env:PNPM_CACHE_DIR"
+                pnpm install --frozen-lockfile
+              '''
+            }
           }
         }
       }
@@ -50,22 +52,24 @@ pipeline {
 
     stage('Build') {
       steps {
-        script {
-          if (isUnix()) {
-            if (params.BUILD_MODE == 'docker') {
-              sh 'pnpm run build:docker'
-            } else if (params.BUILD_MODE == 'dockercloud') {
-              sh 'pnpm run build:dockercloud'
+        dir('jeecgboot-vue3') {
+          script {
+            if (isUnix()) {
+              if (params.BUILD_MODE == 'docker') {
+                sh 'pnpm run build:docker'
+              } else if (params.BUILD_MODE == 'dockercloud') {
+                sh 'pnpm run build:dockercloud'
+              } else {
+                sh 'pnpm run build'
+              }
             } else {
-              sh 'pnpm run build'
-            }
-          } else {
-            if (params.BUILD_MODE == 'docker') {
-              powershell 'pnpm run build:docker'
-            } else if (params.BUILD_MODE == 'dockercloud') {
-              powershell 'pnpm run build:dockercloud'
-            } else {
-              powershell 'pnpm run build'
+              if (params.BUILD_MODE == 'docker') {
+                powershell 'pnpm run build:docker'
+              } else if (params.BUILD_MODE == 'dockercloud') {
+                powershell 'pnpm run build:dockercloud'
+              } else {
+                powershell 'pnpm run build'
+              }
             }
           }
         }
@@ -77,22 +81,24 @@ pipeline {
         expression { params.BUILD_MODE == 'docker' || params.BUILD_MODE == 'dockercloud' }
       }
       steps {
-        script {
-          if (isUnix()) {
-            sh '''
-              docker network inspect "${BACKEND_DOCKER_NETWORK}" >/dev/null 2>&1 || docker network create "${BACKEND_DOCKER_NETWORK}"
-              docker compose -f docker-compose.yml down --remove-orphans || true
-              docker compose -f docker-compose.yml up -d --build
-            '''
-          } else {
-            powershell '''
-              docker network inspect "$env:BACKEND_DOCKER_NETWORK" *> $null
-              if ($LASTEXITCODE -ne 0) {
-                docker network create "$env:BACKEND_DOCKER_NETWORK"
-              }
-              docker compose -f docker-compose.yml down --remove-orphans
-              docker compose -f docker-compose.yml up -d --build
-            '''
+        dir('jeecgboot-vue3') {
+          script {
+            if (isUnix()) {
+              sh '''
+                docker network inspect "${BACKEND_DOCKER_NETWORK}" >/dev/null 2>&1 || docker network create "${BACKEND_DOCKER_NETWORK}"
+                docker compose -f docker-compose.yml down --remove-orphans || true
+                docker compose -f docker-compose.yml up -d --build
+              '''
+            } else {
+              powershell '''
+                docker network inspect "$env:BACKEND_DOCKER_NETWORK" *> $null
+                if ($LASTEXITCODE -ne 0) {
+                  docker network create "$env:BACKEND_DOCKER_NETWORK"
+                }
+                docker compose -f docker-compose.yml down --remove-orphans
+                docker compose -f docker-compose.yml up -d --build
+              '''
+            }
           }
         }
       }
@@ -100,7 +106,9 @@ pipeline {
 
     stage('Archive') {
       steps {
-        archiveArtifacts artifacts: 'dist/**', fingerprint: true
+        dir('jeecgboot-vue3') {
+          archiveArtifacts artifacts: 'dist/**', fingerprint: true
+        }
       }
     }
   }
