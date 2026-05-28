@@ -1,12 +1,16 @@
 package org.jeecg.modules.system.service.impl;
 
 import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.JSONArray;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.exception.JeecgBootBizTipException;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.modules.airag.app.entity.AiragApp;
+import org.jeecg.modules.airag.app.mapper.AiragAppMapper;
+import org.jeecg.modules.openapi.config.PromptChatConfigBean;
 import org.jeecg.modules.openapi.dto.MiniMaxImageRequestDto;
 import org.jeecg.modules.openapi.service.IMiniMaxDemoService;
 import org.jeecg.modules.openapi.service.IPromptChatService;
@@ -83,7 +87,11 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
     private static final String PROMPT_PATH_SETTING = "prompts/role/role_core_fill_v2.txt";
     private static final String PROMPT_PATH_GENERATE_ROLE = "prompts/role/role_generate_role_v2.txt";
     private static final String PROMPT_PATH_IMAGE = "prompts/role/role_image_generate_v2.txt";
+    private static final String PROMPT_PATH_VOICE = "prompts/role/role_voice_generate_v2.txt";
     private static final String PROMPT_PATH_TEXT_TEMPLATE = "prompts/role/role_ai_generate_text_v2.txt";
+    private static final String METADATA_TOOLCALL_REPAIR_PROMPT_KEY = "toolcallJsonRepairPromptTemplate";
+    private static final String METADATA_JSON_REPAIR_PROMPT_KEY = "jsonRepairPromptTemplate";
+    private static final String METADATA_STORY_REPAIR_PROMPT_KEY = "storyJsonRepairPromptTemplate";
     private static final String REDIS_SNAPSHOT_PREFIX = "ts:role:generate:snapshot:";
     private static final long REDIS_SNAPSHOT_TTL_HOURS = 72L;
     private static final String DEFAULT_PREVIEW_TEXT = "你好呀，很高兴认识你。";
@@ -105,6 +113,10 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
     private IPromptChatService promptChatService;
     @Resource
     private PromptRenderService promptRenderService;
+    @Resource
+    private PromptChatConfigBean promptChatConfigBean;
+    @Resource
+    private AiragAppMapper airagAppMapper;
     @Resource
     private ITsUserImageAssetService tsUserImageAssetService;
     @Resource
@@ -138,15 +150,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
                 PromptRuntimeUtil.buildSettingVars(dto.getRoleName(), dto.getGender(), dto.getOccupation(), dto.getBackgroundStory(),
                         dto.getStyleHint(), dto.getKeywords()));
         String renderedPrompt = promptSections.getRenderedPrompt();
-        JSONObject modelJson;
-        try {
-            modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, promptSections);
-        } catch (Exception ex) {
-            log.warn("Role setting JSON parse failed, fallback to request/default values. roleId={}, reason={}", dto.getRoleId(), ex.getMessage());
-            modelJson = new JSONObject();
-            modelJson.put("fallback", true);
-            modelJson.put("fallbackReason", PromptRuntimeUtil.trimToNull(ex.getMessage()));
-        }
+        JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, "setting");
 
         // 从模型结果中读取角色设定四核心字段。
         String roleName = PromptRuntimeUtil.firstNonBlank(
@@ -284,7 +288,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
                 PromptRuntimeUtil.buildImageVars(promptRoleName, dto.getGender(), promptOccupation, promptBackgroundStory,
                         dto.getStyleName(), dto.getAspectRatio(), dto.getReferenceImageUrl()));
         String renderedPrompt = promptSections.getRenderedPrompt();
-        JSONObject modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, promptSections);
+        JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, "image");
         String visualPrompt = PromptRuntimeUtil.firstNonBlank(
                 PromptRuntimeUtil.trimToNull(modelJson.getString("visual_prompt")),
                 PromptRuntimeUtil.trimToNull(modelJson.getString("visualPrompt"))
@@ -493,21 +497,42 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
             }
         }
 
-        // 新策略：随机选择可用音色 + 随机语音参数，接口快速返回；试听音频由前端后续调用预览接口获取。
-        String recommendedGender = PromptRuntimeUtil.normalizeGender(dto.getGender());
-        TsVoiceProfile selected = selectRandomVoiceProfile(recommendedGender);
+        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(PROMPT_PATH_VOICE,
+                PromptRuntimeUtil.buildVoiceVars(dto.getRoleName(), dto.getGender(), dto.getOccupation(), dto.getBackgroundStory(),
+                        dto.getPreferredVoiceName(), dto.getTargetTone(), dto.getPreviewText()));
+        String renderedPrompt = promptSections.getRenderedPrompt();
+        JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, "voice");
+
+        String recommendedGender = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.normalizeGender(modelJson.getString("gender")),
+                PromptRuntimeUtil.normalizeGender(dto.getGender()),
+                "unknown"
+        );
+        String recommendedVoiceName = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("voice_name")),
+                PromptRuntimeUtil.trimToNull(dto.getPreferredVoiceName())
+        );
+        String previewText = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("preview_text")),
+                PromptRuntimeUtil.trimToNull(dto.getPreviewText()),
+                DEFAULT_PREVIEW_TEXT
+        );
+        String recommendation = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("selection_reason")),
+                "已完成声音生成，请前端调用试听接口获取音频"
+        );
+
+        TsVoiceProfile selected = selectRandomVoiceProfile(recommendedGender, recommendedVoiceName);
         if (selected == null) {
             throw new JeecgBootException("未找到可用音色，请先维护公共音色并确保 providerVoiceId 可用");
         }
 
-        String previewText = PromptRuntimeUtil.firstNonBlank(dto.getPreviewText(), DEFAULT_PREVIEW_TEXT);
         Double speed = randomVoiceSpeed();
         Double pitch = randomVoicePitch();
         Double volume = randomVoiceVolume();
-        String recommendation = "已按随机策略生成声音参数，请前端调用试听接口获取音频";
         String traceId = "role-voice-" + UUID.randomUUID().toString().replace("-", "");
         String schemaVersion = "v1";
-        String matchSource = "random_pool";
+        String matchSource = StringUtils.hasText(recommendedVoiceName) ? "llm_voice_keyword_pool" : "llm_gender_pool";
         String previewAudioUrl = null;
 
         // 若绑定角色，则回写角色音色名。
@@ -522,7 +547,8 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         snapshot.put("type", "voice");
         snapshot.put("promptCode", PROMPT_CODE_VOICE);
         snapshot.put("promptVersion", PROMPT_VERSION);
-        snapshot.put("promptRendered", null);
+        snapshot.put("promptRendered", renderedPrompt);
+        snapshot.put("rawResponse", modelJson == null ? null : modelJson.toJSONString());
         snapshot.put("voiceProfileId", selected.getId());
         snapshot.put("voiceName", selected.getName());
         snapshot.put("previewAudioUrl", previewAudioUrl);
@@ -565,7 +591,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         vo.setVolume(volume);
         vo.setPromptCode(PROMPT_CODE_VOICE);
         vo.setPromptVersion(PROMPT_VERSION);
-        vo.setRenderedPrompt(null);
+        vo.setRenderedPrompt(renderedPrompt);
         vo.setSnapshotKey(snapshotKey);
         vo.setMatchSource(matchSource);
         vo.setTraceId(traceId);
@@ -573,7 +599,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         return vo;
     }
 
-    private TsVoiceProfile selectRandomVoiceProfile(String preferredGender) {
+    private TsVoiceProfile selectRandomVoiceProfile(String preferredGender, String preferredVoiceKeyword) {
         List<TsVoiceProfile> primaryProfiles = VoiceProfileMatchUtil.queryVoiceProfiles(tsVoiceProfileMapper, preferredGender, VOICE_CANDIDATE_LIMIT);
         List<TsVoiceProfile> fallbackProfiles = StringUtils.hasText(preferredGender)
                 ? VoiceProfileMatchUtil.queryVoiceProfiles(tsVoiceProfileMapper, null, VOICE_CANDIDATE_LIMIT)
@@ -585,8 +611,33 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         if (candidates.isEmpty()) {
             return null;
         }
+        if (StringUtils.hasText(preferredVoiceKeyword)) {
+            List<TsVoiceProfile> keywordMatched = new ArrayList<>();
+            for (TsVoiceProfile profile : candidates) {
+                if (profile == null) {
+                    continue;
+                }
+                String name = PromptRuntimeUtil.trimToNull(profile.getName());
+                String providerVoiceId = PromptRuntimeUtil.trimToNull(profile.getProviderVoiceId());
+                if (containsIgnoreCase(name, preferredVoiceKeyword) || containsIgnoreCase(providerVoiceId, preferredVoiceKeyword)) {
+                    keywordMatched.add(profile);
+                }
+            }
+            if (!keywordMatched.isEmpty()) {
+                candidates = keywordMatched;
+            }
+        }
         int index = ThreadLocalRandom.current().nextInt(candidates.size());
         return candidates.get(index);
+    }
+
+    private boolean containsIgnoreCase(String source, String keyword) {
+        String s = PromptRuntimeUtil.trimToNull(source);
+        String k = PromptRuntimeUtil.trimToNull(keyword);
+        if (!StringUtils.hasText(s) || !StringUtils.hasText(k)) {
+            return false;
+        }
+        return s.toLowerCase().contains(k.toLowerCase());
     }
 
     private void appendVoiceCandidates(List<TsVoiceProfile> target, Set<Long> profileIds, List<TsVoiceProfile> source) {
@@ -685,9 +736,10 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         // 先根据场景设定渲染模板，生成角色四核心字段以及形象/声音偏好线索。
         TsRoleGenerateRoleDto dto = request == null ? new TsRoleGenerateRoleDto() : request;
         dto.normalize();
-        String renderedPrompt = promptRenderService.renderPrompt(PROMPT_PATH_GENERATE_ROLE,
+        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(PROMPT_PATH_GENERATE_ROLE,
                 PromptRuntimeUtil.buildGenerateRoleVars(dto.getStorySetting(), dto.getStoryBackground()));
-        JSONObject modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, renderedPrompt);
+        String renderedPrompt = promptSections.getRenderedPrompt();
+        JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, "generate-role");
 
         // 抽取模型结果；若模型未返回字段则保持 null 语义，由后续链路自行处理。
         String roleName = PromptRuntimeUtil.firstNonBlank(
@@ -787,11 +839,207 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         return vo;
     }
 
+    private JSONObject callPromptChatWithSchemaRepair(PromptRenderedSectionsVo sections, String scene) {
+        String rawContent = null;
+        try {
+            rawContent = promptChatService.chatToolCall(
+                    sections.getDeveloperPrompt(),
+                    sections.getUserPrompt(),
+                    sections.getToolSchema());
+            JSONObject parsed = PromptRuntimeUtil.parseJsonObject(rawContent);
+            if (matchesToolSchemaRequired(parsed, sections.getToolSchema())) {
+                log.info("[PROMPT_CHAT_JSON_FULL] stage=first-pass payload={}",
+                        PromptRuntimeUtil.sanitizeToolCallLogJson(parsed).toJSONString());
+                return parsed;
+            }
+            log.warn("[PROMPT_CHAT_JSON_FULL] stage=first-pass-required-mismatch scene={} payload={}",
+                    scene, PromptRuntimeUtil.sanitizeToolCallLogJson(parsed).toJSONString());
+        } catch (Exception ex) {
+            log.warn("[PROMPT_CHAT_JSON_FULL] stage=first-pass-parse-fail scene={} reason={}", scene, ex.getMessage());
+        }
+
+        PromptTemplateRef repairTemplateRef = resolveJsonRepairTemplateRef();
+        PromptRenderedSectionsVo repairPrompt = promptRenderService.renderPromptSections(repairTemplateRef.templatePath(),
+                buildJsonRepairVars(scene, rawContent, sections.getToolSchema()));
+        String repairedContent = promptChatService.chat(repairPrompt.getRenderedPrompt());
+        JSONObject repairedJson;
+        try {
+            repairedJson = PromptRuntimeUtil.parseJsonObject(repairedContent);
+        } catch (Exception ex) {
+            log.error("[PROMPT_CHAT_JSON_FULL] stage=repair-pass-parse-fail scene={} firstLen={} repairedLen={}",
+                    scene,
+                    rawContent == null ? 0 : rawContent.length(),
+                    repairedContent == null ? 0 : repairedContent.length());
+            throw new JeecgBootException("AI回复解析失败，非有效JSON");
+        }
+        if (!matchesToolSchemaRequired(repairedJson, sections.getToolSchema())) {
+            throw new JeecgBootException("AI回复字段不完整，无法匹配schema required");
+        }
+        log.info("[PROMPT_CHAT_JSON_FULL] stage=repair-pass payload={}",
+                PromptRuntimeUtil.sanitizeToolCallLogJson(repairedJson).toJSONString());
+        return repairedJson;
+    }
+
+    private Map<String, String> buildJsonRepairVars(String scene, String rawContent, String toolSchema) {
+        Map<String, String> variables = new HashMap<>();
+        variables.put("scene", PromptRuntimeUtil.nullableToken(scene));
+        variables.put("raw_content", PromptRuntimeUtil.nullableToken(PromptRuntimeUtil.trimToNull(rawContent)));
+        variables.put("tool_schema", PromptRuntimeUtil.nullableToken(PromptRuntimeUtil.trimToNull(toolSchema)));
+        variables.put("required_fields", PromptRuntimeUtil.nullableToken(String.join(", ", extractRequiredFields(toolSchema))));
+        return variables;
+    }
+
+    private boolean matchesToolSchemaRequired(JSONObject data, String toolSchema) {
+        List<String> requiredFields = extractRequiredFields(toolSchema);
+        if (requiredFields.isEmpty()) {
+            return true;
+        }
+        if (data == null) {
+            return false;
+        }
+        for (String field : requiredFields) {
+            if (!data.containsKey(field)) {
+                return false;
+            }
+            Object value = data.get(field);
+            if (value == null) {
+                return false;
+            }
+            if (value instanceof String str && !StringUtils.hasText(str)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private List<String> extractRequiredFields(String toolSchema) {
+        List<String> requiredFields = new ArrayList<>();
+        if (!StringUtils.hasText(toolSchema)) {
+            return requiredFields;
+        }
+        try {
+            JSONObject schemaRoot = JSONObject.parseObject(toolSchema);
+            JSONObject parameters = schemaRoot == null ? null : schemaRoot.getJSONObject("parameters");
+            JSONArray required = parameters == null ? null : parameters.getJSONArray("required");
+            if (required == null || required.isEmpty()) {
+                return requiredFields;
+            }
+            for (Object item : required) {
+                if (item == null) {
+                    continue;
+                }
+                String key = PromptRuntimeUtil.trimToNull(String.valueOf(item));
+                if (StringUtils.hasText(key)) {
+                    requiredFields.add(key);
+                }
+            }
+            return requiredFields;
+        } catch (Exception ex) {
+            log.warn("Failed to extract required fields from tool_schema, reason={}", ex.getMessage());
+            return requiredFields;
+        }
+    }
+
+    private PromptTemplateRef resolveJsonRepairTemplateRef() {
+        AiragApp app = resolvePromptApp();
+        if (!StringUtils.hasText(app.getMetadata())) {
+            throw new JeecgBootBizTipException("当前AI应用未配置JSON修复模板信息，缺少metadata，appId=" + app.getId());
+        }
+        try {
+            JSONObject metadata = JSONObject.parseObject(app.getMetadata());
+            if (metadata == null) {
+                throw new JeecgBootBizTipException("当前AI应用metadata为空对象，无法解析JSON修复模板，appId=" + app.getId());
+            }
+
+            PromptTemplateRef ref = firstNonNull(
+                    parseTemplateRef(metadata.get(METADATA_TOOLCALL_REPAIR_PROMPT_KEY)),
+                    parseTemplateRef(metadata.get(METADATA_JSON_REPAIR_PROMPT_KEY)),
+                    parseTemplateRef(metadata.get(METADATA_STORY_REPAIR_PROMPT_KEY)));
+
+            if (ref == null || !StringUtils.hasText(ref.code()) || !StringUtils.hasText(ref.version())) {
+                throw new JeecgBootBizTipException(
+                        "JSON修复模板配置不完整，请在app metadata中配置code+version（支持 "
+                                + METADATA_TOOLCALL_REPAIR_PROMPT_KEY + " / "
+                                + METADATA_JSON_REPAIR_PROMPT_KEY + " / "
+                                + METADATA_STORY_REPAIR_PROMPT_KEY + "）");
+            }
+            return ref;
+        } catch (JeecgBootBizTipException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new JeecgBootBizTipException("解析JSON修复模板配置失败，appId=" + app.getId()
+                    + "，reason=" + ex.getMessage());
+        }
+    }
+
+    @SafeVarargs
+    private final <T> T firstNonNull(T... values) {
+        if (values == null) {
+            return null;
+        }
+        for (T value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private PromptTemplateRef parseTemplateRef(Object rawConfig) {
+        if (rawConfig == null) {
+            return null;
+        }
+        if (rawConfig instanceof JSONObject jsonObject) {
+            String configuredCode = trimToNull(jsonObject.getString("code"));
+            String configuredVersion = trimToNull(jsonObject.getString("version"));
+            if (!StringUtils.hasText(configuredCode) && !StringUtils.hasText(configuredVersion)) {
+                return null;
+            }
+            return new PromptTemplateRef(configuredCode, configuredVersion);
+        }
+        String text = trimToNull(String.valueOf(rawConfig));
+        if (!StringUtils.hasText(text)) {
+            return null;
+        }
+        if (text.contains("@")) {
+            String[] parts = text.split("@", 2);
+            String configuredCode = trimToNull(parts[0]);
+            String configuredVersion = parts.length > 1 ? trimToNull(parts[1]) : null;
+            return new PromptTemplateRef(configuredCode, configuredVersion);
+        }
+        return new PromptTemplateRef(text, null);
+    }
+
+    private AiragApp resolvePromptApp() {
+        String appId = trimToNull(promptChatConfigBean.getAppId());
+        if (!StringUtils.hasText(appId)) {
+            throw new JeecgBootBizTipException("未配置 jeecg.airag.prompt-chat.app-id，无法解析JSON修复模板");
+        }
+        AiragApp app = airagAppMapper.getByIdIgnoreTenant(appId);
+        if (app == null) {
+            throw new JeecgBootBizTipException("未找到AI应用配置，appId=" + appId);
+        }
+        return app;
+    }
+
+    private String trimToNull(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        return value.trim();
+    }
+
     private String resolvePromptPath(String promptCode, String promptVersion) {
         if (PROMPT_CODE_TEXT_TEMPLATE.equals(promptCode) && PROMPT_VERSION.equals(promptVersion)) {
             return PROMPT_PATH_TEXT_TEMPLATE;
         }
         throw new JeecgBootException("不支持的模板编码或版本: " + promptCode + "@" + promptVersion);
+    }
+
+    private record PromptTemplateRef(String code, String version) {
+        private String templatePath() {
+            return "prompts/toolcall/" + code + "_" + version + ".txt";
+        }
     }
 
 }

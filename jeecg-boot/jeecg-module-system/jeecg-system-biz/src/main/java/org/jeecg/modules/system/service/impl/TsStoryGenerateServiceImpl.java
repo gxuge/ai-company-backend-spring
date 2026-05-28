@@ -41,7 +41,10 @@ import java.util.Map;
 public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     private static final String METADATA_STORY_PROMPT_KEY = "storyPromptTemplate";
     private static final String METADATA_STORY_PROMPTS_KEY = "storyPromptTemplates";
-    private static final String PROMPT_PATH_JSON_REPAIR = "prompts/story/story_json_repair_v2.txt";
+    private static final String METADATA_TOOLCALL_REPAIR_PROMPT_KEY = "toolcallJsonRepairPromptTemplate";
+    private static final String METADATA_JSON_REPAIR_PROMPT_KEY = "jsonRepairPromptTemplate";
+    private static final String METADATA_STORY_REPAIR_PROMPT_KEY = "storyJsonRepairPromptTemplate";
+    private static final String TOOLCALL_REPAIR_PROMPT_DIR = "prompts/toolcall/";
     private static final String REDIS_SNAPSHOT_PREFIX = "ts:story:generate:snapshot:";
     private static final long REDIS_SNAPSHOT_TTL_HOURS = 72L;
     private static final String ENDPOINT_STORY_SETTING_GENERATE = "/sys/ts-stories/story-setting-generate";
@@ -264,7 +267,8 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
             log.warn("[PROMPT_CHAT_JSON_FULL] stage=first-pass-parse-fail scene={} reason={}", scene, firstEx.getMessage());
         }
 
-        PromptRenderedSectionsVo repairPrompt = promptRenderService.renderPromptSections(PROMPT_PATH_JSON_REPAIR,
+        PromptTemplateRef repairTemplateRef = resolveJsonRepairTemplateRef();
+        PromptRenderedSectionsVo repairPrompt = promptRenderService.renderPromptSections(jsonRepairTemplatePath(repairTemplateRef),
                 buildJsonRepairVars(scene, rawContent, sections.getToolSchema()));
         String repairedContent = promptChatService.chat(repairPrompt.getRenderedPrompt());
         JSONObject repairedJson;
@@ -343,6 +347,51 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
             log.warn("Failed to extract required fields from tool_schema, reason={}", ex.getMessage());
             return requiredFields;
         }
+    }
+
+    private PromptTemplateRef resolveJsonRepairTemplateRef() {
+        AiragApp app = resolvePromptApp();
+        if (!StringUtils.hasText(app.getMetadata())) {
+            throw new JeecgBootBizTipException("当前AI应用未配置JSON修复模板信息，缺少metadata，appId=" + app.getId());
+        }
+        try {
+            JSONObject metadata = JSONObject.parseObject(app.getMetadata());
+            if (metadata == null) {
+                throw new JeecgBootBizTipException("当前AI应用metadata为空对象，无法解析JSON修复模板，appId=" + app.getId());
+            }
+
+            PromptTemplateRef ref = firstNonNull(
+                    parseTemplateRef(metadata.get(METADATA_TOOLCALL_REPAIR_PROMPT_KEY)),
+                    parseTemplateRef(metadata.get(METADATA_JSON_REPAIR_PROMPT_KEY)),
+                    parseTemplateRef(metadata.get(METADATA_STORY_REPAIR_PROMPT_KEY)));
+
+            if (ref == null || !StringUtils.hasText(ref.code()) || !StringUtils.hasText(ref.version())) {
+                throw new JeecgBootBizTipException(
+                        "JSON修复模板配置不完整，请在app metadata中配置code+version（支持 "
+                                + METADATA_TOOLCALL_REPAIR_PROMPT_KEY + " / "
+                                + METADATA_JSON_REPAIR_PROMPT_KEY + " / "
+                                + METADATA_STORY_REPAIR_PROMPT_KEY + "）");
+            }
+            return ref;
+        } catch (JeecgBootBizTipException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new JeecgBootBizTipException("解析JSON修复模板配置失败，appId=" + app.getId()
+                    + "，reason=" + ex.getMessage());
+        }
+    }
+
+    @SafeVarargs
+    private final <T> T firstNonNull(T... values) {
+        if (values == null) {
+            return null;
+        }
+        for (T value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private PromptTemplateRef resolvePromptTemplateRef(TemplateScene scene) {
@@ -441,6 +490,10 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
             return null;
         }
         return value.trim();
+    }
+
+    private String jsonRepairTemplatePath(PromptTemplateRef ref) {
+        return TOOLCALL_REPAIR_PROMPT_DIR + ref.code() + "_" + ref.version() + ".txt";
     }
 
     private enum TemplateScene {
