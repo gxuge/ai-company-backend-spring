@@ -4,6 +4,7 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.modules.airag.prompts.service.IAiragPromptTemplateService;
 import org.jeecg.modules.airag.prompts.vo.AiragPromptTemplateVo;
+import org.jeecg.modules.system.monitor.TsAiLogCollector;
 import org.jeecg.modules.openapi.service.PromptRenderService;
 import org.jeecg.modules.openapi.util.PromptRenderUtil;
 import org.jeecg.modules.openapi.vo.PromptRenderedSectionsVo;
@@ -21,6 +22,8 @@ import java.util.Map;
 public class PromptRenderServiceImpl implements PromptRenderService {
     @Resource
     private IAiragPromptTemplateService airagPromptTemplateService;
+    @Resource
+    private TsAiLogCollector tsAiLogCollector;
 
     @Override
     public String renderPrompt(String code, String version, Map<String, String> variables) {
@@ -57,6 +60,16 @@ public class PromptRenderServiceImpl implements PromptRenderService {
         String logContent = renderedPrompt.length() > 300 ? renderedPrompt.substring(0, 300) + "...(truncated)" : renderedPrompt;
         log.info("Prompt template rendered code={} version={} vars={} rendered={}",
                 safeCode, safeVersion, safeVariables, logContent);
+        tsAiLogCollector.markPromptTemplateIfAbsent(safeCode, safeVersion);
+        tsAiLogCollector.appendStep("prompt_rendered", "提示词渲染", "success", step -> {
+            step.setPromptCode(safeCode);
+            step.setPromptVersion(safeVersion);
+            step.setDeveloperPrompt(developerPrompt);
+            step.setUserPrompt(userPrompt);
+            step.setToolSchema(toolSchema);
+            step.setRenderedPrompt(renderedPrompt);
+            step.setExtraInfoJson(tsAiLogCollector.toJsonString(safeVariables));
+        });
         return sections;
     }
 

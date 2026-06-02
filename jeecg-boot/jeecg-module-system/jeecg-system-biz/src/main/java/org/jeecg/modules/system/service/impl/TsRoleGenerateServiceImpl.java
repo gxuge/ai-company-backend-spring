@@ -1055,38 +1055,94 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
                                                            TsPreset preset,
                                                            Map<String, String> tagNamesByType,
                                                            Map<String, String> tagPromptsByType) {
+        String presetGenderTag = PromptRuntimeUtil.firstNonBlank(
+                tagNamesByType.get(TAG_TYPE_GENDER),
+                tagPromptsByType.get(TAG_TYPE_GENDER)
+        );
+        String presetIdentity = PromptRuntimeUtil.firstNonBlank(
+                tagNamesByType.get(TAG_TYPE_IDENTITY),
+                tagPromptsByType.get(TAG_TYPE_IDENTITY)
+        );
+        String presetUserBackground = PromptRuntimeUtil.firstNonBlank(
+                tagNamesByType.get(TAG_TYPE_USER_BACKGROUND),
+                tagPromptsByType.get(TAG_TYPE_USER_BACKGROUND)
+        );
+        String presetAppearance = PromptRuntimeUtil.firstNonBlank(
+                tagNamesByType.get(TAG_TYPE_APPEARANCE),
+                tagPromptsByType.get(TAG_TYPE_APPEARANCE)
+        );
+        String presetDress = PromptRuntimeUtil.firstNonBlank(
+                tagNamesByType.get(TAG_TYPE_DRESS),
+                tagPromptsByType.get(TAG_TYPE_DRESS)
+        );
+        String presetPersonality = PromptRuntimeUtil.firstNonBlank(
+                tagNamesByType.get(TAG_TYPE_PERSONALITY),
+                tagPromptsByType.get(TAG_TYPE_PERSONALITY)
+        );
+        String presetBehavior = PromptRuntimeUtil.firstNonBlank(
+                tagNamesByType.get(TAG_TYPE_BEHAVIOR),
+                tagPromptsByType.get(TAG_TYPE_BEHAVIOR)
+        );
+        String presetSpeechStyle = PromptRuntimeUtil.firstNonBlank(
+                tagNamesByType.get(TAG_TYPE_SPEECH_STYLE),
+                tagPromptsByType.get(TAG_TYPE_SPEECH_STYLE)
+        );
+        String presetGoal = PromptRuntimeUtil.firstNonBlank(
+                tagNamesByType.get(TAG_TYPE_GOAL),
+                tagPromptsByType.get(TAG_TYPE_GOAL)
+        );
+        String presetSecret = PromptRuntimeUtil.firstNonBlank(
+                tagNamesByType.get(TAG_TYPE_SECRET),
+                tagPromptsByType.get(TAG_TYPE_SECRET)
+        );
+        String presetAbility = PromptRuntimeUtil.firstNonBlank(
+                tagNamesByType.get(TAG_TYPE_ABILITY),
+                tagPromptsByType.get(TAG_TYPE_ABILITY)
+        );
+        String presetLimitation = PromptRuntimeUtil.firstNonBlank(
+                tagNamesByType.get(TAG_TYPE_LIMITATION),
+                tagPromptsByType.get(TAG_TYPE_LIMITATION)
+        );
         String presetGender = normalizePresetGender(PromptRuntimeUtil.firstNonBlank(
                 tagPromptsByType.get(TAG_TYPE_GENDER),
                 tagNamesByType.get(TAG_TYPE_GENDER)
         ));
         String presetOccupation = PromptRuntimeUtil.firstNonBlank(
-                tagNamesByType.get(TAG_TYPE_IDENTITY),
-                tagPromptsByType.get(TAG_TYPE_IDENTITY)
+                presetIdentity
         );
         String presetBackgroundStory = PromptRuntimeUtil.firstNonBlank(
-                tagPromptsByType.get(TAG_TYPE_USER_BACKGROUND),
-                tagNamesByType.get(TAG_TYPE_USER_BACKGROUND)
+                presetUserBackground
         );
         String presetStyleHint = joinNonBlank("；",
-                tagNamesByType.get(TAG_TYPE_APPEARANCE),
-                tagNamesByType.get(TAG_TYPE_DRESS),
-                tagPromptsByType.get(TAG_TYPE_APPEARANCE),
-                tagPromptsByType.get(TAG_TYPE_DRESS)
+                presetAppearance,
+                presetDress
         );
         String presetKeywords = joinNonBlank("；",
-                tagNamesByType.get(TAG_TYPE_PERSONALITY),
-                tagNamesByType.get(TAG_TYPE_BEHAVIOR),
-                tagNamesByType.get(TAG_TYPE_SPEECH_STYLE),
-                tagNamesByType.get(TAG_TYPE_GOAL),
-                tagNamesByType.get(TAG_TYPE_SECRET),
-                tagNamesByType.get(TAG_TYPE_ABILITY),
-                tagNamesByType.get(TAG_TYPE_LIMITATION)
+                presetPersonality,
+                presetBehavior,
+                presetSpeechStyle,
+                presetGoal,
+                presetSecret,
+                presetAbility,
+                presetLimitation
         );
 
         Map<String, String> vars = new HashMap<>();
         vars.put("role_name", PromptRuntimeUtil.nullableToken(dto.getRoleName()));
         vars.put("gender", PromptRuntimeUtil.nullableToken(PromptRuntimeUtil.firstNonBlank(dto.getGender(), presetGender)));
+        vars.put("gender_tag", PromptRuntimeUtil.nullableToken(presetGenderTag));
+        vars.put("identity", PromptRuntimeUtil.nullableToken(presetIdentity));
         vars.put("occupation", PromptRuntimeUtil.nullableToken(PromptRuntimeUtil.firstNonBlank(dto.getOccupation(), presetOccupation)));
+        vars.put("user_background", PromptRuntimeUtil.nullableToken(presetUserBackground));
+        vars.put("appearance", PromptRuntimeUtil.nullableToken(presetAppearance));
+        vars.put("dress", PromptRuntimeUtil.nullableToken(presetDress));
+        vars.put("personality", PromptRuntimeUtil.nullableToken(presetPersonality));
+        vars.put("behavior", PromptRuntimeUtil.nullableToken(presetBehavior));
+        vars.put("speech_style", PromptRuntimeUtil.nullableToken(presetSpeechStyle));
+        vars.put("goal", PromptRuntimeUtil.nullableToken(presetGoal));
+        vars.put("secret", PromptRuntimeUtil.nullableToken(presetSecret));
+        vars.put("ability", PromptRuntimeUtil.nullableToken(presetAbility));
+        vars.put("limitation", PromptRuntimeUtil.nullableToken(presetLimitation));
         vars.put("background_story", PromptRuntimeUtil.nullableToken(PromptRuntimeUtil.firstNonBlank(dto.getBackgroundStory(), presetBackgroundStory)));
         vars.put("style_hint", PromptRuntimeUtil.nullableToken(PromptRuntimeUtil.firstNonBlank(dto.getStyleHint(), presetStyleHint)));
         vars.put("keywords", PromptRuntimeUtil.nullableToken(PromptRuntimeUtil.firstNonBlank(dto.getKeywords(), presetKeywords)));

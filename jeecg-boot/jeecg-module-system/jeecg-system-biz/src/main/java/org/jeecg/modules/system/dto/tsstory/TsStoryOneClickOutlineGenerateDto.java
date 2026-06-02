@@ -23,6 +23,8 @@ public class TsStoryOneClickOutlineGenerateDto {
     private String storySetting;
     /** Scene setting, can be null. */
     private String sceneSetting;
+    /** Existing plot outline text. */
+    private String plotOutline;
     /** Story background, can be null. */
     private String storyBackground;
     /** Expected chapter count, default 3. */
@@ -39,6 +41,7 @@ public class TsStoryOneClickOutlineGenerateDto {
         this.storyMode = normalizeStoryMode(this.storyMode);
         this.storySetting = trimToNull(this.storySetting);
         this.sceneSetting = trimToNull(this.sceneSetting);
+        this.plotOutline = trimToNull(this.plotOutline);
         this.storyBackground = trimToNull(this.storyBackground);
         this.extraRequirements = trimToNull(this.extraRequirements);
         this.templateMode = normalizeTemplateMode(this.templateMode);

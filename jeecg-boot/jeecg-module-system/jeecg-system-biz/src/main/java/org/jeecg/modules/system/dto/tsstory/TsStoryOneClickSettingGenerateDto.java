@@ -18,6 +18,10 @@ public class TsStoryOneClickSettingGenerateDto {
     private String storyIntro;
     /** Existing story setting text. */
     private String storySetting;
+    /** Existing scene setting text. */
+    private String sceneSetting;
+    /** Existing plot outline text. */
+    private String plotOutline;
     /** Existing story background text. */
     private String storyBackground;
     /** User free-form idea input. */
@@ -32,6 +36,8 @@ public class TsStoryOneClickSettingGenerateDto {
         this.storyMode = normalizeStoryMode(this.storyMode);
         this.storyIntro = trimToNull(this.storyIntro);
         this.storySetting = trimToNull(this.storySetting);
+        this.sceneSetting = trimToNull(this.sceneSetting);
+        this.plotOutline = trimToNull(this.plotOutline);
         this.storyBackground = trimToNull(this.storyBackground);
         this.ideaInput = trimToNull(this.ideaInput);
         this.styleHint = trimToNull(this.styleHint);

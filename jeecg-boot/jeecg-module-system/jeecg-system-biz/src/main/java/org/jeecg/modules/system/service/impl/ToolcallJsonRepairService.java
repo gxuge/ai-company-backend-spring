@@ -12,6 +12,7 @@ import org.jeecg.modules.openapi.config.PromptChatConfigBean;
 import org.jeecg.modules.openapi.service.IPromptChatService;
 import org.jeecg.modules.openapi.service.PromptRenderService;
 import org.jeecg.modules.openapi.vo.PromptRenderedSectionsVo;
+import org.jeecg.modules.system.monitor.TsAiLogCollector;
 import org.jeecg.modules.system.util.PromptRuntimeUtil;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -41,11 +42,20 @@ public class ToolcallJsonRepairService {
     private PromptChatConfigBean promptChatConfigBean;
     @Resource
     private AiragAppMapper airagAppMapper;
+    @Resource
+    private TsAiLogCollector tsAiLogCollector;
 
     public JSONObject chatToolCallWithSchemaRepair(PromptRenderedSectionsVo sections, String scene) {
         List<String> requiredFields = extractRequiredFields(sections.getToolSchema());
         log.info("[PROMPT_CHAT_JSON_FULL] stage=schema-summary scene={} promptCode={} promptVersion={} requiredFields={}",
                 scene, sections.getCode(), sections.getVersion(), requiredFields);
+        tsAiLogCollector.appendStep("schema_summary", "Schema摘要", "success", step -> {
+            step.setPromptCode(sections.getCode());
+            step.setPromptVersion(sections.getVersion());
+            step.setToolSchema(sections.getToolSchema());
+            step.setValidationIssues(String.join(", ", requiredFields));
+            step.setExtraInfoJson(buildSchemaSummaryJson(scene, requiredFields, extractRequiredFieldHints(sections.getToolSchema())));
+        });
 
         String rawContent = null;
         try {
@@ -58,17 +68,49 @@ public class ToolcallJsonRepairService {
             if (firstPassIssues.isEmpty()) {
                 log.info("[PROMPT_CHAT_JSON_FULL] stage=first-pass payload={}",
                         PromptRuntimeUtil.sanitizeToolCallLogJson(parsed).toJSONString());
+                final String firstPassRawContent = rawContent;
+                final String firstPassJson = PromptRuntimeUtil.sanitizeToolCallLogJson(parsed).toJSONString();
+                tsAiLogCollector.appendStep("first_pass_result", "首轮结果", "success", step -> {
+                    step.setPromptCode(sections.getCode());
+                    step.setPromptVersion(sections.getVersion());
+                    step.setResponseRaw(PromptRuntimeUtil.trimToNull(firstPassRawContent));
+                    step.setResponseJson(firstPassJson);
+                    step.setFinalOutputJson(firstPassJson);
+                });
                 return parsed;
             }
             log.warn("[PROMPT_CHAT_JSON_FULL] stage=first-pass-schema-mismatch scene={} issues={} payload={}",
                     scene, firstPassIssues, PromptRuntimeUtil.sanitizeToolCallLogJson(parsed).toJSONString());
+            final String firstPassRawContent = rawContent;
+            final String firstPassJson = PromptRuntimeUtil.sanitizeToolCallLogJson(parsed).toJSONString();
+            tsAiLogCollector.appendStep("first_pass_result", "首轮结果", "failed", step -> {
+                step.setPromptCode(sections.getCode());
+                step.setPromptVersion(sections.getVersion());
+                step.setResponseRaw(PromptRuntimeUtil.trimToNull(firstPassRawContent));
+                step.setResponseJson(firstPassJson);
+                step.setValidationIssues(String.join("; ", firstPassIssues));
+            });
         } catch (Exception firstEx) {
             log.warn("[PROMPT_CHAT_JSON_FULL] stage=first-pass-parse-fail scene={} reason={}", scene, firstEx.getMessage());
+            final String firstPassRawContent = rawContent;
+            tsAiLogCollector.appendStep("first_pass_result", "首轮结果", "failed", step -> {
+                step.setPromptCode(sections.getCode());
+                step.setPromptVersion(sections.getVersion());
+                step.setResponseRaw(PromptRuntimeUtil.trimToNull(firstPassRawContent));
+                step.setValidationIssues(trimToNull(firstEx.getMessage()));
+            });
         }
 
         PromptTemplateRef repairTemplateRef = resolveJsonRepairTemplateRef();
+        tsAiLogCollector.markRepairTemplate(repairTemplateRef.code(), repairTemplateRef.version());
         log.info("[PROMPT_CHAT_JSON_FULL] stage=repair-plan scene={} firstPromptCode={} firstPromptVersion={} requiredFields={} repairPromptCode={} repairPromptVersion={}",
                 scene, sections.getCode(), sections.getVersion(), requiredFields, repairTemplateRef.code(), repairTemplateRef.version());
+        tsAiLogCollector.appendStep("repair_plan", "修复计划", "success", step -> {
+            step.setPromptCode(repairTemplateRef.code());
+            step.setPromptVersion(repairTemplateRef.version());
+            step.setValidationIssues(String.join(", ", requiredFields));
+            step.setExtraInfoJson(buildSchemaSummaryJson(scene, requiredFields, extractRequiredFieldHints(sections.getToolSchema())));
+        });
         PromptRenderedSectionsVo repairPrompt = promptRenderService.renderPromptSections(
                 repairTemplateRef.code(), repairTemplateRef.version(),
                 buildJsonRepairVars(scene, rawContent, sections.getToolSchema()));
@@ -91,10 +133,24 @@ public class ToolcallJsonRepairService {
         }
         List<String> repairIssues = validateAgainstToolSchema(repairedJson, sections.getToolSchema());
         if (!repairIssues.isEmpty()) {
+            tsAiLogCollector.appendStep("repair_result", "修复结果", "failed", step -> {
+                step.setPromptCode(repairPrompt.getCode());
+                step.setPromptVersion(repairPrompt.getVersion());
+                step.setResponseRaw(PromptRuntimeUtil.trimToNull(repairedContent));
+                step.setResponseJson(PromptRuntimeUtil.sanitizeToolCallLogJson(repairedJson).toJSONString());
+                step.setValidationIssues(String.join("; ", repairIssues));
+            });
             throw new JeecgBootException("AI回复不满足tool schema约束: " + String.join("; ", repairIssues));
         }
         log.info("[PROMPT_CHAT_JSON_FULL] stage=repair-pass payload={}",
                 PromptRuntimeUtil.sanitizeToolCallLogJson(repairedJson).toJSONString());
+        tsAiLogCollector.appendStep("repair_result", "修复结果", "success", step -> {
+            step.setPromptCode(repairPrompt.getCode());
+            step.setPromptVersion(repairPrompt.getVersion());
+            step.setResponseRaw(PromptRuntimeUtil.trimToNull(repairedContent));
+            step.setResponseJson(PromptRuntimeUtil.sanitizeToolCallLogJson(repairedJson).toJSONString());
+            step.setFinalOutputJson(PromptRuntimeUtil.sanitizeToolCallLogJson(repairedJson).toJSONString());
+        });
         return repairedJson;
     }
 
@@ -329,6 +385,14 @@ public class ToolcallJsonRepairService {
             return null;
         }
         return value.trim();
+    }
+
+    private String buildSchemaSummaryJson(String scene, List<String> requiredFields, String requiredFieldHints) {
+        JSONObject info = new JSONObject();
+        info.put("scene", trimToNull(scene));
+        info.put("requiredFields", requiredFields);
+        info.put("requiredFieldHints", trimToNull(requiredFieldHints));
+        return info.toJSONString();
     }
 
     private record PromptTemplateRef(String code, String version) {

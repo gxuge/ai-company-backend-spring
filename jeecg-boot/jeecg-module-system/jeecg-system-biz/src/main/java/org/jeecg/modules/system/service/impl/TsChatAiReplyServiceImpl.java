@@ -18,11 +18,13 @@ import org.jeecg.modules.openapi.vo.MiniMaxChatResponseVo;
 import org.jeecg.modules.openapi.vo.MiniMaxTtsResponseVo;
 import org.jeecg.modules.system.dto.tschatsession.TsChatAiReplyDto;
 import org.jeecg.modules.system.dto.tschatsession.TsChatReplySuggestionsDto;
+import org.jeecg.modules.system.dto.tschatsession.TsChatTemplateReplyDto;
 import org.jeecg.modules.system.entity.TsChatMessage;
 import org.jeecg.modules.system.entity.TsChatMessageAttachment;
 import org.jeecg.modules.system.entity.TsChatSession;
 import org.jeecg.modules.system.entity.TsRole;
 import org.jeecg.modules.system.entity.TsStory;
+import org.jeecg.modules.system.entity.TsStoryRoleRel;
 import org.jeecg.modules.system.entity.TsUserVoiceConfig;
 import org.jeecg.modules.system.entity.TsVoiceProfile;
 import org.jeecg.modules.system.mapper.TsChatMessageAttachmentMapper;
@@ -30,6 +32,7 @@ import org.jeecg.modules.system.mapper.TsChatMessageMapper;
 import org.jeecg.modules.system.mapper.TsChatSessionMapper;
 import org.jeecg.modules.system.mapper.TsRoleMapper;
 import org.jeecg.modules.system.mapper.TsStoryMapper;
+import org.jeecg.modules.system.mapper.TsStoryRoleRelMapper;
 import org.jeecg.modules.system.mapper.TsUserVoiceConfigMapper;
 import org.jeecg.modules.system.mapper.TsVoiceProfileMapper;
 import org.jeecg.modules.system.service.ITsChatAiReplyService;
@@ -37,6 +40,7 @@ import org.jeecg.modules.system.util.ChatGenerateSnapshotUtil;
 import org.jeecg.modules.system.util.PromptRuntimeUtil;
 import org.jeecg.modules.system.vo.tschatsession.TsChatAiReplyVo;
 import org.jeecg.modules.system.vo.tschatsession.TsChatReplySuggestionsVo;
+import org.jeecg.modules.system.vo.tschatsession.TsChatTemplateReplyVo;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,10 +50,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
@@ -96,8 +102,12 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
     private static final String PROMPT_OUTPUT_RULE = "请直接回复可读文本，不要输出JSON。";
     /** 候选回复模板编码。 */
     private static final String PROMPT_CODE_REPLY_SUGGESTIONS = "chat_reply_suggestions";
+    /** 多角色聊天模板编码。 */
+    private static final String PROMPT_CODE_TEMPLATE_REPLY = "chat_session_reply_multi_role";
     /** 候选回复模板版本。 */
     private static final String PROMPT_VERSION = "v2";
+    /** 多角色聊天模板版本。 */
+    private static final String PROMPT_VERSION_TEMPLATE_REPLY = "v1";
     /** 候选回复快照缓存前缀。 */
     private static final String REDIS_SNAPSHOT_PREFIX = "ts:chat:generate:snapshot:";
     /** 候选回复快照缓存 TTL（小时）。 */
@@ -133,6 +143,8 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
 
     @Resource
     private TsStoryMapper tsStoryMapper;
+    @Resource
+    private TsStoryRoleRelMapper tsStoryRoleRelMapper;
 
     @Resource
     private IMiniMaxDemoService miniMaxDemoService;
@@ -346,6 +358,124 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         return Result.OK("生成成功", response);
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    @CheckTsChatSessionOwnership(message = "会话不存在或无权限访问")
+    public Result<TsChatTemplateReplyVo> createTemplateAiReply(LoginUser user, Long sessionId, TsChatTemplateReplyDto request) {
+        TsChatTemplateReplyDto dto = request == null ? new TsChatTemplateReplyDto() : request;
+        dto.applyDefaults();
+        String userInput = PromptRuntimeUtil.trimToNull(dto.getUserInput());
+        if (!StringUtils.hasText(userInput)) {
+            throw new JeecgBootException("userInput不能为空");
+        }
+
+        TsChatSession session = TsChatSessionOwnershipAspect.SESSION_CONTEXT.get();
+        if (session == null) {
+            throw new JeecgBootException("会话不存在或无权限访问");
+        }
+
+        Long resolvedActiveRoleId = dto.getActiveRoleId() != null ? dto.getActiveRoleId() : session.getTargetRoleId();
+        if (resolvedActiveRoleId == null) {
+            throw new JeecgBootException("当前会话未指定发言角色，请先传activeRoleId");
+        }
+
+        TsRole activeRole = tsRoleMapper.selectOwned(resolvedActiveRoleId, user.getId());
+        if (activeRole == null) {
+            throw new JeecgBootException("activeRoleId不存在或无权限访问");
+        }
+
+        List<TsChatMessage> historyMessages = tsChatMessageMapper.selectRecentMessages(sessionId, dto.getHistoryCount());
+        String recentMessagesBlock = buildRecentMessagesBlock(historyMessages);
+
+        TsStory story = null;
+        if (session.getStoryId() != null) {
+            story = tsStoryMapper.selectOwned(session.getStoryId(), user.getId());
+        }
+
+        String otherRolesBlock = buildOtherRolesBlock(user.getId(), story == null ? null : story.getId(), resolvedActiveRoleId);
+
+        TsChatMessage userMessage = new TsChatMessage();
+        userMessage.setSessionId(sessionId);
+        userMessage.setSenderType(SENDER_TYPE_USER);
+        userMessage.setSenderName(SENDER_NAME_USER);
+        userMessage.setMessageType(MESSAGE_TYPE_TEXT);
+        userMessage.setContentText(userInput);
+        userMessage.setGenerateStatus(GENERATE_STATUS_SUCCESS);
+        userMessage.setSeqNo(tsChatMessageMapper.selectNextSeqNoForUpdate(sessionId));
+        userMessage.setCreatedAt(new Date());
+        tsChatMessageMapper.insert(userMessage);
+
+        Map<String, String> variables = new HashMap<>();
+        variables.put("role_name", PromptRuntimeUtil.nullableToken(activeRole.getRoleName()));
+        variables.put("gender", PromptRuntimeUtil.nullableToken(activeRole.getGender()));
+        variables.put("occupation", PromptRuntimeUtil.nullableToken(activeRole.getOccupation()));
+        variables.put("background_story", PromptRuntimeUtil.nullableToken(activeRole.getBackgroundStory()));
+        variables.put("other_roles_block", PromptRuntimeUtil.nullableToken(otherRolesBlock));
+        variables.put("title", PromptRuntimeUtil.nullableToken(story == null ? null : story.getTitle()));
+        variables.put("story_intro", PromptRuntimeUtil.nullableToken(story == null ? null : story.getStoryIntro()));
+        variables.put("story_setting", PromptRuntimeUtil.nullableToken(story == null ? null : story.getStorySetting()));
+        variables.put("site_setting", PromptRuntimeUtil.nullableToken(story == null ? null : story.getSceneNameSnapshot()));
+        variables.put("plot_outline", PromptRuntimeUtil.nullableToken(story == null ? null : story.getRemark()));
+        variables.put("recent_messages_block", PromptRuntimeUtil.nullableToken(recentMessagesBlock));
+        variables.put("user_input", PromptRuntimeUtil.nullableToken(userInput));
+
+        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
+                PROMPT_CODE_TEMPLATE_REPLY, PROMPT_VERSION_TEMPLATE_REPLY, variables);
+        String renderedPrompt = promptSections.getRenderedPrompt();
+        String assistantContent = promptChatService.chat(renderedPrompt);
+        assistantContent = PromptRuntimeUtil.trimToNull(assistantContent);
+        if (!StringUtils.hasText(assistantContent)) {
+            throw new JeecgBootException("AI回复为空，请稍后重试");
+        }
+
+        TsChatMessage assistantMessage = new TsChatMessage();
+        assistantMessage.setSessionId(sessionId);
+        assistantMessage.setSenderType(SENDER_TYPE_ROLE);
+        assistantMessage.setSenderName(PromptRuntimeUtil.firstNonBlank(activeRole.getRoleName(), SENDER_NAME_ASSISTANT));
+        assistantMessage.setMessageType(MESSAGE_TYPE_TEXT);
+        assistantMessage.setContentText(assistantContent);
+        assistantMessage.setReplyToMessageId(userMessage.getId());
+        assistantMessage.setGenerateStatus(GENERATE_STATUS_SUCCESS);
+        assistantMessage.setSeqNo(tsChatMessageMapper.selectNextSeqNoForUpdate(sessionId));
+        assistantMessage.setCreatedAt(new Date());
+        tsChatMessageMapper.insert(assistantMessage);
+
+        Date now = new Date();
+        session.setLastMessageId(assistantMessage.getId());
+        session.setLastMessageAt(now);
+        session.setUpdatedAt(now);
+        tsChatSessionMapper.updateById(session);
+
+        JSONObject snapshot = new JSONObject();
+        snapshot.put("type", "template-reply");
+        snapshot.put("promptCode", PROMPT_CODE_TEMPLATE_REPLY);
+        snapshot.put("promptVersion", PROMPT_VERSION_TEMPLATE_REPLY);
+        snapshot.put("promptRendered", renderedPrompt);
+        snapshot.put("activeRoleId", resolvedActiveRoleId);
+        snapshot.put("activeRoleName", activeRole.getRoleName());
+        snapshot.put("storyId", story == null ? null : story.getId());
+        snapshot.put("otherRolesBlock", otherRolesBlock);
+        snapshot.put("recentMessagesBlock", recentMessagesBlock);
+        snapshot.put("userInput", userInput);
+        snapshot.put("assistantContent", assistantContent);
+        String snapshotKey = ChatGenerateSnapshotUtil.saveSnapshot(
+                redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS, "chat-template", user.getId(), snapshot);
+
+        TsChatTemplateReplyVo response = new TsChatTemplateReplyVo();
+        response.setSessionId(sessionId);
+        response.setActiveRoleId(resolvedActiveRoleId);
+        response.setUserMessageId(userMessage.getId());
+        response.setAssistantMessageId(assistantMessage.getId());
+        response.setActiveRoleName(activeRole.getRoleName());
+        response.setContentText(assistantContent);
+        response.setPromptCode(PROMPT_CODE_TEMPLATE_REPLY);
+        response.setPromptVersion(PROMPT_VERSION_TEMPLATE_REPLY);
+        response.setRenderedPrompt(renderedPrompt);
+        response.setSnapshotKey(snapshotKey);
+        response.setCreatedAt(assistantMessage.getCreatedAt());
+        return Result.OK("生成成功", response);
+    }
+
     /**
      * 在会话内生成 3 条可直接发送的候选回复，不落库消息。
      *
@@ -461,6 +591,66 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
                 break;
             }
             builder.append(line);
+        }
+        return PromptRuntimeUtil.trimToNull(builder.toString());
+    }
+
+    /**
+     * 按故事绑定角色顺序拼接同场其他角色块，供聊天模板作为背景参考。
+     */
+    private String buildOtherRolesBlock(String userId, Long storyId, Long activeRoleId) {
+        if (storyId == null) {
+            return null;
+        }
+        List<TsStoryRoleRel> roleRelations = tsStoryRoleRelMapper.selectByStoryId(storyId);
+        if (roleRelations == null || roleRelations.isEmpty()) {
+            return null;
+        }
+
+        List<Long> candidateRoleIds = new ArrayList<>();
+        for (TsStoryRoleRel relation : roleRelations) {
+            if (relation == null || relation.getRoleId() == null) {
+                continue;
+            }
+            if (relation.getRoleId().equals(activeRoleId)) {
+                continue;
+            }
+            candidateRoleIds.add(relation.getRoleId());
+        }
+        if (candidateRoleIds.isEmpty()) {
+            return null;
+        }
+
+        List<Long> ownedRoleIds = tsRoleMapper.selectOwnedIds(candidateRoleIds, userId);
+        if (ownedRoleIds == null || ownedRoleIds.isEmpty()) {
+            return null;
+        }
+        Set<Long> ownedIdSet = new HashSet<>(ownedRoleIds);
+        List<TsRole> ownedRoles = tsRoleMapper.selectBatchIds(ownedRoleIds);
+        if (ownedRoles == null || ownedRoles.isEmpty()) {
+            return null;
+        }
+
+        Map<Long, TsRole> roleMap = new HashMap<>();
+        for (TsRole role : ownedRoles) {
+            if (role != null && role.getId() != null && ownedIdSet.contains(role.getId())) {
+                roleMap.put(role.getId(), role);
+            }
+        }
+
+        StringBuilder builder = new StringBuilder();
+        for (Long roleId : candidateRoleIds) {
+            TsRole role = roleMap.get(roleId);
+            if (role == null) {
+                continue;
+            }
+            if (builder.length() > 0) {
+                builder.append("\n\n");
+            }
+            builder.append("【").append(PromptRuntimeUtil.firstNonBlank(role.getRoleName(), ROLE_NAME_AI)).append("】\n");
+            builder.append("性别：").append(PromptRuntimeUtil.nullableToken(role.getGender())).append("\n");
+            builder.append("职业：").append(PromptRuntimeUtil.nullableToken(role.getOccupation())).append("\n");
+            builder.append("背景：").append(PromptRuntimeUtil.nullableToken(role.getBackgroundStory()));
         }
         return PromptRuntimeUtil.trimToNull(builder.toString());
     }

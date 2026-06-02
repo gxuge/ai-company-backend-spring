@@ -6,7 +6,15 @@ import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.chat.request.json.JsonAnyOfSchema;
+import dev.langchain4j.model.chat.request.json.JsonArraySchema;
+import dev.langchain4j.model.chat.request.json.JsonBooleanSchema;
+import dev.langchain4j.model.chat.request.json.JsonEnumSchema;
+import dev.langchain4j.model.chat.request.json.JsonIntegerSchema;
+import dev.langchain4j.model.chat.request.json.JsonNumberSchema;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
+import dev.langchain4j.model.chat.request.json.JsonSchemaElement;
+import dev.langchain4j.model.chat.request.json.JsonStringSchema;
 import dev.langchain4j.service.tool.ToolExecutor;
 import jakarta.annotation.Resource;
 import org.jeecg.common.exception.JeecgBootBizTipException;
@@ -19,6 +27,7 @@ import org.jeecg.modules.airag.llm.entity.AiragModel;
 import org.jeecg.modules.airag.llm.mapper.AiragModelMapper;
 import org.jeecg.modules.openapi.config.PromptChatConfigBean;
 import org.jeecg.modules.openapi.service.IPromptChatService;
+import org.jeecg.modules.system.monitor.TsAiLogCollector;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import lombok.extern.slf4j.Slf4j;
@@ -46,6 +55,8 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
     private AiragModelMapper airagModelMapper;
     @Resource
     private IAIChatHandler aiChatHandler;
+    @Resource
+    private TsAiLogCollector tsAiLogCollector;
 
     @Override
     public String provider() {
@@ -64,7 +75,9 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
         logPromptRoute(model, branch, false);
         AIChatParams params = buildBaseParams(model, branch);
         List<ChatMessage> messages = List.of(new UserMessage(prompt));
+        logLlmRequest(model, branch, null, prompt, null, params, false);
         String content = aiChatHandler.completions(model.getId(), messages, params);
+        logLlmResponse(model, content);
         if (!StringUtils.hasText(content)) {
             throw new JeecgBootBizTipException("Prompt chat response is empty");
         }
@@ -88,7 +101,9 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
 
         if (!StringUtils.hasText(toolSchema)) {
             logPromptRoute(model, branch, false);
+            logLlmRequest(model, branch, developerPrompt, userPrompt, null, params, false);
             String content = aiChatHandler.completions(model.getId(), messages, params);
+            logLlmResponse(model, content);
             if (!StringUtils.hasText(content)) {
                 throw new JeecgBootBizTipException("Prompt chat response is empty");
             }
@@ -98,7 +113,9 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
         ToolSpecification toolSpecification = buildToolSpecification(toolSchema);
         if (toolSpecification == null) {
             logPromptRoute(model, branch, false);
+            logLlmRequest(model, branch, developerPrompt, userPrompt, toolSchema, params, false);
             String content = aiChatHandler.completions(model.getId(), messages, params);
+            logLlmResponse(model, content);
             if (!StringUtils.hasText(content)) {
                 throw new JeecgBootBizTipException("Prompt chat response is empty");
             }
@@ -110,7 +127,9 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
                 throw new JeecgBootBizTipException("Current model does not support tool call, model=" + model.getModelName());
             }
             logPromptRoute(model, branch, false);
+            logLlmRequest(model, branch, developerPrompt, userPrompt, toolSchema, params, false);
             String content = aiChatHandler.completions(model.getId(), messages, params);
+            logLlmResponse(model, content);
             if (!StringUtils.hasText(content)) {
                 throw new JeecgBootBizTipException("Prompt chat response is empty");
             }
@@ -122,7 +141,9 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
         params.setTools(tools);
 
         logPromptRoute(model, branch, true);
+        logLlmRequest(model, branch, developerPrompt, userPrompt, toolSchema, params, true);
         String content = aiChatHandler.completions(model.getId(), messages, params);
+        logLlmResponse(model, content);
         if (!StringUtils.hasText(content)) {
             throw new JeecgBootBizTipException("Prompt chat response is empty");
         }
@@ -141,61 +162,209 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
             }
             String description = trimToNull(root.getString("description"));
             JSONObject parameters = root.getJSONObject("parameters");
-
-            JsonObjectSchema.Builder schemaBuilder = JsonObjectSchema.builder();
-            if (parameters != null) {
-                JSONObject properties = parameters.getJSONObject("properties");
-                if (properties != null) {
-                    for (String propName : properties.keySet()) {
-                        if (!StringUtils.hasText(propName)) {
-                            continue;
-                        }
-                        JSONObject prop = properties.getJSONObject(propName);
-                        if (prop == null) {
-                            schemaBuilder.addStringProperty(propName, "");
-                            continue;
-                        }
-                        String propType = trimToNull(prop.getString("type"));
-                        String propDesc = trimToNull(prop.getString("description"));
-                        if ("number".equalsIgnoreCase(propType) || "integer".equalsIgnoreCase(propType)) {
-                            schemaBuilder.addNumberProperty(propName, propDesc == null ? "" : propDesc);
-                        } else if ("boolean".equalsIgnoreCase(propType)) {
-                            schemaBuilder.addBooleanProperty(propName, propDesc == null ? "" : propDesc);
-                        } else {
-                            // string / array / object fallback to string for robust compatibility
-                            schemaBuilder.addStringProperty(propName, propDesc == null ? "" : propDesc);
-                        }
-                    }
-                }
-
-                JSONArray required = parameters.getJSONArray("required");
-                if (required != null && !required.isEmpty()) {
-                    List<String> requiredList = new ArrayList<>();
-                    for (Object item : required) {
-                        if (item == null) {
-                            continue;
-                        }
-                        String key = trimToNull(String.valueOf(item));
-                        if (StringUtils.hasText(key)) {
-                            requiredList.add(key);
-                        }
-                    }
-                    if (!requiredList.isEmpty()) {
-                        schemaBuilder.required(requiredList.toArray(new String[0]));
-                    }
-                }
+            JsonSchemaElement schemaElement = buildSchemaElement(parameters);
+            if (!(schemaElement instanceof JsonObjectSchema objectSchema)) {
+                return null;
             }
 
             ToolSpecification.Builder builder = ToolSpecification.builder()
                     .name(name)
-                    .parameters(schemaBuilder.build());
+                    .parameters(objectSchema);
             if (StringUtils.hasText(description)) {
                 builder.description(description);
             }
             return builder.build();
-        } catch (Exception ignored) {
+        } catch (Exception ex) {
+            log.warn("buildToolSpecification failed: {}", ex.getMessage());
             return null;
         }
+    }
+
+    private JsonSchemaElement buildSchemaElement(JSONObject schemaNode) {
+        if (schemaNode == null) {
+            return JsonStringSchema.builder().build();
+        }
+        String description = trimToNull(schemaNode.getString("description"));
+
+        JsonSchemaElement enumElement = buildEnumElement(schemaNode, description);
+        if (enumElement != null) {
+            return enumElement;
+        }
+
+        JsonSchemaElement anyOfElement = buildAnyOfElement(schemaNode, description);
+        if (anyOfElement != null) {
+            return anyOfElement;
+        }
+
+        Object constValue = schemaNode.get("const");
+        if (constValue != null) {
+            JsonSchemaElement constElement = buildConstElement(constValue, description);
+            if (constElement != null) {
+                return constElement;
+            }
+        }
+
+        String type = trimToNull(schemaNode.getString("type"));
+        if (!StringUtils.hasText(type)) {
+            return JsonStringSchema.builder()
+                    .description(description)
+                    .build();
+        }
+
+        return switch (type.toLowerCase(Locale.ROOT)) {
+            case "object" -> buildObjectSchema(schemaNode, description);
+            case "array" -> buildArraySchema(schemaNode, description);
+            case "integer" -> JsonIntegerSchema.builder().description(description).build();
+            case "number" -> JsonNumberSchema.builder().description(description).build();
+            case "boolean" -> JsonBooleanSchema.builder().description(description).build();
+            case "string" -> JsonStringSchema.builder().description(description).build();
+            default -> JsonStringSchema.builder().description(description).build();
+        };
+    }
+
+    private JsonObjectSchema buildObjectSchema(JSONObject schemaNode, String description) {
+        JsonObjectSchema.Builder builder = JsonObjectSchema.builder()
+                .description(description);
+        if (schemaNode.containsKey("additionalProperties")) {
+            builder.additionalProperties(schemaNode.getBoolean("additionalProperties"));
+        }
+
+        JSONObject properties = schemaNode.getJSONObject("properties");
+        if (properties != null) {
+            for (String propName : properties.keySet()) {
+                if (!StringUtils.hasText(propName)) {
+                    continue;
+                }
+                JSONObject propSchema = properties.getJSONObject(propName);
+                builder.addProperty(propName, buildSchemaElement(propSchema));
+            }
+        }
+
+        List<String> requiredList = parseRequiredList(schemaNode.getJSONArray("required"));
+        if (!requiredList.isEmpty()) {
+            builder.required(requiredList);
+        }
+
+        JSONObject definitions = schemaNode.getJSONObject("definitions");
+        if (definitions != null && !definitions.isEmpty()) {
+            Map<String, JsonSchemaElement> definitionMap = new LinkedHashMap<>();
+            for (String key : definitions.keySet()) {
+                if (!StringUtils.hasText(key)) {
+                    continue;
+                }
+                definitionMap.put(key, buildSchemaElement(definitions.getJSONObject(key)));
+            }
+            if (!definitionMap.isEmpty()) {
+                builder.definitions(definitionMap);
+            }
+        }
+
+        return builder.build();
+    }
+
+    private JsonArraySchema buildArraySchema(JSONObject schemaNode, String description) {
+        JsonArraySchema.Builder builder = JsonArraySchema.builder()
+                .description(description);
+        JSONObject items = schemaNode.getJSONObject("items");
+        if (items != null) {
+            builder.items(buildSchemaElement(items));
+        }
+        return builder.build();
+    }
+
+    private JsonSchemaElement buildEnumElement(JSONObject schemaNode, String description) {
+        JSONArray enumValues = schemaNode.getJSONArray("enum");
+        if (enumValues == null || enumValues.isEmpty()) {
+            return null;
+        }
+        List<String> values = new ArrayList<>();
+        for (Object item : enumValues) {
+            if (item == null) {
+                continue;
+            }
+            values.add(String.valueOf(item));
+        }
+        if (values.isEmpty()) {
+            return null;
+        }
+        return JsonEnumSchema.builder()
+                .description(description)
+                .enumValues(values)
+                .build();
+    }
+
+    private JsonSchemaElement buildAnyOfElement(JSONObject schemaNode, String description) {
+        JSONArray oneOf = schemaNode.getJSONArray("oneOf");
+        if (oneOf == null || oneOf.isEmpty()) {
+            return null;
+        }
+
+        List<String> constStrings = new ArrayList<>();
+        boolean allConstStrings = true;
+        List<JsonSchemaElement> schemaElements = new ArrayList<>();
+        for (Object item : oneOf) {
+            if (!(item instanceof JSONObject child)) {
+                allConstStrings = false;
+                continue;
+            }
+            Object constValue = child.get("const");
+            if (constValue instanceof String value) {
+                constStrings.add(value);
+            } else {
+                allConstStrings = false;
+            }
+            schemaElements.add(buildSchemaElement(child));
+        }
+
+        if (allConstStrings && !constStrings.isEmpty()) {
+            return JsonEnumSchema.builder()
+                    .description(description)
+                    .enumValues(constStrings)
+                    .build();
+        }
+        if (schemaElements.isEmpty()) {
+            return null;
+        }
+        return JsonAnyOfSchema.builder()
+                .description(description)
+                .anyOf(schemaElements)
+                .build();
+    }
+
+    private JsonSchemaElement buildConstElement(Object constValue, String description) {
+        if (constValue instanceof Boolean) {
+            return JsonBooleanSchema.builder().description(description).build();
+        }
+        if (constValue instanceof Byte || constValue instanceof Short || constValue instanceof Integer || constValue instanceof Long) {
+            return JsonIntegerSchema.builder().description(description).build();
+        }
+        if (constValue instanceof Number) {
+            return JsonNumberSchema.builder().description(description).build();
+        }
+        if (constValue instanceof String value) {
+            return JsonEnumSchema.builder()
+                    .description(description)
+                    .enumValues(value)
+                    .build();
+        }
+        return null;
+    }
+
+    private List<String> parseRequiredList(JSONArray required) {
+        List<String> requiredList = new ArrayList<>();
+        if (required == null || required.isEmpty()) {
+            return requiredList;
+        }
+        for (Object item : required) {
+            if (item == null) {
+                continue;
+            }
+            String key = trimToNull(String.valueOf(item));
+            if (StringUtils.hasText(key)) {
+                requiredList.add(key);
+            }
+        }
+        return requiredList;
     }
 
     private AiragModel resolvePromptModel() {
@@ -277,6 +446,43 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
                 trimToNull(model.getModelType()),
                 branch.name(),
                 withTools);
+    }
+
+    private void logLlmRequest(AiragModel model,
+                               PromptProviderBranch branch,
+                               String developerPrompt,
+                               String userPrompt,
+                               String toolSchema,
+                               AIChatParams params,
+                               boolean withTools) {
+        tsAiLogCollector.markModel(trimToNull(model.getProvider()), trimToNull(model.getModelName()), trimToNull(model.getId()));
+        tsAiLogCollector.appendStep("llm_request", "模型请求", "success", step -> {
+            step.setProvider(trimToNull(model.getProvider()));
+            step.setModelName(trimToNull(model.getModelName()));
+            step.setModelId(trimToNull(model.getId()));
+            step.setDeveloperPrompt(trimToNull(developerPrompt));
+            step.setUserPrompt(trimToNull(userPrompt));
+            step.setToolSchema(trimToNull(toolSchema));
+            JSONObject payload = new JSONObject();
+            payload.put("provider", trimToNull(model.getProvider()));
+            payload.put("modelId", trimToNull(model.getId()));
+            payload.put("modelName", trimToNull(model.getModelName()));
+            payload.put("branch", branch.name());
+            payload.put("noThinking", params == null ? null : params.getNoThinking());
+            payload.put("returnThinking", params == null ? null : params.getReturnThinking());
+            payload.put("withTools", withTools);
+            payload.put("toolSchemaProvided", StringUtils.hasText(toolSchema));
+            step.setRequestPayloadJson(payload.toJSONString());
+        });
+    }
+
+    private void logLlmResponse(AiragModel model, String content) {
+        tsAiLogCollector.appendStep("llm_response", "模型返回", StringUtils.hasText(content) ? "success" : "failed", step -> {
+            step.setProvider(trimToNull(model.getProvider()));
+            step.setModelName(trimToNull(model.getModelName()));
+            step.setModelId(trimToNull(model.getId()));
+            step.setResponseRaw(trimToNull(content));
+        });
     }
 
     private enum PromptProviderBranch {

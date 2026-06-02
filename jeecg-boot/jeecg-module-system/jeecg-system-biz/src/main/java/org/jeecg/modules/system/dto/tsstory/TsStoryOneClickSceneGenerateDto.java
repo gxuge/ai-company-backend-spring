@@ -18,6 +18,8 @@ public class TsStoryOneClickSceneGenerateDto {
     private String storyBackground;
     /** Existing scene input. */
     private String sceneSetting;
+    /** Existing plot outline text. */
+    private String plotOutline;
     /** Optional style hint. */
     private String styleHint;
     /** 模板模式：core（默认）/site_setting_optimize（仅优化场景设定） */
@@ -29,6 +31,7 @@ public class TsStoryOneClickSceneGenerateDto {
         this.storySetting = trimToNull(this.storySetting);
         this.storyBackground = trimToNull(this.storyBackground);
         this.sceneSetting = trimToNull(this.sceneSetting);
+        this.plotOutline = trimToNull(this.plotOutline);
         this.styleHint = trimToNull(this.styleHint);
         this.templateMode = normalizeTemplateMode(this.templateMode);
     }

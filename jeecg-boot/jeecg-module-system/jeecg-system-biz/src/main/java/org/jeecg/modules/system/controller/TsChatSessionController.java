@@ -12,11 +12,13 @@ import org.jeecg.modules.system.dto.tschatsession.TsChatAiReplyDto;
 import org.jeecg.modules.system.dto.tschatsession.TsChatReplySuggestionsDto;
 import org.jeecg.modules.system.dto.tschatsession.TsChatSessionQueryDto;
 import org.jeecg.modules.system.dto.tschatsession.TsChatSessionSaveDto;
+import org.jeecg.modules.system.dto.tschatsession.TsChatTemplateReplyDto;
 import org.jeecg.modules.system.service.ITsChatAiReplyService;
 import org.jeecg.modules.system.service.ITsChatSessionService;
 import org.jeecg.modules.system.vo.tschatsession.TsChatAiReplyVo;
 import org.jeecg.modules.system.vo.tschatsession.TsChatReplySuggestionsVo;
 import org.jeecg.modules.system.vo.tschatsession.TsChatSessionVo;
+import org.jeecg.modules.system.vo.tschatsession.TsChatTemplateReplyVo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -106,6 +108,13 @@ public class TsChatSessionController {
     @PostMapping("/ts-chat-sessions/ai-reply")
     public Result<TsChatAiReplyVo> createAiReply(@Validated @RequestBody TsChatAiReplyDto request) {
         return tsChatAiReplyService.createAiReply(
+                ((LoginUser) SecurityUtils.getSubject().getPrincipal()), request.getSessionId(), request);
+    }
+
+    @Operation(summary = "会话内基于角色卡与故事卡生成模板回复")
+    @PostMapping("/ts-chat-sessions/ai-reply-template")
+    public Result<TsChatTemplateReplyVo> createTemplateAiReply(@Validated @RequestBody TsChatTemplateReplyDto request) {
+        return tsChatAiReplyService.createTemplateAiReply(
                 ((LoginUser) SecurityUtils.getSubject().getPrincipal()), request.getSessionId(), request);
     }
 

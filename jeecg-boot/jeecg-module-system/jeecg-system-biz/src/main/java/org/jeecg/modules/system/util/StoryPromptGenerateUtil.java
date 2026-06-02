@@ -34,6 +34,21 @@ public class StoryPromptGenerateUtil {
         );
     }
 
+    public static Map<String, String> buildSettingOptimizeVars(TsStoryOneClickSettingGenerateDto dto) {
+        Map<String, String> variables = new java.util.HashMap<>();
+        variables.put("story_setting", PromptRuntimeUtil.nullableToken(dto.getStorySetting()));
+        variables.put("scene_setting", PromptRuntimeUtil.nullableToken(dto.getSceneSetting()));
+        variables.put("plot_outline", PromptRuntimeUtil.nullableToken(dto.getPlotOutline()));
+        variables.put("story_mode", PromptRuntimeUtil.nullableToken(null));
+        variables.put("idea_input", PromptRuntimeUtil.nullableToken(null));
+        variables.put("title", PromptRuntimeUtil.nullableToken(null));
+        variables.put("story_intro", PromptRuntimeUtil.nullableToken(null));
+        variables.put("site_setting", PromptRuntimeUtil.nullableToken(dto.getSceneSetting()));
+        variables.put("story_background", PromptRuntimeUtil.nullableToken(null));
+        variables.put("style_hint", PromptRuntimeUtil.nullableToken(null));
+        return variables;
+    }
+
     /**
      * 构建场所设定生成的模板变量。
      */
@@ -46,6 +61,19 @@ public class StoryPromptGenerateUtil {
                 "scene_setting", PromptRuntimeUtil.nullableToken(dto.getSceneSetting()),
                 "style_hint", PromptRuntimeUtil.nullableToken(dto.getStyleHint())
         );
+    }
+
+    public static Map<String, String> buildSceneOptimizeVars(TsStoryOneClickSceneGenerateDto dto) {
+        Map<String, String> variables = new java.util.HashMap<>();
+        variables.put("story_setting", PromptRuntimeUtil.nullableToken(dto.getStorySetting()));
+        variables.put("scene_setting", PromptRuntimeUtil.nullableToken(dto.getSceneSetting()));
+        variables.put("site_setting", PromptRuntimeUtil.nullableToken(dto.getSceneSetting()));
+        variables.put("plot_outline", PromptRuntimeUtil.nullableToken(dto.getPlotOutline()));
+        variables.put("title", PromptRuntimeUtil.nullableToken(null));
+        variables.put("story_mode", PromptRuntimeUtil.nullableToken(null));
+        variables.put("story_background", PromptRuntimeUtil.nullableToken(null));
+        variables.put("style_hint", PromptRuntimeUtil.nullableToken(null));
+        return variables;
     }
 
     /**
@@ -62,6 +90,20 @@ public class StoryPromptGenerateUtil {
                 "role_names", PromptRuntimeUtil.nullableToken(joinRoleNames(dto.getRoleNames())),
                 "extra_requirements", PromptRuntimeUtil.nullableToken(dto.getExtraRequirements())
         );
+    }
+
+    public static Map<String, String> buildOutlineOptimizeVars(TsStoryOneClickOutlineGenerateDto dto) {
+        Map<String, String> variables = new java.util.HashMap<>();
+        variables.put("story_setting", PromptRuntimeUtil.nullableToken(dto.getStorySetting()));
+        variables.put("scene_setting", PromptRuntimeUtil.nullableToken(dto.getSceneSetting()));
+        variables.put("plot_outline", PromptRuntimeUtil.nullableToken(dto.getPlotOutline()));
+        variables.put("extra_requirements", PromptRuntimeUtil.nullableToken(null));
+        variables.put("title", PromptRuntimeUtil.nullableToken(null));
+        variables.put("story_mode", PromptRuntimeUtil.nullableToken(null));
+        variables.put("story_background", PromptRuntimeUtil.nullableToken(null));
+        variables.put("chapter_count", String.valueOf(dto.getChapterCount()));
+        variables.put("role_names", PromptRuntimeUtil.nullableToken(null));
+        return variables;
     }
 
     /**

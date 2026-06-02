@@ -63,8 +63,8 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     private static final String PROMPT_CODE_STORY_SETTING_OPTIMIZE = "story_setting_optimize";
     private static final String PROMPT_CODE_STORY_SITE_SETTING_OPTIMIZE = "story_site_setting_optimize";
     private static final String PROMPT_CODE_STORY_PLOT_OUTLINE_OPTIMIZE = "story_plot_outline_optimize";
-    private static final String PROMPT_CODE_STORY_FULL_PRESET = "story_preset_tags_to_core5";
-    private static final String PROMPT_VERSION_STORY_FULL_PRESET = "v3";
+    private static final String PROMPT_CODE_STORY_FULL_PRESET = "story_core_fill_preset";
+    private static final String PROMPT_VERSION_STORY_FULL_PRESET = "v2";
     private static final int DEFAULT_OUTLINE_CHAPTER_COUNT = 3;
     private static final String TAG_TYPE_TITLE = "title";
     private static final String TAG_TYPE_NARRATIVE_STYLE = "narrative_style";
@@ -110,7 +110,8 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
                 : resolvePromptTemplateRef(TemplateScene.SETTING);
 
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
-                templateRef.code(), templateRef.version(), StoryPromptGenerateUtil.buildSettingVars(dto));
+                templateRef.code(), templateRef.version(),
+                settingOptimizeMode ? StoryPromptGenerateUtil.buildSettingOptimizeVars(dto) : StoryPromptGenerateUtil.buildSettingVars(dto));
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson;
         boolean generated = true;
@@ -126,48 +127,30 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         }
         logStoryLlmJson(ENDPOINT_STORY_SETTING_GENERATE, modelJson, generated, fallbackReason);
 
-        String title;
-        String storyIntro;
-        String storyMode;
         String storySetting;
-        String storyBackground;
         if (settingOptimizeMode) {
-            title = PromptRuntimeUtil.firstNonBlank(
-                    dto.getTitle(),
-                    PromptRuntimeUtil.trimToNull(modelJson.getString("title")),
-                    "Original Story " + System.currentTimeMillis());
-            storyIntro = PromptRuntimeUtil.firstNonBlank(
-                    dto.getStoryIntro(),
-                    PromptRuntimeUtil.trimToNull(modelJson.getString("story_intro")));
-            storyMode = StoryPromptGenerateUtil.normalizeStoryMode(PromptRuntimeUtil.firstNonBlank(
-                    dto.getStoryMode(),
-                    PromptRuntimeUtil.trimToNull(modelJson.getString("story_mode")),
-                    "chapter"));
             storySetting = PromptRuntimeUtil.firstNonBlank(
                     PromptRuntimeUtil.trimToNull(modelJson.getString("story_setting")),
                     dto.getStorySetting());
-            storyBackground = PromptRuntimeUtil.firstNonBlank(
-                    dto.getStoryBackground(),
-                    PromptRuntimeUtil.trimToNull(modelJson.getString("story_background")));
         } else {
-            title = PromptRuntimeUtil.firstNonBlank(
-                    PromptRuntimeUtil.trimToNull(modelJson.getString("title")),
-                    dto.getTitle(),
-                    "Original Story " + System.currentTimeMillis());
-            storyIntro = PromptRuntimeUtil.firstNonBlank(
-                    PromptRuntimeUtil.trimToNull(modelJson.getString("story_intro")),
-                    dto.getStoryIntro());
-            storyMode = StoryPromptGenerateUtil.normalizeStoryMode(PromptRuntimeUtil.firstNonBlank(
-                    PromptRuntimeUtil.trimToNull(modelJson.getString("story_mode")),
-                    dto.getStoryMode(),
-                    "chapter"));
             storySetting = PromptRuntimeUtil.firstNonBlank(
                     PromptRuntimeUtil.trimToNull(modelJson.getString("story_setting")),
                     dto.getStorySetting());
-            storyBackground = PromptRuntimeUtil.firstNonBlank(
-                    PromptRuntimeUtil.trimToNull(modelJson.getString("story_background")),
-                    dto.getStoryBackground());
         }
+        String title = settingOptimizeMode ? null : PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("title")),
+                dto.getTitle(),
+                "Original Story " + System.currentTimeMillis());
+        String storyIntro = settingOptimizeMode ? null : PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("story_intro")),
+                dto.getStoryIntro());
+        String storyMode = settingOptimizeMode ? null : StoryPromptGenerateUtil.normalizeStoryMode(PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("story_mode")),
+                dto.getStoryMode(),
+                "chapter"));
+        String storyBackground = settingOptimizeMode ? null : PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("story_background")),
+                dto.getStoryBackground());
 
         JSONObject snapshot = new JSONObject();
         snapshot.put("type", "story-setting");
@@ -177,21 +160,25 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         snapshot.put("promptRendered", renderedPrompt);
         snapshot.put("rawResponse", modelJson == null ? null : modelJson.toJSONString());
         JSONObject resultJson = new JSONObject();
-        resultJson.put("title", title);
-        resultJson.put("story_intro", storyIntro);
-        resultJson.put("story_mode", storyMode);
         resultJson.put("story_setting", storySetting);
-        resultJson.put("story_background", storyBackground);
+        if (!settingOptimizeMode) {
+            resultJson.put("title", title);
+            resultJson.put("story_intro", storyIntro);
+            resultJson.put("story_mode", storyMode);
+            resultJson.put("story_background", storyBackground);
+        }
         snapshot.put("result", resultJson);
         String snapshotKey = StoryGenerateSnapshotUtil.saveSnapshot(redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS,
                 "setting", user.getId(), snapshot);
 
         TsStoryOneClickSettingGenerateVo vo = new TsStoryOneClickSettingGenerateVo();
-        vo.setTitle(title);
-        vo.setStoryIntro(storyIntro);
-        vo.setStoryMode(storyMode);
         vo.setStorySetting(storySetting);
-        vo.setStoryBackground(storyBackground);
+        if (!settingOptimizeMode) {
+            vo.setTitle(title);
+            vo.setStoryIntro(storyIntro);
+            vo.setStoryMode(storyMode);
+            vo.setStoryBackground(storyBackground);
+        }
         vo.setGenerated(generated);
         vo.setFallbackReason(fallbackReason);
         vo.setPromptCode(templateRef.code());
@@ -214,7 +201,8 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
                 : resolvePromptTemplateRef(TemplateScene.SCENE);
 
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
-                templateRef.code(), templateRef.version(), StoryPromptGenerateUtil.buildSceneVars(dto));
+                templateRef.code(), templateRef.version(),
+                siteSettingOptimizeMode ? StoryPromptGenerateUtil.buildSceneOptimizeVars(dto) : StoryPromptGenerateUtil.buildSceneVars(dto));
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson;
         boolean generated = true;
@@ -230,9 +218,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         }
         logStoryLlmJson(ENDPOINT_STORY_SCENE_GENERATE, modelJson, generated, fallbackReason);
 
-        String sceneNameSnapshot;
         String sceneSummary;
-        List<String> sceneElements;
         if (siteSettingOptimizeMode) {
             sceneSummary = PromptRuntimeUtil.firstNonBlank(
                     PromptRuntimeUtil.trimToNull(modelJson.getString("site_setting")),
@@ -240,14 +226,8 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
                     PromptRuntimeUtil.trimToNull(modelJson.getString("scene_desc")),
                     dto.getSceneSetting(),
                     "这是一个等待你继续完善的场景。");
-            sceneNameSnapshot = PromptRuntimeUtil.firstNonBlank(
-                    PromptRuntimeUtil.trimToNull(modelJson.getString("scene_name_snapshot")),
-                    PromptRuntimeUtil.trimToNull(modelJson.getString("scene_name")),
-                    dto.getTitle(),
-                    "未命名场景");
-            sceneElements = StoryPromptGenerateUtil.parseStringList(modelJson.get("scene_elements"));
         } else {
-            sceneNameSnapshot = PromptRuntimeUtil.firstNonBlank(
+            String sceneNameSnapshot = PromptRuntimeUtil.firstNonBlank(
                     PromptRuntimeUtil.trimToNull(modelJson.getString("scene_name_snapshot")),
                     PromptRuntimeUtil.trimToNull(modelJson.getString("scene_name")),
                     dto.getSceneSetting(),
@@ -256,9 +236,34 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
                     PromptRuntimeUtil.trimToNull(modelJson.getString("scene_summary")),
                     PromptRuntimeUtil.trimToNull(modelJson.getString("scene_desc")),
                     "这是一个等待你继续完善的场景。");
-            sceneElements = StoryPromptGenerateUtil.parseStringList(modelJson.get("scene_elements"));
-        }
+            List<String> sceneElements = StoryPromptGenerateUtil.parseStringList(modelJson.get("scene_elements"));
+            JSONObject snapshot = new JSONObject();
+            snapshot.put("type", "scene-setting");
+            snapshot.put("promptCode", templateRef.code());
+            snapshot.put("promptVersion", templateRef.version());
+            snapshot.put("templateMode", dto.getTemplateMode());
+            snapshot.put("promptRendered", renderedPrompt);
+            snapshot.put("rawResponse", modelJson == null ? null : modelJson.toJSONString());
+            JSONObject resultJson = new JSONObject();
+            resultJson.put("scene_name_snapshot", sceneNameSnapshot);
+            resultJson.put("scene_summary", sceneSummary);
+            resultJson.put("scene_elements", sceneElements);
+            snapshot.put("result", resultJson);
+            String snapshotKey = StoryGenerateSnapshotUtil.saveSnapshot(redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS,
+                    "scene", user.getId(), snapshot);
 
+            TsStoryOneClickSceneGenerateVo vo = new TsStoryOneClickSceneGenerateVo();
+            vo.setSceneNameSnapshot(sceneNameSnapshot);
+            vo.setSceneSummary(sceneSummary);
+            vo.setSceneElements(sceneElements);
+            vo.setGenerated(generated);
+            vo.setFallbackReason(fallbackReason);
+            vo.setPromptCode(templateRef.code());
+            vo.setPromptVersion(templateRef.version());
+            vo.setRenderedPrompt(renderedPrompt);
+            vo.setSnapshotKey(snapshotKey);
+            return vo;
+        }
         JSONObject snapshot = new JSONObject();
         snapshot.put("type", "scene-setting");
         snapshot.put("promptCode", templateRef.code());
@@ -267,17 +272,15 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         snapshot.put("promptRendered", renderedPrompt);
         snapshot.put("rawResponse", modelJson == null ? null : modelJson.toJSONString());
         JSONObject resultJson = new JSONObject();
-        resultJson.put("scene_name_snapshot", sceneNameSnapshot);
         resultJson.put("scene_summary", sceneSummary);
-        resultJson.put("scene_elements", sceneElements);
         snapshot.put("result", resultJson);
         String snapshotKey = StoryGenerateSnapshotUtil.saveSnapshot(redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS,
                 "scene", user.getId(), snapshot);
 
         TsStoryOneClickSceneGenerateVo vo = new TsStoryOneClickSceneGenerateVo();
-        vo.setSceneNameSnapshot(sceneNameSnapshot);
+        vo.setSceneNameSnapshot(null);
         vo.setSceneSummary(sceneSummary);
-        vo.setSceneElements(sceneElements);
+        vo.setSceneElements(null);
         vo.setGenerated(generated);
         vo.setFallbackReason(fallbackReason);
         vo.setPromptCode(templateRef.code());
@@ -300,7 +303,8 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
                 : resolvePromptTemplateRef(TemplateScene.OUTLINE);
 
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
-                templateRef.code(), templateRef.version(), StoryPromptGenerateUtil.buildOutlineVars(dto));
+                templateRef.code(), templateRef.version(),
+                plotOutlineOptimizeMode ? StoryPromptGenerateUtil.buildOutlineOptimizeVars(dto) : StoryPromptGenerateUtil.buildOutlineVars(dto));
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson;
         try {
@@ -318,11 +322,11 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         List<TsStoryOneClickOutlineChapterVo> chapters;
         String plotOutline = null;
         if (plotOutlineOptimizeMode) {
-            chapters = new ArrayList<>();
+            chapters = null;
             plotOutline = PromptRuntimeUtil.firstNonBlank(
                     PromptRuntimeUtil.trimToNull(modelJson.getString("plot_outline")),
                     PromptRuntimeUtil.trimToNull(modelJson.getString("outline")),
-                    dto.getExtraRequirements()
+                    dto.getPlotOutline()
             );
         } else {
             chapters = StoryPromptGenerateUtil.parseOutlineChapters(modelJson.get("chapters"));
@@ -338,7 +342,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         snapshot.put("templateMode", dto.getTemplateMode());
         snapshot.put("promptRendered", renderedPrompt);
         snapshot.put("rawResponse", modelJson == null ? null : modelJson.toJSONString());
-        snapshot.put("chapterCount", chapters.size());
+        snapshot.put("chapterCount", chapters == null ? 0 : chapters.size());
         snapshot.put("plotOutline", plotOutline);
         snapshot.put("result", chapters);
         String snapshotKey = StoryGenerateSnapshotUtil.saveSnapshot(redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS,
@@ -347,6 +351,8 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         TsStoryOneClickOutlineGenerateVo vo = new TsStoryOneClickOutlineGenerateVo();
         vo.setChapters(chapters);
         vo.setPlotOutline(plotOutline);
+        vo.setGenerated(Boolean.TRUE);
+        vo.setFallbackReason(null);
         vo.setPromptCode(templateRef.code());
         vo.setPromptVersion(templateRef.version());
         vo.setRenderedPrompt(renderedPrompt);
@@ -388,38 +394,8 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         String siteSettingText = PromptRuntimeUtil.firstNonBlank(PromptRuntimeUtil.trimToNull(modelJson.getString("site_setting")));
         String plotOutlineText = PromptRuntimeUtil.firstNonBlank(PromptRuntimeUtil.trimToNull(modelJson.getString("plot_outline")));
 
-        TsStoryOneClickSettingGenerateDto settingDto = new TsStoryOneClickSettingGenerateDto();
-        settingDto.setStoryId(dto.getStoryId());
-        settingDto.setTitle(title);
-        settingDto.setStoryIntro(storyIntro);
-        settingDto.setStorySetting(storySettingText);
-        settingDto.setStoryBackground(tagsByType.get(TAG_TYPE_STORY_BACKGROUND));
-        settingDto.setIdeaInput(plotOutlineText);
-        settingDto.setStyleHint(tagsByType.get(TAG_TYPE_NARRATIVE_STYLE));
-        TsStoryOneClickSettingGenerateVo settingResult = generateStorySetting(user, settingDto);
-
-        TsStoryOneClickSceneGenerateDto sceneDto = new TsStoryOneClickSceneGenerateDto();
-        sceneDto.setTitle(settingResult.getTitle());
-        sceneDto.setStoryMode(settingResult.getStoryMode());
-        sceneDto.setStorySetting(settingResult.getStorySetting());
-        sceneDto.setStoryBackground(settingResult.getStoryBackground());
-        sceneDto.setSceneSetting(siteSettingText);
-        sceneDto.setStyleHint(tagsByType.get(TAG_TYPE_NARRATIVE_STYLE));
-        TsStoryOneClickSceneGenerateVo sceneResult = generateStoryScene(user, sceneDto);
-
-        TsStoryOneClickOutlineGenerateDto outlineDto = new TsStoryOneClickOutlineGenerateDto();
-        outlineDto.setStoryId(dto.getStoryId());
-        outlineDto.setTitle(settingResult.getTitle());
-        outlineDto.setStoryMode(settingResult.getStoryMode());
-        outlineDto.setStorySetting(settingResult.getStorySetting());
-        outlineDto.setSceneSetting(sceneResult.getSceneSummary());
-        outlineDto.setStoryBackground(settingResult.getStoryBackground());
-        outlineDto.setChapterCount(DEFAULT_OUTLINE_CHAPTER_COUNT);
-        outlineDto.setExtraRequirements(PromptRuntimeUtil.firstNonBlank(dto.getExtraRequirements(), plotOutlineText));
-        TsStoryOneClickOutlineGenerateVo outlineResult = generateStoryOutline(user, outlineDto);
-
         String snapshotKey = saveStoryFullPresetSnapshot(user, preset, presetTags, tagsByType, renderedPrompt, modelJson,
-                settingResult, sceneResult, outlineResult);
+                title, storyIntro, storySettingText, siteSettingText, plotOutlineText);
 
         TsStoryFullGenerateVo vo = new TsStoryFullGenerateVo();
         vo.setTitle(title);
@@ -427,19 +403,6 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         vo.setStorySetting(storySettingText);
         vo.setSiteSetting(siteSettingText);
         vo.setPlotOutline(plotOutlineText);
-        vo.setPresetId(preset.getId());
-        vo.setPresetName(preset.getName());
-        vo.setPresetDescription(preset.getDescription());
-        vo.setPromptCode(promptSections.getCode());
-        vo.setPromptVersion(promptSections.getVersion());
-        vo.setRenderedPrompt(renderedPrompt);
-        vo.setSnapshotKey(snapshotKey);
-        vo.setPresetTags(presetTags);
-        vo.setSettingResult(settingResult);
-        vo.setSceneResult(sceneResult);
-        vo.setOutlineResult(outlineResult);
-        vo.setOutlineSkipped(Boolean.FALSE);
-        vo.setOutlineSkippedReason(null);
         return vo;
     }
 
@@ -449,9 +412,11 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
                                                Map<String, String> tagsByType,
                                                String renderedPrompt,
                                                JSONObject modelJson,
-                                               TsStoryOneClickSettingGenerateVo settingResult,
-                                               TsStoryOneClickSceneGenerateVo sceneResult,
-                                               TsStoryOneClickOutlineGenerateVo outlineResult) {
+                                               String title,
+                                               String storyIntro,
+                                               String storySetting,
+                                               String siteSetting,
+                                               String plotOutline) {
         JSONObject snapshot = new JSONObject();
         snapshot.put("type", "story-full-generate-preset");
         snapshot.put("presetId", preset == null ? null : preset.getId());
@@ -461,9 +426,11 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         snapshot.put("presetTags", presetTags);
         snapshot.put("promptRendered", renderedPrompt);
         snapshot.put("rawResponse", modelJson == null ? null : modelJson.toJSONString());
-        snapshot.put("settingSnapshotKey", settingResult == null ? null : settingResult.getSnapshotKey());
-        snapshot.put("sceneSnapshotKey", sceneResult == null ? null : sceneResult.getSnapshotKey());
-        snapshot.put("outlineSnapshotKey", outlineResult == null ? null : outlineResult.getSnapshotKey());
+        snapshot.put("title", title);
+        snapshot.put("storyIntro", storyIntro);
+        snapshot.put("storySetting", storySetting);
+        snapshot.put("siteSetting", siteSetting);
+        snapshot.put("plotOutline", plotOutline);
         return StoryGenerateSnapshotUtil.saveSnapshot(redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS,
                 "full-preset", user.getId(), snapshot);
     }
