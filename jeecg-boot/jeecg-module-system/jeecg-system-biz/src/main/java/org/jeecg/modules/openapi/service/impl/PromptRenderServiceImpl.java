@@ -23,20 +23,20 @@ public class PromptRenderServiceImpl implements PromptRenderService {
     private IAiragPromptTemplateService airagPromptTemplateService;
 
     @Override
-    public String renderPrompt(String templatePath, Map<String, String> variables) {
-        return renderPromptSections(templatePath, variables).getRenderedPrompt();
+    public String renderPrompt(String code, String version, Map<String, String> variables) {
+        return renderPromptSections(code, version, variables).getRenderedPrompt();
     }
 
     @Override
-    public PromptRenderedSectionsVo renderPromptSections(String templatePath, Map<String, String> variables) {
-        String normalizedPath = PromptRenderUtil.normalizeTemplatePath(templatePath);
-        PromptTemplateCodeVersionVo codeVersion = PromptRenderUtil.parseCodeVersion(normalizedPath);
+    public PromptRenderedSectionsVo renderPromptSections(String code, String version, Map<String, String> variables) {
         Map<String, String> safeVariables = PromptRenderUtil.safeVariables(variables);
+        String safeCode = PromptRenderUtil.trimToEmpty(code);
+        String safeVersion = PromptRenderUtil.trimToEmpty(version);
 
-        AiragPromptTemplateVo template = airagPromptTemplateService.getTemplate(codeVersion.getCode(), codeVersion.getVersion());
+        AiragPromptTemplateVo template = airagPromptTemplateService.getTemplate(safeCode, safeVersion);
         String developerPrompt = PromptRenderUtil.trimToEmpty(template.getSections().get("developer_prompt"));
         String userPromptRaw = PromptRenderUtil.trimToEmpty(
-                airagPromptTemplateService.renderSection(codeVersion.getCode(), codeVersion.getVersion(), "user_prompt_template", safeVariables)
+                airagPromptTemplateService.renderSection(safeCode, safeVersion, "user_prompt_template", safeVariables)
         );
         String userPrompt = PromptRenderUtil.replaceUnfilledPlaceholders(userPromptRaw, "null");
         String outputSchemaHint = PromptRenderUtil.trimToEmpty(template.getSections().get("output_schema_hint"));
@@ -45,9 +45,9 @@ public class PromptRenderServiceImpl implements PromptRenderService {
         String renderedPrompt = PromptRenderUtil.buildFinalPrompt(developerPrompt, userPrompt, outputSpec);
 
         PromptRenderedSectionsVo sections = new PromptRenderedSectionsVo();
-        sections.setTemplatePath(templatePath);
-        sections.setCode(codeVersion.getCode());
-        sections.setVersion(codeVersion.getVersion());
+        sections.setTemplatePath(null);
+        sections.setCode(safeCode);
+        sections.setVersion(safeVersion);
         sections.setDeveloperPrompt(developerPrompt);
         sections.setUserPrompt(userPrompt);
         sections.setOutputSchemaHint(outputSchemaHint);
@@ -55,8 +55,22 @@ public class PromptRenderServiceImpl implements PromptRenderService {
         sections.setRenderedPrompt(renderedPrompt);
 
         String logContent = renderedPrompt.length() > 300 ? renderedPrompt.substring(0, 300) + "...(truncated)" : renderedPrompt;
-        log.info("Prompt template rendered path={}, vars={}, rendered={}", templatePath, safeVariables, logContent);
+        log.info("Prompt template rendered code={} version={} vars={} rendered={}",
+                safeCode, safeVersion, safeVariables, logContent);
+        return sections;
+    }
+
+    @Override
+    public String renderPrompt(String templatePath, Map<String, String> variables) {
+        return renderPromptSections(templatePath, variables).getRenderedPrompt();
+    }
+
+    @Override
+    public PromptRenderedSectionsVo renderPromptSections(String templatePath, Map<String, String> variables) {
+        String normalizedPath = PromptRenderUtil.normalizeTemplatePath(templatePath);
+        PromptTemplateCodeVersionVo codeVersion = PromptRenderUtil.parseCodeVersion(normalizedPath);
+        PromptRenderedSectionsVo sections = renderPromptSections(codeVersion.getCode(), codeVersion.getVersion(), variables);
+        sections.setTemplatePath(templatePath);
         return sections;
     }
 }
-

@@ -8,12 +8,14 @@ import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.modules.system.dto.tsstory.TsStoryFullGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickOutlineGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSettingGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryQueryDto;
 import org.jeecg.modules.system.dto.tsstory.TsStorySaveDto;
 import org.jeecg.modules.system.service.ITsStoryService;
+import org.jeecg.modules.system.vo.tsstory.TsStoryFullGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSettingGenerateVo;
@@ -57,6 +59,12 @@ public class TsStoryController {
         return tsStoryService.deleteStory(((LoginUser) SecurityUtils.getSubject().getPrincipal()), id);
     }
 
+    @Operation(summary = "Story full generate")
+    @PostMapping("/ts-stories/story-full-generate")
+    public Result<TsStoryFullGenerateVo> generateStoryFull(@RequestBody TsStoryFullGenerateDto request) {
+        return tsStoryService.generateStoryFull(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
+    }
+
     @Operation(summary = "Story setting generate")
     @PostMapping("/ts-stories/story-setting-generate")
     public Result<TsStoryOneClickSettingGenerateVo> generateStorySetting(@RequestBody TsStoryOneClickSettingGenerateDto request) {
@@ -73,5 +81,11 @@ public class TsStoryController {
     @PostMapping("/ts-stories/story--outline-generate")
     public Result<TsStoryOneClickOutlineGenerateVo> generateStoryOutline(@RequestBody TsStoryOneClickOutlineGenerateDto request) {
         return tsStoryService.generateStoryOutline(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
+    }
+
+    @Operation(summary = "Story full generate preset")
+    @PostMapping("/ts-stories/story-full-generate-preset")
+    public Result<TsStoryFullGenerateVo> generateStoryFullPreset(@RequestBody TsStoryFullGenerateDto request) {
+        return tsStoryService.generateStoryFullPreset(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
     }
 }

@@ -7,6 +7,7 @@ import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.aop.TsStoryOwnershipAspect;
 import org.jeecg.modules.aop.TsStoryOwnershipAspect.CheckTsStoryOwnership;
+import org.jeecg.modules.system.dto.tsstory.TsStoryFullGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickOutlineGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSettingGenerateDto;
@@ -25,6 +26,7 @@ import org.jeecg.modules.system.po.tsstory.TsStoryQueryPo;
 import org.jeecg.modules.system.po.tsstory.TsStorySavePo;
 import org.jeecg.modules.system.service.ITsStoryGenerateService;
 import org.jeecg.modules.system.service.ITsStoryService;
+import org.jeecg.modules.system.vo.tsstory.TsStoryFullGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSettingGenerateVo;
@@ -237,5 +239,15 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
     @Override
     public Result<TsStoryOneClickOutlineGenerateVo> generateStoryOutline(LoginUser user, TsStoryOneClickOutlineGenerateDto request) {
         return Result.OK(tsStoryGenerateService.generateStoryOutline(user, request));
+    }
+
+    @Override
+    public Result<TsStoryFullGenerateVo> generateStoryFull(LoginUser user, TsStoryFullGenerateDto request) {
+        return Result.OK(tsStoryGenerateService.generateStoryFull(user, request));
+    }
+
+    @Override
+    public Result<TsStoryFullGenerateVo> generateStoryFullPreset(LoginUser user, TsStoryFullGenerateDto request) {
+        return Result.OK(tsStoryGenerateService.generateStoryFullPreset(user, request));
     }
 }

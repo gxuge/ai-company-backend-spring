@@ -1,11 +1,10 @@
 package org.jeecg.modules.system.service.impl;
 
 import com.alibaba.fastjson.JSONObject;
-import com.alibaba.fastjson.JSONArray;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.exception.JeecgBootBizTipException;
-import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.airag.app.entity.AiragApp;
 import org.jeecg.modules.airag.app.mapper.AiragAppMapper;
@@ -13,13 +12,22 @@ import org.jeecg.modules.openapi.config.PromptChatConfigBean;
 import org.jeecg.modules.openapi.service.IPromptChatService;
 import org.jeecg.modules.openapi.service.PromptRenderService;
 import org.jeecg.modules.openapi.vo.PromptRenderedSectionsVo;
+import org.jeecg.modules.system.dto.tsstory.TsStoryFullGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickOutlineGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSettingGenerateDto;
+import org.jeecg.modules.system.entity.TsPreset;
+import org.jeecg.modules.system.entity.TsPresetTag;
+import org.jeecg.modules.system.entity.TsTag;
+import org.jeecg.modules.system.mapper.TsPresetMapper;
+import org.jeecg.modules.system.mapper.TsPresetTagMapper;
+import org.jeecg.modules.system.mapper.TsTagMapper;
 import org.jeecg.modules.system.service.ITsStoryGenerateService;
 import org.jeecg.modules.system.util.PromptRuntimeUtil;
 import org.jeecg.modules.system.util.StoryGenerateSnapshotUtil;
 import org.jeecg.modules.system.util.StoryPromptGenerateUtil;
+import org.jeecg.modules.system.vo.tsstory.TsStoryFullGeneratePresetTagVo;
+import org.jeecg.modules.system.vo.tsstory.TsStoryFullGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineChapterVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneGenerateVo;
@@ -31,7 +39,10 @@ import org.springframework.util.StringUtils;
 import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.Collectors;
 
 /**
  * 故事生成服务实现。
@@ -41,15 +52,31 @@ import java.util.Map;
 public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     private static final String METADATA_STORY_PROMPT_KEY = "storyPromptTemplate";
     private static final String METADATA_STORY_PROMPTS_KEY = "storyPromptTemplates";
-    private static final String METADATA_TOOLCALL_REPAIR_PROMPT_KEY = "toolcallJsonRepairPromptTemplate";
-    private static final String METADATA_JSON_REPAIR_PROMPT_KEY = "jsonRepairPromptTemplate";
-    private static final String METADATA_STORY_REPAIR_PROMPT_KEY = "storyJsonRepairPromptTemplate";
-    private static final String TOOLCALL_REPAIR_PROMPT_DIR = "prompts/toolcall/";
     private static final String REDIS_SNAPSHOT_PREFIX = "ts:story:generate:snapshot:";
     private static final long REDIS_SNAPSHOT_TTL_HOURS = 72L;
     private static final String ENDPOINT_STORY_SETTING_GENERATE = "/sys/ts-stories/story-setting-generate";
     private static final String ENDPOINT_STORY_SCENE_GENERATE = "/sys/ts-stories/story--scene-generate";
     private static final String ENDPOINT_STORY_OUTLINE_GENERATE = "/sys/ts-stories/story--outline-generate";
+    private static final String ENDPOINT_STORY_FULL_GENERATE = "/sys/ts-stories/story-full-generate";
+    private static final String ENDPOINT_STORY_FULL_GENERATE_PRESET = "/sys/ts-stories/story-full-generate-preset";
+    private static final String PROMPT_VERSION_V2 = "v2";
+    private static final String PROMPT_CODE_STORY_SETTING_OPTIMIZE = "story_setting_optimize";
+    private static final String PROMPT_CODE_STORY_SITE_SETTING_OPTIMIZE = "story_site_setting_optimize";
+    private static final String PROMPT_CODE_STORY_PLOT_OUTLINE_OPTIMIZE = "story_plot_outline_optimize";
+    private static final String PROMPT_CODE_STORY_FULL_PRESET = "story_preset_tags_to_core5";
+    private static final String PROMPT_VERSION_STORY_FULL_PRESET = "v3";
+    private static final int DEFAULT_OUTLINE_CHAPTER_COUNT = 3;
+    private static final String TAG_TYPE_TITLE = "title";
+    private static final String TAG_TYPE_NARRATIVE_STYLE = "narrative_style";
+    private static final String TAG_TYPE_STORY_BACKGROUND = "story_background";
+    private static final String TAG_TYPE_USER_ROLE = "user_role";
+    private static final String TAG_TYPE_STORY_RULE = "story_rule";
+    private static final String TAG_TYPE_BOUNDARY_RULE = "boundary_rule";
+    private static final String TAG_TYPE_LOCATION = "location";
+    private static final String TAG_TYPE_TIME_PERIOD = "time_period";
+    private static final String TAG_TYPE_PLOT_HOOK = "plot_hook";
+    private static final String TAG_TYPE_CONFLICT = "conflict";
+    private static final String TAG_TYPE_PROGRESSION_MODE = "progression_mode";
 
     @Resource
     private IPromptChatService promptChatService;
@@ -61,6 +88,14 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     private PromptChatConfigBean promptChatConfigBean;
     @Resource
     private AiragAppMapper airagAppMapper;
+    @Resource
+    private TsPresetMapper tsPresetMapper;
+    @Resource
+    private TsPresetTagMapper tsPresetTagMapper;
+    @Resource
+    private TsTagMapper tsTagMapper;
+    @Resource
+    private ToolcallJsonRepairService toolcallJsonRepairService;
 
     /**
      * 生成故事设定（标题/简介/模式/设定/背景）。
@@ -69,9 +104,13 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     public TsStoryOneClickSettingGenerateVo generateStorySetting(LoginUser user, TsStoryOneClickSettingGenerateDto request) {
         TsStoryOneClickSettingGenerateDto dto = request == null ? new TsStoryOneClickSettingGenerateDto() : request;
         dto.normalize();
-        PromptTemplateRef templateRef = resolvePromptTemplateRef(TemplateScene.SETTING);
+        boolean settingOptimizeMode = dto.isSettingOptimizeMode();
+        PromptTemplateRef templateRef = settingOptimizeMode
+                ? new PromptTemplateRef(PROMPT_CODE_STORY_SETTING_OPTIMIZE, PROMPT_VERSION_V2)
+                : resolvePromptTemplateRef(TemplateScene.SETTING);
 
-        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(templateRef.templatePath(), StoryPromptGenerateUtil.buildSettingVars(dto));
+        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
+                templateRef.code(), templateRef.version(), StoryPromptGenerateUtil.buildSettingVars(dto));
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson;
         boolean generated = true;
@@ -87,28 +126,54 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         }
         logStoryLlmJson(ENDPOINT_STORY_SETTING_GENERATE, modelJson, generated, fallbackReason);
 
-        String title = PromptRuntimeUtil.firstNonBlank(
-                PromptRuntimeUtil.trimToNull(modelJson.getString("title")),
-                dto.getTitle(),
-                "Original Story " + System.currentTimeMillis());
-        String storyIntro = PromptRuntimeUtil.firstNonBlank(
-                PromptRuntimeUtil.trimToNull(modelJson.getString("story_intro")),
-                dto.getStoryIntro());
-        String storyMode = StoryPromptGenerateUtil.normalizeStoryMode(PromptRuntimeUtil.firstNonBlank(
-                PromptRuntimeUtil.trimToNull(modelJson.getString("story_mode")),
-                dto.getStoryMode(),
-                "chapter"));
-        String storySetting = PromptRuntimeUtil.firstNonBlank(
-                PromptRuntimeUtil.trimToNull(modelJson.getString("story_setting")),
-                dto.getStorySetting());
-        String storyBackground = PromptRuntimeUtil.firstNonBlank(
-                PromptRuntimeUtil.trimToNull(modelJson.getString("story_background")),
-                dto.getStoryBackground());
+        String title;
+        String storyIntro;
+        String storyMode;
+        String storySetting;
+        String storyBackground;
+        if (settingOptimizeMode) {
+            title = PromptRuntimeUtil.firstNonBlank(
+                    dto.getTitle(),
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("title")),
+                    "Original Story " + System.currentTimeMillis());
+            storyIntro = PromptRuntimeUtil.firstNonBlank(
+                    dto.getStoryIntro(),
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("story_intro")));
+            storyMode = StoryPromptGenerateUtil.normalizeStoryMode(PromptRuntimeUtil.firstNonBlank(
+                    dto.getStoryMode(),
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("story_mode")),
+                    "chapter"));
+            storySetting = PromptRuntimeUtil.firstNonBlank(
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("story_setting")),
+                    dto.getStorySetting());
+            storyBackground = PromptRuntimeUtil.firstNonBlank(
+                    dto.getStoryBackground(),
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("story_background")));
+        } else {
+            title = PromptRuntimeUtil.firstNonBlank(
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("title")),
+                    dto.getTitle(),
+                    "Original Story " + System.currentTimeMillis());
+            storyIntro = PromptRuntimeUtil.firstNonBlank(
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("story_intro")),
+                    dto.getStoryIntro());
+            storyMode = StoryPromptGenerateUtil.normalizeStoryMode(PromptRuntimeUtil.firstNonBlank(
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("story_mode")),
+                    dto.getStoryMode(),
+                    "chapter"));
+            storySetting = PromptRuntimeUtil.firstNonBlank(
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("story_setting")),
+                    dto.getStorySetting());
+            storyBackground = PromptRuntimeUtil.firstNonBlank(
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("story_background")),
+                    dto.getStoryBackground());
+        }
 
         JSONObject snapshot = new JSONObject();
         snapshot.put("type", "story-setting");
         snapshot.put("promptCode", templateRef.code());
         snapshot.put("promptVersion", templateRef.version());
+        snapshot.put("templateMode", dto.getTemplateMode());
         snapshot.put("promptRendered", renderedPrompt);
         snapshot.put("rawResponse", modelJson == null ? null : modelJson.toJSONString());
         JSONObject resultJson = new JSONObject();
@@ -143,9 +208,13 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     public TsStoryOneClickSceneGenerateVo generateStoryScene(LoginUser user, TsStoryOneClickSceneGenerateDto request) {
         TsStoryOneClickSceneGenerateDto dto = request == null ? new TsStoryOneClickSceneGenerateDto() : request;
         dto.normalize();
-        PromptTemplateRef templateRef = resolvePromptTemplateRef(TemplateScene.SCENE);
+        boolean siteSettingOptimizeMode = dto.isSiteSettingOptimizeMode();
+        PromptTemplateRef templateRef = siteSettingOptimizeMode
+                ? new PromptTemplateRef(PROMPT_CODE_STORY_SITE_SETTING_OPTIMIZE, PROMPT_VERSION_V2)
+                : resolvePromptTemplateRef(TemplateScene.SCENE);
 
-        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(templateRef.templatePath(), StoryPromptGenerateUtil.buildSceneVars(dto));
+        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
+                templateRef.code(), templateRef.version(), StoryPromptGenerateUtil.buildSceneVars(dto));
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson;
         boolean generated = true;
@@ -161,21 +230,40 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         }
         logStoryLlmJson(ENDPOINT_STORY_SCENE_GENERATE, modelJson, generated, fallbackReason);
 
-        String sceneNameSnapshot = PromptRuntimeUtil.firstNonBlank(
-                PromptRuntimeUtil.trimToNull(modelJson.getString("scene_name_snapshot")),
-                PromptRuntimeUtil.trimToNull(modelJson.getString("scene_name")),
-                dto.getSceneSetting(),
-                "未命名场景");
-        String sceneSummary = PromptRuntimeUtil.firstNonBlank(
-                PromptRuntimeUtil.trimToNull(modelJson.getString("scene_summary")),
-                PromptRuntimeUtil.trimToNull(modelJson.getString("scene_desc")),
-                "这是一个等待你继续完善的场景。");
-        List<String> sceneElements = StoryPromptGenerateUtil.parseStringList(modelJson.get("scene_elements"));
+        String sceneNameSnapshot;
+        String sceneSummary;
+        List<String> sceneElements;
+        if (siteSettingOptimizeMode) {
+            sceneSummary = PromptRuntimeUtil.firstNonBlank(
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("site_setting")),
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("scene_summary")),
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("scene_desc")),
+                    dto.getSceneSetting(),
+                    "这是一个等待你继续完善的场景。");
+            sceneNameSnapshot = PromptRuntimeUtil.firstNonBlank(
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("scene_name_snapshot")),
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("scene_name")),
+                    dto.getTitle(),
+                    "未命名场景");
+            sceneElements = StoryPromptGenerateUtil.parseStringList(modelJson.get("scene_elements"));
+        } else {
+            sceneNameSnapshot = PromptRuntimeUtil.firstNonBlank(
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("scene_name_snapshot")),
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("scene_name")),
+                    dto.getSceneSetting(),
+                    "未命名场景");
+            sceneSummary = PromptRuntimeUtil.firstNonBlank(
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("scene_summary")),
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("scene_desc")),
+                    "这是一个等待你继续完善的场景。");
+            sceneElements = StoryPromptGenerateUtil.parseStringList(modelJson.get("scene_elements"));
+        }
 
         JSONObject snapshot = new JSONObject();
         snapshot.put("type", "scene-setting");
         snapshot.put("promptCode", templateRef.code());
         snapshot.put("promptVersion", templateRef.version());
+        snapshot.put("templateMode", dto.getTemplateMode());
         snapshot.put("promptRendered", renderedPrompt);
         snapshot.put("rawResponse", modelJson == null ? null : modelJson.toJSONString());
         JSONObject resultJson = new JSONObject();
@@ -206,9 +294,13 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     public TsStoryOneClickOutlineGenerateVo generateStoryOutline(LoginUser user, TsStoryOneClickOutlineGenerateDto request) {
         TsStoryOneClickOutlineGenerateDto dto = request == null ? new TsStoryOneClickOutlineGenerateDto() : request;
         dto.normalize();
-        PromptTemplateRef templateRef = resolvePromptTemplateRef(TemplateScene.OUTLINE);
+        boolean plotOutlineOptimizeMode = dto.isPlotOutlineOptimizeMode();
+        PromptTemplateRef templateRef = plotOutlineOptimizeMode
+                ? new PromptTemplateRef(PROMPT_CODE_STORY_PLOT_OUTLINE_OPTIMIZE, PROMPT_VERSION_V2)
+                : resolvePromptTemplateRef(TemplateScene.OUTLINE);
 
-        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(templateRef.templatePath(), StoryPromptGenerateUtil.buildOutlineVars(dto));
+        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
+                templateRef.code(), templateRef.version(), StoryPromptGenerateUtil.buildOutlineVars(dto));
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson;
         try {
@@ -223,24 +315,38 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
             throw ex;
         }
 
-        List<TsStoryOneClickOutlineChapterVo> chapters = StoryPromptGenerateUtil.parseOutlineChapters(modelJson.get("chapters"));
-        if (chapters.isEmpty()) {
-            chapters.add(StoryPromptGenerateUtil.buildFallbackOutlineChapter(modelJson));
+        List<TsStoryOneClickOutlineChapterVo> chapters;
+        String plotOutline = null;
+        if (plotOutlineOptimizeMode) {
+            chapters = new ArrayList<>();
+            plotOutline = PromptRuntimeUtil.firstNonBlank(
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("plot_outline")),
+                    PromptRuntimeUtil.trimToNull(modelJson.getString("outline")),
+                    dto.getExtraRequirements()
+            );
+        } else {
+            chapters = StoryPromptGenerateUtil.parseOutlineChapters(modelJson.get("chapters"));
+            if (chapters.isEmpty()) {
+                chapters.add(StoryPromptGenerateUtil.buildFallbackOutlineChapter(modelJson));
+            }
         }
 
         JSONObject snapshot = new JSONObject();
         snapshot.put("type", "outline");
         snapshot.put("promptCode", templateRef.code());
         snapshot.put("promptVersion", templateRef.version());
+        snapshot.put("templateMode", dto.getTemplateMode());
         snapshot.put("promptRendered", renderedPrompt);
         snapshot.put("rawResponse", modelJson == null ? null : modelJson.toJSONString());
         snapshot.put("chapterCount", chapters.size());
+        snapshot.put("plotOutline", plotOutline);
         snapshot.put("result", chapters);
         String snapshotKey = StoryGenerateSnapshotUtil.saveSnapshot(redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS,
                 "outline", user.getId(), snapshot);
 
         TsStoryOneClickOutlineGenerateVo vo = new TsStoryOneClickOutlineGenerateVo();
         vo.setChapters(chapters);
+        vo.setPlotOutline(plotOutline);
         vo.setPromptCode(templateRef.code());
         vo.setPromptVersion(templateRef.version());
         vo.setRenderedPrompt(renderedPrompt);
@@ -248,150 +354,231 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         return vo;
     }
 
-    private JSONObject callPromptChatWithSchemaRepair(PromptRenderedSectionsVo sections, String scene) {
-        String rawContent = null;
-        try {
-            rawContent = promptChatService.chatToolCall(
-                    sections.getDeveloperPrompt(),
-                    sections.getUserPrompt(),
-                    sections.getToolSchema());
-            JSONObject parsed = PromptRuntimeUtil.parseJsonObject(rawContent);
-            if (matchesToolSchemaRequired(parsed, sections.getToolSchema())) {
-                log.info("[PROMPT_CHAT_JSON_FULL] stage=first-pass payload={}",
-                        PromptRuntimeUtil.sanitizeToolCallLogJson(parsed).toJSONString());
-                return parsed;
-            }
-            log.warn("[PROMPT_CHAT_JSON_FULL] stage=first-pass-required-mismatch scene={} payload={}",
-                    scene, PromptRuntimeUtil.sanitizeToolCallLogJson(parsed).toJSONString());
-        } catch (Exception firstEx) {
-            log.warn("[PROMPT_CHAT_JSON_FULL] stage=first-pass-parse-fail scene={} reason={}", scene, firstEx.getMessage());
-        }
-
-        PromptTemplateRef repairTemplateRef = resolveJsonRepairTemplateRef();
-        PromptRenderedSectionsVo repairPrompt = promptRenderService.renderPromptSections(jsonRepairTemplatePath(repairTemplateRef),
-                buildJsonRepairVars(scene, rawContent, sections.getToolSchema()));
-        String repairedContent = promptChatService.chat(repairPrompt.getRenderedPrompt());
-        JSONObject repairedJson;
-        try {
-            repairedJson = PromptRuntimeUtil.parseJsonObject(repairedContent);
-        } catch (Exception ex) {
-            log.error("[PROMPT_CHAT_JSON_FULL] stage=repair-pass-parse-fail scene={} firstLen={} repairedLen={}",
-                    scene,
-                    rawContent == null ? 0 : rawContent.length(),
-                    repairedContent == null ? 0 : repairedContent.length());
-            throw new JeecgBootException("AI回复解析失败，非有效JSON");
-        }
-        if (!matchesToolSchemaRequired(repairedJson, sections.getToolSchema())) {
-            throw new JeecgBootException("AI回复字段不完整，无法匹配schema required");
-        }
-        log.info("[PROMPT_CHAT_JSON_FULL] stage=repair-pass payload={}",
-                PromptRuntimeUtil.sanitizeToolCallLogJson(repairedJson).toJSONString());
-        return repairedJson;
+    /**
+     * 兼容旧接口：当前复用 preset 版全量生成链路。
+     */
+    @Override
+    public TsStoryFullGenerateVo generateStoryFull(LoginUser user, TsStoryFullGenerateDto request) {
+        return generateStoryFullPreset(user, request);
     }
 
-    private Map<String, String> buildJsonRepairVars(String scene, String rawContent, String toolSchema) {
-        Map<String, String> variables = new HashMap<>();
-        variables.put("scene", PromptRuntimeUtil.nullableToken(scene));
-        variables.put("raw_content", PromptRuntimeUtil.nullableToken(PromptRuntimeUtil.trimToNull(rawContent)));
-        variables.put("tool_schema", PromptRuntimeUtil.nullableToken(PromptRuntimeUtil.trimToNull(toolSchema)));
-        variables.put("required_fields", PromptRuntimeUtil.nullableToken(String.join(", ", extractRequiredFields(toolSchema))));
-        return variables;
+    /**
+     * 新接口：随机 story 预设 + 读取绑定标签 + 依据固定映射构建5字段输入 -> 调用模板 -> 串联设定/场景/大纲。
+     */
+    @Override
+    public TsStoryFullGenerateVo generateStoryFullPreset(LoginUser user, TsStoryFullGenerateDto request) {
+        TsStoryFullGenerateDto dto = request == null ? new TsStoryFullGenerateDto() : request;
+        dto.normalize();
+
+        TsPreset preset = pickRandomStoryPreset();
+        List<TsStoryFullGeneratePresetTagVo> presetTags = loadPresetTags(preset.getId());
+        Map<String, String> tagsByType = mergeTagsByType(presetTags);
+
+        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
+                PROMPT_CODE_STORY_FULL_PRESET, PROMPT_VERSION_STORY_FULL_PRESET,
+                buildStoryFullPresetVars(dto, preset, tagsByType)
+        );
+        String renderedPrompt = promptSections.getRenderedPrompt();
+        JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, "story-full-generate-preset");
+        logStoryLlmJson(ENDPOINT_STORY_FULL_GENERATE_PRESET, modelJson, true, null);
+
+        String title = PromptRuntimeUtil.firstNonBlank(PromptRuntimeUtil.trimToNull(modelJson.getString("title")));
+        String storyIntro = PromptRuntimeUtil.firstNonBlank(PromptRuntimeUtil.trimToNull(modelJson.getString("story_intro")));
+        String storySettingText = PromptRuntimeUtil.firstNonBlank(PromptRuntimeUtil.trimToNull(modelJson.getString("story_setting")));
+        String siteSettingText = PromptRuntimeUtil.firstNonBlank(PromptRuntimeUtil.trimToNull(modelJson.getString("site_setting")));
+        String plotOutlineText = PromptRuntimeUtil.firstNonBlank(PromptRuntimeUtil.trimToNull(modelJson.getString("plot_outline")));
+
+        TsStoryOneClickSettingGenerateDto settingDto = new TsStoryOneClickSettingGenerateDto();
+        settingDto.setStoryId(dto.getStoryId());
+        settingDto.setTitle(title);
+        settingDto.setStoryIntro(storyIntro);
+        settingDto.setStorySetting(storySettingText);
+        settingDto.setStoryBackground(tagsByType.get(TAG_TYPE_STORY_BACKGROUND));
+        settingDto.setIdeaInput(plotOutlineText);
+        settingDto.setStyleHint(tagsByType.get(TAG_TYPE_NARRATIVE_STYLE));
+        TsStoryOneClickSettingGenerateVo settingResult = generateStorySetting(user, settingDto);
+
+        TsStoryOneClickSceneGenerateDto sceneDto = new TsStoryOneClickSceneGenerateDto();
+        sceneDto.setTitle(settingResult.getTitle());
+        sceneDto.setStoryMode(settingResult.getStoryMode());
+        sceneDto.setStorySetting(settingResult.getStorySetting());
+        sceneDto.setStoryBackground(settingResult.getStoryBackground());
+        sceneDto.setSceneSetting(siteSettingText);
+        sceneDto.setStyleHint(tagsByType.get(TAG_TYPE_NARRATIVE_STYLE));
+        TsStoryOneClickSceneGenerateVo sceneResult = generateStoryScene(user, sceneDto);
+
+        TsStoryOneClickOutlineGenerateDto outlineDto = new TsStoryOneClickOutlineGenerateDto();
+        outlineDto.setStoryId(dto.getStoryId());
+        outlineDto.setTitle(settingResult.getTitle());
+        outlineDto.setStoryMode(settingResult.getStoryMode());
+        outlineDto.setStorySetting(settingResult.getStorySetting());
+        outlineDto.setSceneSetting(sceneResult.getSceneSummary());
+        outlineDto.setStoryBackground(settingResult.getStoryBackground());
+        outlineDto.setChapterCount(DEFAULT_OUTLINE_CHAPTER_COUNT);
+        outlineDto.setExtraRequirements(PromptRuntimeUtil.firstNonBlank(dto.getExtraRequirements(), plotOutlineText));
+        TsStoryOneClickOutlineGenerateVo outlineResult = generateStoryOutline(user, outlineDto);
+
+        String snapshotKey = saveStoryFullPresetSnapshot(user, preset, presetTags, tagsByType, renderedPrompt, modelJson,
+                settingResult, sceneResult, outlineResult);
+
+        TsStoryFullGenerateVo vo = new TsStoryFullGenerateVo();
+        vo.setTitle(title);
+        vo.setStoryIntro(storyIntro);
+        vo.setStorySetting(storySettingText);
+        vo.setSiteSetting(siteSettingText);
+        vo.setPlotOutline(plotOutlineText);
+        vo.setPresetId(preset.getId());
+        vo.setPresetName(preset.getName());
+        vo.setPresetDescription(preset.getDescription());
+        vo.setPromptCode(promptSections.getCode());
+        vo.setPromptVersion(promptSections.getVersion());
+        vo.setRenderedPrompt(renderedPrompt);
+        vo.setSnapshotKey(snapshotKey);
+        vo.setPresetTags(presetTags);
+        vo.setSettingResult(settingResult);
+        vo.setSceneResult(sceneResult);
+        vo.setOutlineResult(outlineResult);
+        vo.setOutlineSkipped(Boolean.FALSE);
+        vo.setOutlineSkippedReason(null);
+        return vo;
     }
 
-    private boolean matchesToolSchemaRequired(JSONObject data, String toolSchema) {
-        List<String> requiredFields = extractRequiredFields(toolSchema);
-        if (requiredFields.isEmpty()) {
-            return true;
-        }
-        if (data == null) {
-            return false;
-        }
-        for (String field : requiredFields) {
-            if (!data.containsKey(field)) {
-                return false;
-            }
-            Object value = data.get(field);
-            if (value == null) {
-                return false;
-            }
-            if (value instanceof String str && !StringUtils.hasText(str)) {
-                return false;
-            }
-        }
-        return true;
+    private String saveStoryFullPresetSnapshot(LoginUser user,
+                                               TsPreset preset,
+                                               List<TsStoryFullGeneratePresetTagVo> presetTags,
+                                               Map<String, String> tagsByType,
+                                               String renderedPrompt,
+                                               JSONObject modelJson,
+                                               TsStoryOneClickSettingGenerateVo settingResult,
+                                               TsStoryOneClickSceneGenerateVo sceneResult,
+                                               TsStoryOneClickOutlineGenerateVo outlineResult) {
+        JSONObject snapshot = new JSONObject();
+        snapshot.put("type", "story-full-generate-preset");
+        snapshot.put("presetId", preset == null ? null : preset.getId());
+        snapshot.put("presetName", preset == null ? null : preset.getName());
+        snapshot.put("presetDescription", preset == null ? null : preset.getDescription());
+        snapshot.put("tagsByType", tagsByType);
+        snapshot.put("presetTags", presetTags);
+        snapshot.put("promptRendered", renderedPrompt);
+        snapshot.put("rawResponse", modelJson == null ? null : modelJson.toJSONString());
+        snapshot.put("settingSnapshotKey", settingResult == null ? null : settingResult.getSnapshotKey());
+        snapshot.put("sceneSnapshotKey", sceneResult == null ? null : sceneResult.getSnapshotKey());
+        snapshot.put("outlineSnapshotKey", outlineResult == null ? null : outlineResult.getSnapshotKey());
+        return StoryGenerateSnapshotUtil.saveSnapshot(redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS,
+                "full-preset", user.getId(), snapshot);
     }
 
-    private List<String> extractRequiredFields(String toolSchema) {
-        List<String> requiredFields = new ArrayList<>();
-        if (!StringUtils.hasText(toolSchema)) {
-            return requiredFields;
+    private TsPreset pickRandomStoryPreset() {
+        QueryWrapper<TsPreset> wrapper = new QueryWrapper<>();
+        wrapper.eq("target_type", "story")
+                .eq("enabled", 1)
+                .orderByAsc("sort_order")
+                .orderByAsc("id");
+        List<TsPreset> presets = tsPresetMapper.selectList(wrapper);
+        if (presets == null || presets.isEmpty()) {
+            throw new JeecgBootBizTipException("未找到可用的 story 预设，请先初始化 ts_preset 数据");
         }
-        try {
-            JSONObject schemaRoot = JSONObject.parseObject(toolSchema);
-            JSONObject parameters = schemaRoot == null ? null : schemaRoot.getJSONObject("parameters");
-            JSONArray required = parameters == null ? null : parameters.getJSONArray("required");
-            if (required == null || required.isEmpty()) {
-                return requiredFields;
+        int index = ThreadLocalRandom.current().nextInt(presets.size());
+        return presets.get(index);
+    }
+
+    private List<TsStoryFullGeneratePresetTagVo> loadPresetTags(String presetId) {
+        if (!StringUtils.hasText(presetId)) {
+            return new ArrayList<>();
+        }
+        QueryWrapper<TsPresetTag> relationWrapper = new QueryWrapper<>();
+        relationWrapper.eq("preset_id", presetId)
+                .orderByAsc("sort_order")
+                .orderByAsc("id");
+        List<TsPresetTag> relations = tsPresetTagMapper.selectList(relationWrapper);
+        if (relations == null || relations.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<String> tagIds = relations.stream()
+                .map(TsPresetTag::getTagId)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .collect(Collectors.toList());
+        if (tagIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<TsTag> tags = tsTagMapper.selectBatchIds(tagIds);
+        Map<String, TsTag> tagMap = new HashMap<>();
+        if (tags != null) {
+            for (TsTag tag : tags) {
+                if (tag != null && StringUtils.hasText(tag.getId())) {
+                    tagMap.put(tag.getId(), tag);
+                }
             }
-            for (Object item : required) {
+        }
+        List<TsStoryFullGeneratePresetTagVo> result = new ArrayList<>();
+        for (TsPresetTag relation : relations) {
+            if (relation == null || !StringUtils.hasText(relation.getTagId())) {
+                continue;
+            }
+            TsTag tag = tagMap.get(relation.getTagId());
+            if (tag == null) {
+                continue;
+            }
+            TsStoryFullGeneratePresetTagVo vo = new TsStoryFullGeneratePresetTagVo();
+            vo.setPresetTagId(relation.getId());
+            vo.setTagId(tag.getId());
+            vo.setTypeId(tag.getTypeId());
+            vo.setTagName(tag.getName());
+            vo.setPromptText(tag.getPromptText());
+            vo.setRequired(relation.getRequired());
+            vo.setWeightOverride(relation.getWeightOverride());
+            vo.setSortOrder(relation.getSortOrder());
+            result.add(vo);
+        }
+        return result;
+    }
+
+    private Map<String, String> mergeTagsByType(List<TsStoryFullGeneratePresetTagVo> presetTags) {
+        Map<String, LinkedHashSet<String>> grouped = new HashMap<>();
+        if (presetTags != null) {
+            for (TsStoryFullGeneratePresetTagVo item : presetTags) {
                 if (item == null) {
                     continue;
                 }
-                String key = PromptRuntimeUtil.trimToNull(String.valueOf(item));
-                if (StringUtils.hasText(key)) {
-                    requiredFields.add(key);
+                String typeId = PromptRuntimeUtil.trimToNull(item.getTypeId());
+                String tagName = PromptRuntimeUtil.trimToNull(item.getTagName());
+                if (!StringUtils.hasText(typeId) || !StringUtils.hasText(tagName)) {
+                    continue;
                 }
+                grouped.computeIfAbsent(typeId, key -> new LinkedHashSet<>()).add(tagName);
             }
-            return requiredFields;
-        } catch (Exception ex) {
-            log.warn("Failed to extract required fields from tool_schema, reason={}", ex.getMessage());
-            return requiredFields;
         }
+        Map<String, String> merged = new HashMap<>();
+        for (Map.Entry<String, LinkedHashSet<String>> entry : grouped.entrySet()) {
+            merged.put(entry.getKey(), String.join(", ", entry.getValue()));
+        }
+        return merged;
     }
 
-    private PromptTemplateRef resolveJsonRepairTemplateRef() {
-        AiragApp app = resolvePromptApp();
-        if (!StringUtils.hasText(app.getMetadata())) {
-            throw new JeecgBootBizTipException("当前AI应用未配置JSON修复模板信息，缺少metadata，appId=" + app.getId());
-        }
-        try {
-            JSONObject metadata = JSONObject.parseObject(app.getMetadata());
-            if (metadata == null) {
-                throw new JeecgBootBizTipException("当前AI应用metadata为空对象，无法解析JSON修复模板，appId=" + app.getId());
-            }
-
-            PromptTemplateRef ref = firstNonNull(
-                    parseTemplateRef(metadata.get(METADATA_TOOLCALL_REPAIR_PROMPT_KEY)),
-                    parseTemplateRef(metadata.get(METADATA_JSON_REPAIR_PROMPT_KEY)),
-                    parseTemplateRef(metadata.get(METADATA_STORY_REPAIR_PROMPT_KEY)));
-
-            if (ref == null || !StringUtils.hasText(ref.code()) || !StringUtils.hasText(ref.version())) {
-                throw new JeecgBootBizTipException(
-                        "JSON修复模板配置不完整，请在app metadata中配置code+version（支持 "
-                                + METADATA_TOOLCALL_REPAIR_PROMPT_KEY + " / "
-                                + METADATA_JSON_REPAIR_PROMPT_KEY + " / "
-                                + METADATA_STORY_REPAIR_PROMPT_KEY + "）");
-            }
-            return ref;
-        } catch (JeecgBootBizTipException ex) {
-            throw ex;
-        } catch (Exception ex) {
-            throw new JeecgBootBizTipException("解析JSON修复模板配置失败，appId=" + app.getId()
-                    + "，reason=" + ex.getMessage());
-        }
+    private Map<String, String> buildStoryFullPresetVars(TsStoryFullGenerateDto dto,
+                                                         TsPreset preset,
+                                                         Map<String, String> tagsByType) {
+        Map<String, String> vars = new HashMap<>();
+        vars.put("preset_name", PromptRuntimeUtil.nullableToken(preset == null ? null : preset.getName()));
+        vars.put("preset_description", PromptRuntimeUtil.nullableToken(preset == null ? null : preset.getDescription()));
+        vars.put("title", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_TITLE)));
+        vars.put("narrative_style", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_NARRATIVE_STYLE)));
+        vars.put("story_background", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_STORY_BACKGROUND)));
+        vars.put("user_role", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_USER_ROLE)));
+        vars.put("story_rule", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_STORY_RULE)));
+        vars.put("boundary_rule", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_BOUNDARY_RULE)));
+        vars.put("location", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_LOCATION)));
+        vars.put("time_period", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_TIME_PERIOD)));
+        vars.put("plot_hook", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_PLOT_HOOK)));
+        vars.put("conflict", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_CONFLICT)));
+        vars.put("progression_mode", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_PROGRESSION_MODE)));
+        vars.put("extra_requirements", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getExtraRequirements()));
+        return vars;
     }
 
-    @SafeVarargs
-    private final <T> T firstNonNull(T... values) {
-        if (values == null) {
-            return null;
-        }
-        for (T value : values) {
-            if (value != null) {
-                return value;
-            }
-        }
-        return null;
+    private JSONObject callPromptChatWithSchemaRepair(PromptRenderedSectionsVo sections, String scene) {
+        return toolcallJsonRepairService.chatToolCallWithSchemaRepair(sections, scene);
     }
 
     private PromptTemplateRef resolvePromptTemplateRef(TemplateScene scene) {
@@ -492,10 +679,6 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         return value.trim();
     }
 
-    private String jsonRepairTemplatePath(PromptTemplateRef ref) {
-        return TOOLCALL_REPAIR_PROMPT_DIR + ref.code() + "_" + ref.version() + ".txt";
-    }
-
     private enum TemplateScene {
         SETTING("setting", "storySettingPromptCode", "storySettingPromptVersion"),
         SCENE("scene", "storyScenePromptCode", "storyScenePromptVersion"),
@@ -525,9 +708,6 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     }
 
     private record PromptTemplateRef(String code, String version) {
-        private String templatePath() {
-            return "prompts/story/" + code + "_" + version + ".txt";
-        }
     }
 
     /**

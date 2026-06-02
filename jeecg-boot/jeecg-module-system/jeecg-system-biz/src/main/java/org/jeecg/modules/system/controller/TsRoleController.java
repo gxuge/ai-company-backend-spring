@@ -65,6 +65,12 @@ public class TsRoleController {
     public Result<TsRoleOneClickSettingGenerateVo> generateRoleSetting(@RequestBody TsRoleOneClickSettingGenerateDto request) {
         return tsRoleService.generateRoleSetting(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
     }
+
+    @Operation(summary = "Role one-click setting generate preset")
+    @PostMapping("/ts-roles/one-click-setting-preset")
+    public Result<TsRoleOneClickSettingGenerateVo> generateRoleSettingPreset(@RequestBody TsRoleOneClickSettingGenerateDto request) {
+        return tsRoleService.generateRoleSettingPreset(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
+    }
     @Operation(summary = "Role one-click image generate")
     @PostMapping("/ts-roles/one-click-image")
     public Result<TsRoleOneClickImageGenerateVo> generateRoleImage(@RequestBody TsRoleOneClickImageGenerateDto request) {

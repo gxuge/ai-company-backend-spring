@@ -16,11 +16,13 @@ SECTION::developer_prompt
 3. 若原始内容缺少required字段，按上下文补齐最合理值。
 4. 禁止输出 schema 之外的包装结构。
 5. 仅允许输出与该 tool schema 兼容的字段，不得新增无关字段。
+6. required_field_hints 是对 required 字段的描述提示，修复时必须严格参考。
 
 SECTION::user_prompt_template
 {
   "scene": "{{scene}}",
   "required_fields": "{{required_fields}}",
+  "required_field_hints": "{{required_field_hints}}",
   "tool_schema": {{tool_schema}},
   "raw_content": {{raw_content}}
 }

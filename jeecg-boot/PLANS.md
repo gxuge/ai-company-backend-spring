@@ -250,3 +250,38 @@
 - 已在 `llm.adapter` 目录落地 provider 参数适配骨架，包含 capability/normalizer/adapter/registry/service。
 - 已接入 `AIChatHandler` 的 `completions/chat` 主链路，实现调用前统一适配与 warning 留痕。
 - 已优先实现 `deepseek/minimax/gemini` 三类 provider 规则，后续新增 provider 仅需新增 adapter。
+
+### 任务 ID
+`20260601-ts-story-full-generate-v1`
+
+### 背景
+- 前端需要“故事全量生成”能力：随机选中 story 预设并读取绑定标签，先完成模板变量替换，再串联现有故事设定/场景/大纲生成链路。
+- 章节模式下，按产品规则允许先跳过大纲自动填充。
+
+### 目标
+- 新增聚合接口 `POST /sys/ts-stories/story-full-generate`。
+- 出参与现有单字段生成保持一致（设定/场景/大纲 VO 不变，聚合返回）。
+- 新增一个前置编排 Prompt 模板（toolcall 输出结构化字段）。
+
+### 范围
+- 范围内：
+  - `TsStoryController`、`ITsStoryService`、`TsStoryServiceImpl`
+  - `ITsStoryGenerateService`、`TsStoryGenerateServiceImpl`
+  - `dto/tsstory`、`vo/tsstory`
+  - `resources/prompts/story/story_full_generate_v1.txt`
+  - `docs/api/ts-api.md`、`docs/changelog.md`
+- 范围外：
+  - 前端 UI 逻辑调整
+  - 数据库表结构变更
+
+### 执行步骤
+1. 新增 full-generate DTO/VO 与 Controller/Service 接口。
+2. 实现随机 story 预设 + 绑定标签查询 + `{{ value }}` 替换。
+3. 使用新模板做 toolcall 预编排，再复用现有设定/场景/大纲生成。
+4. 同步 API 文档与变更记录，并做编译验证。
+
+### 进度
+- [x] 步骤 1
+- [x] 步骤 2
+- [x] 步骤 3
+- [x] 步骤 4

@@ -51,6 +51,11 @@ public interface ITsRoleService extends IService<TsRole> {
     Result<TsRoleOneClickSettingGenerateVo> generateRoleSetting(LoginUser user, TsRoleOneClickSettingGenerateDto request);
 
     /**
+     * 一键补全角色设定（预设版）。
+     */
+    Result<TsRoleOneClickSettingGenerateVo> generateRoleSettingPreset(LoginUser user, TsRoleOneClickSettingGenerateDto request);
+
+    /**
      * 一键生成角色形象。
      */
     Result<TsRoleOneClickImageGenerateVo> generateRoleImage(LoginUser user, TsRoleOneClickImageGenerateDto request);

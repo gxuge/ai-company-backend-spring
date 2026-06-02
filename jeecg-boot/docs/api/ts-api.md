@@ -53,13 +53,51 @@
 | POST | `/ts-role-image-generate-records` | 新增角色生图记录 |
 | GET | `/ts-stories` | 查询故事列表 |
 | POST | `/ts-stories` | 新增故事 |
-| POST | `/ts-stories/story-setting-generate` | 故事设定生成（标题/简介/设定/背景，按模板+模型返回结构化字段） |
-| POST | `/ts-stories/story--scene-generate` | 场所设定生成（场所快照名/场景摘要/场景元素） |
-| POST | `/ts-stories/story--outline-generate` | 剧情大纲生成（支持 `storySetting/sceneSetting` 缺省，按上下文补全章节） |
+| POST | `/ts-stories/story-full-generate` | 故事全量生成（旧入口，当前复用 preset 全量链路；返回核心5字段与分段结果） |
+| POST | `/ts-stories/story-full-generate-preset` | 故事全量生成（预设版）：随机 story 预设+绑定标签映射填充核心模板，统一串联设定/场景/大纲生成 |
 | GET | `/ts-story-chapters` | 查询章节列表 |
 | POST | `/ts-story-chapters` | 新增章节 |
 
-### 3.3 音色与资产（`TsVoiceProfileController` / `TsVoiceTagController` / `TsUserVoiceConfigController` / `TsUserImageAssetController`）
+### 3.3 AI Prompt 模板驱动接口（重点）
+
+以下接口均走 Prompt 模板 + ToolCall 结构化输出链路，模板通过 AI 应用 metadata 的 `code+version` 定位，失败时进入 JSON Repair 修复链路。
+
+#### 3.3.1 `POST /ts-stories/story-full-generate`
+- 用途：故事核心字段生成（旧链路入口，当前复用 full preset 生成逻辑）。
+- 请求体（`TsStoryFullGenerateDto`）：
+  - `storyId?: number`
+  - `storyMode?: 'normal' | 'chapter'`
+  - `templateText?: string`
+  - `extraRequirements?: string`
+  - `skipOutlineWhenChapter?: boolean`
+- 响应体关键字段（`TsStoryFullGenerateVo`）：
+  - 核心5字段：`title`、`storyIntro`、`storySetting`、`siteSetting`、`plotOutline`
+  - 生成分段结果：`settingResult`、`sceneResult`、`outlineResult`
+  - 模板追踪：`promptCode`、`promptVersion`、`renderedPrompt`、`snapshotKey`
+- 前端回填建议（当前约定）：
+  - 仅当前-故事设定：只取 `storySetting`
+  - 仅当前-场景设定：只取 `siteSetting`
+  - 仅当前-剧情大纲：只取 `plotOutline`（chapter 模式优先 `outlineResult.chapters`）
+
+#### 3.3.2 `POST /ts-stories/story-full-generate-preset`
+- 用途：全量生成入口（随机选一个 `story` 预设并读取绑定标签，按模板映射生成核心字段）。
+- 预设与标签取值方式：
+  - 从 `ts_preset` 选 `target_type='story' and enabled=1`
+  - 通过 `ts_preset_tag` 读取关系
+  - 通过 `ts_tag` 读取标签，并按 `type_id` 分组去重聚合
+- 请求体：同 `TsStoryFullGenerateDto`
+- 响应体：同 `TsStoryFullGenerateVo`，额外包含：
+  - `presetId`、`presetName`、`presetDescription`
+  - `presetTags[]`
+
+#### 3.3.3 模板解析与修复约束
+- 模板来源：
+  - 故事模板：`storyPromptTemplate` / `storyPromptTemplates.*` / 场景级 code+version
+  - 修复模板：`toolcallJsonRepairPromptTemplate` / `jsonRepairPromptTemplate` / `storyJsonRepairPromptTemplate`
+- ToolCall required 字段校验失败时，必须进入修复链路并再次校验。
+- 修复变量至少包含：`scene`、`raw_content`、`tool_schema`、`required_fields`、`required_field_hints`。
+
+### 3.4 音色与资产（`TsVoiceProfileController` / `TsVoiceTagController` / `TsUserVoiceConfigController` / `TsUserImageAssetController`）
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/ts-voice-profiles` | 查询音色档案列表 |

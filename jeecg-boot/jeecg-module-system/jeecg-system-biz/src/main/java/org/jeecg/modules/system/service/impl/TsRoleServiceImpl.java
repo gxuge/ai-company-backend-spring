@@ -114,6 +114,11 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
         return Result.OK(tsRoleGenerateService.generateRoleSetting(user, request));
     }
 
+    @Override
+    public Result<TsRoleOneClickSettingGenerateVo> generateRoleSettingPreset(LoginUser user, TsRoleOneClickSettingGenerateDto request) {
+        return Result.OK(tsRoleGenerateService.generateRoleSettingPreset(user, request));
+    }
+
     /**
      * 一键生成角色形象。
      */

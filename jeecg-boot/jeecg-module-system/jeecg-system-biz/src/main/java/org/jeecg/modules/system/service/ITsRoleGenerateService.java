@@ -22,6 +22,11 @@ public interface ITsRoleGenerateService {
     TsRoleOneClickSettingGenerateVo generateRoleSetting(LoginUser user, TsRoleOneClickSettingGenerateDto request);
 
     /**
+     * 一键补全角色设定（预设版：读取人物预设标签后生成）。
+     */
+    TsRoleOneClickSettingGenerateVo generateRoleSettingPreset(LoginUser user, TsRoleOneClickSettingGenerateDto request);
+
+    /**
      * 一键生成角色形象。
      */
     TsRoleOneClickImageGenerateVo generateRoleImage(LoginUser user, TsRoleOneClickImageGenerateDto request);

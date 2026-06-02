@@ -1,0 +1,125 @@
+TEMPLATE_BEGIN::role_core_fill_preset::v2
+SECTION::meta
+code=role_core_fill_preset
+version=v2
+scenario=role
+description=Generate role core fields with preset tags via tool call.
+output_mode=tool_call
+tool_name=submit_role_core_fill
+strict=true
+
+SECTION::developer_prompt
+你是“角色设定导演”。
+目标：基于「用户输入 + 人物预设标签」生成可直接用于后续“形象生成+声音生成+剧情对话”的角色核心设定。
+规则：
+1. 必须通过 tool call 输出，禁止输出普通解释文本。
+2. 仅允许调用一次工具：submit_role_core_fill。
+3. 输入变量中若出现字面量 null，表示该字段缺失，需要你补全。
+4. 输入里非 null 字段视为用户已确认设定，必须保留原意，不得改写成相反设定。
+5. 输出必须包含 role_name、gender、occupation、background_story 四个字段（变量名不得改变）。
+6. 输入gender 仅允许 male/female/unknown。输出gender 仅允许 male/female。
+7. role_name 若非 null 必须原样输出；occupation 若非 null 必须原样输出；background_story 若非 null 必须保留核心语义。
+8. 当 role_name/gender/occupation/background_story 为空时，可参考 preset_tags_by_type 与 preset_prompt_by_type 进行补全。
+9. background_story 使用中文 120-260 字，必须包含：成长经历、当前处境、性格动机、一个可延展剧情钩子。
+10. 风格需综合 style_hint、keywords 与预设标签；除参数值外，输出内容必须使用中文。
+
+SECTION::user_prompt_template
+{
+  "输入参数": {
+    "role_name": {
+      "value": "{{role_name}}",
+      "含义": "角色名称；若非 null，视为已确认设定并保留原意"
+    },
+    "gender": {
+      "value": "{{gender}}",
+      "含义": "角色性别；仅允许 male/female/unknown，若为 null 需要补全"
+    },
+    "occupation": {
+      "value": "{{occupation}}",
+      "含义": "角色职业；需与背景经历和人物气质一致"
+    },
+    "background_story": {
+      "value": "{{background_story}}",
+      "含义": "角色背景故事；若为 null 需要生成完整可扩展设定"
+    },
+    "style_hint": {
+      "value": "{{style_hint}}",
+      "含义": "风格偏好提示；用于影响设定文风与人物质感"
+    },
+    "keywords": {
+      "value": "{{keywords}}",
+      "含义": "角色关键词；用于补充性格标签与剧情钩子"
+    },
+    "preset_name": {
+      "value": "{{preset_name}}",
+      "含义": "命中的人物预设名称"
+    },
+    "preset_description": {
+      "value": "{{preset_description}}",
+      "含义": "命中的人物预设描述"
+    },
+    "preset_tags_by_type": {
+      "value": "{{preset_tags_by_type}}",
+      "含义": "按标签类型聚合后的标签名映射（JSON字符串）"
+    },
+    "preset_prompt_by_type": {
+      "value": "{{preset_prompt_by_type}}",
+      "含义": "按标签类型聚合后的提示词映射（JSON字符串）"
+    }
+  }
+}
+
+SECTION::tool_schema
+{
+  "name": "submit_role_core_fill",
+  "description": "提交角色核心设定结果。严格要求：必须仅通过 tool call 返回结构化 JSON 参数，不得输出解释、Markdown 或其他前后缀文本；JSON 字段名必须与 schema 一致，禁止新增未定义字段；required 字段必须全部返回，枚举值必须严格命中 schema。",
+  "output_extract": {
+    "role_name": "角色名称。",
+    "gender": "角色性别。",
+    "occupation": "角色职业。",
+    "background_story": "角色背景故事正文。",
+    "reason": "可选说明。"
+  },
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "role_name": {
+        "type": "string",
+        "description": "角色名称，要求可读且具辨识度",
+        "maxLength": 50
+      },
+      "gender": {
+        "type": "string",
+        "description": "角色性别枚举",
+        "oneOf": [
+          { "const": "male", "description": "男性" },
+          { "const": "female", "description": "女性" }
+        ]
+      },
+      "occupation": {
+        "type": "string",
+        "description": "角色职业，与背景经历和能力一致",
+        "maxLength": 50
+      },
+      "background_story": {
+        "type": "string",
+        "description": "角色背景故事，120-260个中文字符，包含成长经历、当前处境、性格动机、剧情钩子",
+        "minLength": 120,
+        "maxLength": 260
+      },
+      "reason": {
+        "type": "string",
+        "description": "可选：简述本次设定生成依据",
+        "maxLength": 200
+      }
+    },
+    "required": [
+      "role_name",
+      "gender",
+      "occupation",
+      "background_story"
+    ]
+  }
+}
+TEMPLATE_END::role_core_fill_preset::v2

@@ -98,8 +98,6 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
     private static final String PROMPT_CODE_REPLY_SUGGESTIONS = "chat_reply_suggestions";
     /** 候选回复模板版本。 */
     private static final String PROMPT_VERSION = "v2";
-    /** 候选回复模板路径。 */
-    private static final String PROMPT_PATH_REPLY_SUGGESTIONS = "prompts/chat/chat_reply_suggestions_v2.txt";
     /** 候选回复快照缓存前缀。 */
     private static final String REDIS_SNAPSHOT_PREFIX = "ts:chat:generate:snapshot:";
     /** 候选回复快照缓存 TTL（小时）。 */
@@ -400,7 +398,8 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         variables.put("last_assistant_message", PromptRuntimeUtil.nullableToken(lastAssistantMessage));
         variables.put("recent_messages_block", PromptRuntimeUtil.nullableToken(recentMessagesBlock));
 
-        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(PROMPT_PATH_REPLY_SUGGESTIONS, variables);
+        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
+                PROMPT_CODE_REPLY_SUGGESTIONS, PROMPT_VERSION, variables);
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, promptSections);
 

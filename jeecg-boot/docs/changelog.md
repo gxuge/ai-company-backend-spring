@@ -29,3 +29,5 @@
 - [2026-04-02] [feat] [ts-role] 新增 `POST /sys/ts-roles/generate-role` 随机完整角色编排接口（设定+形象+声音），`storySetting/storyBackground` 改为非必填，并新增模板 `role_generate_role_v1`
 - [2026-04-14] [feat] [ts-voice] 新增“我的音色库”接口：`GET /sys/ts-user-voice-profiles`、`PUT /sys/ts-user-voice-profiles/{id}`、`DELETE /sys/ts-user-voice-profiles/{id}`，并同步 `docs/api/ts-api.md` 与 `db/ai-company.sql`
 - [2026-05-25] [refactor] [airag-llm] 新增 `llm.adapter` 参数适配层（capability/normalizer/registry/adapter），并接入 `AIChatHandler` 的 `completions/chat` 调用链，优先支持 `DEEPSEEK/MINIMAX/GEMINI` 的参数裁剪与映射
+- [2026-06-01] [feat] [ts-story] 新增 `POST /sys/ts-stories/story-full-generate`：随机选取 story 预设并读取绑定标签，先做 `{{ value }}` 模板替换与 toolcall 预编排，再串联现有故事设定/场景/大纲生成（chapter 模式支持跳过大纲）
+- [2026-06-01] [feat] [ts-story] 新增 `POST /sys/ts-stories/story-full-generate-preset`：按预设绑定标签映射填充 5 字段模板并统一串联设定/场景/大纲；删除对外 `story-setting-generate`/`story--scene-generate`/`story--outline-generate`；toolcall 修复链路补充 `required_field_hints`

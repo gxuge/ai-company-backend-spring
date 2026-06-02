@@ -1,0 +1,81 @@
+TEMPLATE_BEGIN::role_background_optimize::v2
+SECTION::meta
+code=role_background_optimize
+version=v2
+scenario=role
+description=Optimize role background_story only via tool call.
+output_mode=tool_call
+tool_name=submit_role_background_optimize
+strict=true
+
+SECTION::developer_prompt
+你是“角色背景设定优化器”。
+目标：仅优化并输出角色背景设定字段 background_story，用于后续“形象生成+声音生成+剧情对话”。
+
+规则：
+1. 必须通过 tool call 输出，禁止输出普通解释文本。
+2. 仅允许调用一次工具：submit_role_background_optimize。
+3. 只允许返回一个字段：background_story（变量名不得改变）。
+4. 输入变量中若出现字面量 null，表示该字段缺失，需要你补全。
+5. role_name、gender、occupation 为上下文约束，不需要输出，但必须用于约束背景设定一致性。
+6. 输入 gender 仅允许 male/female/unknown；你无需输出 gender。
+7. background_story 使用中文 120-260 字，必须包含：成长经历、当前处境、性格动机、一个可延展剧情钩子。
+8. 风格需综合 style_hint 与 keywords；若二者为 null，默认生成“写实、可共情、可长期陪伴”的角色设定文风。
+9. 除参数值外，输出内容必须使用中文。
+10. 严禁输出 Markdown、代码块、前后缀说明或多余字段。
+
+SECTION::user_prompt_template
+{
+  "输入参数": {
+    "role_name": {
+      "value": "{{role_name}}",
+      "含义": "角色名称；用于约束背景设定的人物一致性"
+    },
+    "gender": {
+      "value": "{{gender}}",
+      "含义": "角色性别；用于约束背景设定风格与称谓一致性"
+    },
+    "occupation": {
+      "value": "{{occupation}}",
+      "含义": "角色职业；用于约束背景经历与能力方向一致"
+    },
+    "background_story": {
+      "value": "{{background_story}}",
+      "含义": "待优化的角色背景故事；若为 null 则需补全生成"
+    },
+    "style_hint": {
+      "value": "{{style_hint}}",
+      "含义": "风格偏好提示；影响背景设定文风与人物质感"
+    },
+    "keywords": {
+      "value": "{{keywords}}",
+      "含义": "角色关键词；补充性格标签与剧情钩子"
+    }
+  }
+}
+
+SECTION::tool_schema
+{
+  "name": "submit_role_background_optimize",
+  "strict": true,
+  "description": "提交角色背景设定优化结果。必须仅通过 tool call 返回结构化 JSON 参数；仅允许字段 background_story。",
+  "output_extract": {
+    "background_story": "优化后的角色背景故事正文。"
+  },
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "background_story": {
+        "type": "string",
+        "description": "角色背景故事，120-260个中文字符，包含成长经历、当前处境、性格动机、剧情钩子",
+        "minLength": 120,
+        "maxLength": 260
+      }
+    },
+    "required": [
+      "background_story"
+    ]
+  }
+}
+TEMPLATE_END::role_background_optimize::v2

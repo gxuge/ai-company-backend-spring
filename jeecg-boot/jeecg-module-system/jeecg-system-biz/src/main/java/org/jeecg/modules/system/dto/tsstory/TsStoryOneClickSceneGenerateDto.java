@@ -5,6 +5,9 @@ import org.springframework.util.StringUtils;
 
 @Data
 public class TsStoryOneClickSceneGenerateDto {
+    public static final String TEMPLATE_MODE_CORE = "core";
+    public static final String TEMPLATE_MODE_SITE_SETTING_OPTIMIZE = "site_setting_optimize";
+
     /** Story title for prompt context. */
     private String title;
     /** Story mode: normal/chapter. */
@@ -17,6 +20,8 @@ public class TsStoryOneClickSceneGenerateDto {
     private String sceneSetting;
     /** Optional style hint. */
     private String styleHint;
+    /** 模板模式：core（默认）/site_setting_optimize（仅优化场景设定） */
+    private String templateMode;
 
     public void normalize() {
         this.title = trimToNull(this.title);
@@ -25,6 +30,7 @@ public class TsStoryOneClickSceneGenerateDto {
         this.storyBackground = trimToNull(this.storyBackground);
         this.sceneSetting = trimToNull(this.sceneSetting);
         this.styleHint = trimToNull(this.styleHint);
+        this.templateMode = normalizeTemplateMode(this.templateMode);
     }
 
     private static String trimToNull(String value) {
@@ -45,5 +51,21 @@ public class TsStoryOneClickSceneGenerateDto {
             return lower;
         }
         return null;
+    }
+
+    private static String normalizeTemplateMode(String value) {
+        String normalized = trimToNull(value);
+        if (!StringUtils.hasText(normalized)) {
+            return TEMPLATE_MODE_CORE;
+        }
+        String lower = normalized.toLowerCase();
+        if (TEMPLATE_MODE_SITE_SETTING_OPTIMIZE.equals(lower)) {
+            return TEMPLATE_MODE_SITE_SETTING_OPTIMIZE;
+        }
+        return TEMPLATE_MODE_CORE;
+    }
+
+    public boolean isSiteSettingOptimizeMode() {
+        return TEMPLATE_MODE_SITE_SETTING_OPTIMIZE.equals(this.templateMode);
     }
 }
