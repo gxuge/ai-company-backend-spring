@@ -29,12 +29,12 @@
 
   const displayContent = computed(() => {
     if (!isFormatted.value) {
-      return content.value || '';
+      return normalizeEscapedText(content.value || '');
     }
     try {
-      return JSON.stringify(JSON.parse(content.value), null, 2);
+      return normalizeEscapedText(JSON.stringify(JSON.parse(content.value), null, 2));
     } catch (e) {
-      return content.value || '';
+      return normalizeEscapedText(content.value || '');
     }
   });
 
@@ -47,6 +47,14 @@
     content.value = data?.content || '';
     isFormatted.value = true;
   });
+
+  function normalizeEscapedText(value: string) {
+    if (!value) return '';
+    return value
+      .replace(/\\r\\n/g, '\n')
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, '  ');
+  }
 </script>
 
 <style scoped lang="less">

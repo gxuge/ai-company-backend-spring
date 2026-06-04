@@ -35,6 +35,7 @@ import org.jeecg.modules.system.mapper.TsStoryMapper;
 import org.jeecg.modules.system.mapper.TsStoryRoleRelMapper;
 import org.jeecg.modules.system.mapper.TsUserVoiceConfigMapper;
 import org.jeecg.modules.system.mapper.TsVoiceProfileMapper;
+import org.jeecg.modules.system.monitor.TsAiLogCollector;
 import org.jeecg.modules.system.service.ITsChatAiReplyService;
 import org.jeecg.modules.system.util.ChatGenerateSnapshotUtil;
 import org.jeecg.modules.system.util.PromptRuntimeUtil;
@@ -101,11 +102,11 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
     /** Prompt 指令：输出格式约束。 */
     private static final String PROMPT_OUTPUT_RULE = "请直接回复可读文本，不要输出JSON。";
     /** 候选回复模板编码。 */
-    private static final String PROMPT_CODE_REPLY_SUGGESTIONS = "chat_reply_suggestions";
+    private static final String PROMPT_CODE_REPLY_SUGGESTIONS = "chat_session_reply_suggestions_multi_role";
     /** 多角色聊天模板编码。 */
     private static final String PROMPT_CODE_TEMPLATE_REPLY = "chat_session_reply_multi_role";
     /** 候选回复模板版本。 */
-    private static final String PROMPT_VERSION = "v2";
+    private static final String PROMPT_VERSION = "v1";
     /** 多角色聊天模板版本。 */
     private static final String PROMPT_VERSION_TEMPLATE_REPLY = "v1";
     /** 候选回复快照缓存前缀。 */
@@ -156,6 +157,8 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
 
     @Resource
     private RedisTemplate<String, Object> redisTemplate;
+    @Resource
+    private TsAiLogCollector tsAiLogCollector;
 
     /**
      * 在会话内完成“用户消息入库 + AI 文本生成 + 语音合成 + 附件落库”的编排流程。
@@ -225,8 +228,10 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
 
         MiniMaxChatRequestDto chatRequest = new MiniMaxChatRequestDto();
         chatRequest.setPrompt(promptBuilder.toString());
+        logPlainChatRequest(sessionId, request, historyMessages, userContent, chatRequest.getPrompt());
         MiniMaxChatResponseVo chatResponse = miniMaxDemoService.chat(chatRequest);
         String assistantContent = chatResponse == null ? null : chatResponse.getContent();
+        logPlainChatResponse(assistantContent);
         if (!StringUtils.hasText(assistantContent)) {
             throw new JeecgBootException("AI回复为空，请稍后重试");
         }
@@ -276,21 +281,23 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
             ttsRequest.setSpeed(request.getSpeed());
             ttsRequest.setPitch(request.getPitch());
             ttsRequest.setVolume(request.getVolume());
+            logTtsRequest(ttsRequest, resolvedVoiceProfileId, voiceMatchSource);
             ttsResponse = miniMaxDemoService.tts(ttsRequest);
             audioUrl = ttsResponse == null ? null : ttsResponse.getAudioUrl();
-        if (!StringUtils.hasText(audioUrl)) {
-            throw new JeecgBootException("语音生成成功但未返回可播放地址，请检查 AIRAG_MINIMAX_UPLOAD_GENERATED_MEDIA 配置");
-        }
+            logTtsResponse(ttsResponse, audioUrl);
+            if (!StringUtils.hasText(audioUrl)) {
+                throw new JeecgBootException("语音生成成功但未返回可播放地址，请检查 AIRAG_MINIMAX_UPLOAD_GENERATED_MEDIA 配置");
+            }
 
-        assistantContentJson = new JSONObject();
-        assistantContentJson.put("audioUrl", audioUrl);
-        assistantContentJson.put("voiceId", resolvedVoiceId);
-        assistantContentJson.put("voiceProfileId", resolvedVoiceProfileId);
-        assistantContentJson.put("matchSource", voiceMatchSource);
-        assistantContentJson.put("speed", request.getSpeed());
-        assistantContentJson.put("pitch", request.getPitch());
-        assistantContentJson.put("volume", request.getVolume());
-        assistantContentJson.put("mimeType", MIME_TYPE_AUDIO_MPEG);
+            assistantContentJson = new JSONObject();
+            assistantContentJson.put("audioUrl", audioUrl);
+            assistantContentJson.put("voiceId", resolvedVoiceId);
+            assistantContentJson.put("voiceProfileId", resolvedVoiceProfileId);
+            assistantContentJson.put("matchSource", voiceMatchSource);
+            assistantContentJson.put("speed", request.getSpeed());
+            assistantContentJson.put("pitch", request.getPitch());
+            assistantContentJson.put("volume", request.getVolume());
+            assistantContentJson.put("mimeType", MIME_TYPE_AUDIO_MPEG);
         }
 
         TsChatMessage assistantMessage = new TsChatMessage();
@@ -374,7 +381,7 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
             throw new JeecgBootException("会话不存在或无权限访问");
         }
 
-        Long resolvedActiveRoleId = dto.getActiveRoleId() != null ? dto.getActiveRoleId() : session.getTargetRoleId();
+        Long resolvedActiveRoleId = dto.getActiveRoleId() != null ? dto.getActiveRoleId() : resolveSessionActiveRoleId(session);
         if (resolvedActiveRoleId == null) {
             throw new JeecgBootException("当前会话未指定发言角色，请先传activeRoleId");
         }
@@ -386,6 +393,7 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
 
         List<TsChatMessage> historyMessages = tsChatMessageMapper.selectRecentMessages(sessionId, dto.getHistoryCount());
         String recentMessagesBlock = buildRecentMessagesBlock(historyMessages);
+        String lastAssistantMessage = resolveLastAssistantMessage(user.getId(), sessionId, dto.getLastAssistantMessageId());
 
         TsStory story = null;
         if (session.getStoryId() != null) {
@@ -414,8 +422,9 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         variables.put("title", PromptRuntimeUtil.nullableToken(story == null ? null : story.getTitle()));
         variables.put("story_intro", PromptRuntimeUtil.nullableToken(story == null ? null : story.getStoryIntro()));
         variables.put("story_setting", PromptRuntimeUtil.nullableToken(story == null ? null : story.getStorySetting()));
-        variables.put("site_setting", PromptRuntimeUtil.nullableToken(story == null ? null : story.getSceneNameSnapshot()));
-        variables.put("plot_outline", PromptRuntimeUtil.nullableToken(story == null ? null : story.getRemark()));
+        variables.put("site_setting", PromptRuntimeUtil.nullableToken(story == null ? null : story.getSiteSetting()));
+        variables.put("plot_outline", PromptRuntimeUtil.nullableToken(story == null ? null : story.getPlotOutline()));
+        variables.put("last_assistant_message", PromptRuntimeUtil.nullableToken(lastAssistantMessage));
         variables.put("recent_messages_block", PromptRuntimeUtil.nullableToken(recentMessagesBlock));
         variables.put("user_input", PromptRuntimeUtil.nullableToken(userInput));
 
@@ -455,6 +464,7 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         snapshot.put("activeRoleName", activeRole.getRoleName());
         snapshot.put("storyId", story == null ? null : story.getId());
         snapshot.put("otherRolesBlock", otherRolesBlock);
+        snapshot.put("lastAssistantMessage", lastAssistantMessage);
         snapshot.put("recentMessagesBlock", recentMessagesBlock);
         snapshot.put("userInput", userInput);
         snapshot.put("assistantContent", assistantContent);
@@ -474,6 +484,25 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         response.setSnapshotKey(snapshotKey);
         response.setCreatedAt(assistantMessage.getCreatedAt());
         return Result.OK("生成成功", response);
+    }
+
+    private String resolveLastAssistantMessage(String userId, Long sessionId, Long lastAssistantMessageId) {
+        if (lastAssistantMessageId == null) {
+            return null;
+        }
+        TsChatMessage focusMessage = tsChatMessageMapper.selectOwnedById(lastAssistantMessageId, userId);
+        if (focusMessage == null || !sessionId.equals(focusMessage.getSessionId())) {
+            throw new JeecgBootException("lastAssistantMessageId不属于当前会话");
+        }
+        String senderType = PromptRuntimeUtil.trimToNull(focusMessage.getSenderType());
+        if (!StringUtils.hasText(senderType)) {
+            throw new JeecgBootException("lastAssistantMessageId不是有效的助手消息");
+        }
+        String normalizedSenderType = senderType.toLowerCase(Locale.ROOT);
+        if (!SENDER_TYPE_ROLE.equals(normalizedSenderType) && !SENDER_TYPE_SYSTEM.equals(normalizedSenderType)) {
+            throw new JeecgBootException("lastAssistantMessageId不是有效的助手消息");
+        }
+        return PromptRuntimeUtil.trimToNull(focusMessage.getContentText());
     }
 
     /**
@@ -498,17 +527,14 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         List<TsChatMessage> historyMessages = tsChatMessageMapper.selectRecentMessages(sessionId, dto.getHistoryCount());
         String recentMessagesBlock = buildRecentMessagesBlock(historyMessages);
 
-        String roleName = null;
-        if (session.getTargetRoleId() != null) {
-            TsRole role = tsRoleMapper.selectOwned(session.getTargetRoleId(), user.getId());
-            roleName = role == null ? null : PromptRuntimeUtil.trimToNull(role.getRoleName());
+        TsStory story = null;
+        if (session.getStoryId() != null) {
+            story = tsStoryMapper.selectOwned(session.getStoryId(), user.getId());
         }
 
-        String storyTitle = null;
-        if (session.getStoryId() != null) {
-            TsStory story = tsStoryMapper.selectOwned(session.getStoryId(), user.getId());
-            storyTitle = story == null ? null : PromptRuntimeUtil.trimToNull(story.getTitle());
-        }
+        Long activeRoleId = resolveSessionActiveRoleId(session);
+        TsRole activeRole = activeRoleId == null ? null : tsRoleMapper.selectOwned(activeRoleId, user.getId());
+        String otherRolesBlock = buildOtherRolesBlock(user.getId(), story == null ? null : story.getId(), activeRoleId);
 
         String lastAssistantMessage = null;
         if (dto.getLastAssistantMessageId() != null) {
@@ -520,13 +546,19 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         }
 
         Map<String, String> variables = new HashMap<>();
-        variables.put("session_id", String.valueOf(sessionId));
-        variables.put("role_name", PromptRuntimeUtil.nullableToken(roleName));
-        variables.put("story_title", PromptRuntimeUtil.nullableToken(storyTitle));
-        variables.put("session_type", PromptRuntimeUtil.nullableToken(session.getSessionType()));
-        variables.put("user_draft", PromptRuntimeUtil.nullableToken(dto.getUserDraft()));
+        variables.put("role_name", PromptRuntimeUtil.nullableToken(activeRole == null ? null : activeRole.getRoleName()));
+        variables.put("gender", PromptRuntimeUtil.nullableToken(activeRole == null ? null : activeRole.getGender()));
+        variables.put("occupation", PromptRuntimeUtil.nullableToken(activeRole == null ? null : activeRole.getOccupation()));
+        variables.put("background_story", PromptRuntimeUtil.nullableToken(activeRole == null ? null : activeRole.getBackgroundStory()));
+        variables.put("other_roles_block", PromptRuntimeUtil.nullableToken(otherRolesBlock));
+        variables.put("title", PromptRuntimeUtil.nullableToken(story == null ? null : story.getTitle()));
+        variables.put("story_intro", PromptRuntimeUtil.nullableToken(story == null ? null : story.getStoryIntro()));
+        variables.put("story_setting", PromptRuntimeUtil.nullableToken(story == null ? null : story.getStorySetting()));
+        variables.put("site_setting", PromptRuntimeUtil.nullableToken(story == null ? null : story.getSiteSetting()));
+        variables.put("plot_outline", PromptRuntimeUtil.nullableToken(story == null ? null : story.getPlotOutline()));
         variables.put("last_assistant_message", PromptRuntimeUtil.nullableToken(lastAssistantMessage));
         variables.put("recent_messages_block", PromptRuntimeUtil.nullableToken(recentMessagesBlock));
+        variables.put("user_input", PromptRuntimeUtil.nullableToken(dto.getUserDraft()));
 
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
                 PROMPT_CODE_REPLY_SUGGESTIONS, PROMPT_VERSION, variables);
@@ -557,6 +589,28 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         response.setRenderedPrompt(renderedPrompt);
         response.setSnapshotKey(snapshotKey);
         return Result.OK("生成成功", response);
+    }
+
+    private Long resolveSessionActiveRoleId(TsChatSession session) {
+        if (session == null) {
+            return null;
+        }
+        if (session.getTargetRoleId() != null) {
+            return session.getTargetRoleId();
+        }
+        if (session.getStoryId() == null) {
+            return null;
+        }
+        List<TsStoryRoleRel> roleRelations = tsStoryRoleRelMapper.selectByStoryId(session.getStoryId());
+        if (roleRelations == null || roleRelations.isEmpty()) {
+            return null;
+        }
+        for (TsStoryRoleRel relation : roleRelations) {
+            if (relation != null && relation.getRoleId() != null) {
+                return relation.getRoleId();
+            }
+        }
+        return null;
     }
 
     /**
@@ -856,5 +910,58 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
             }
         }
         return null;
+    }
+
+    private void logPlainChatRequest(Long sessionId,
+                                     TsChatAiReplyDto request,
+                                     List<TsChatMessage> historyMessages,
+                                     String userContent,
+                                     String renderedPrompt) {
+        tsAiLogCollector.markModel("MINIMAX", "MINIMAX_DEMO", null);
+        tsAiLogCollector.appendStep("llm_request", "模型请求", "success", step -> {
+            step.setProvider("MINIMAX");
+            step.setModelName("MINIMAX_DEMO");
+            step.setDeveloperPrompt(PROMPT_SYSTEM);
+            step.setUserPrompt(userContent);
+            step.setRenderedPrompt(renderedPrompt);
+            JSONObject payload = new JSONObject();
+            payload.put("sessionId", sessionId);
+            payload.put("historyCount", request == null ? null : request.getHistoryCount());
+            payload.put("generateVoice", request == null ? null : request.getGenerateVoice());
+            payload.put("voiceProfileId", request == null ? null : request.getVoiceProfileId());
+            payload.put("voiceId", request == null ? null : request.getVoiceId());
+            payload.put("historyMessageSize", historyMessages == null ? 0 : historyMessages.size());
+            payload.put("promptLength", renderedPrompt == null ? 0 : renderedPrompt.length());
+            step.setRequestPayloadJson(tsAiLogCollector.toJsonString(payload));
+        });
+    }
+
+    private void logPlainChatResponse(String assistantContent) {
+        tsAiLogCollector.appendStep("llm_response", "模型返回", StringUtils.hasText(assistantContent) ? "success" : "failed", step -> {
+            step.setProvider("MINIMAX");
+            step.setModelName("MINIMAX_DEMO");
+            step.setResponseRaw(PromptRuntimeUtil.trimToNull(assistantContent));
+        });
+    }
+
+    private void logTtsRequest(MiniMaxTtsRequestDto request, Long voiceProfileId, String voiceMatchSource) {
+        tsAiLogCollector.appendStep("tts_request", "语音请求", "success", step -> {
+            JSONObject payload = new JSONObject();
+            payload.put("voiceId", request == null ? null : request.getVoiceId());
+            payload.put("voiceProfileId", voiceProfileId);
+            payload.put("matchSource", voiceMatchSource);
+            payload.put("speed", request == null ? null : request.getSpeed());
+            payload.put("pitch", request == null ? null : request.getPitch());
+            payload.put("volume", request == null ? null : request.getVolume());
+            payload.put("textLength", request == null || request.getText() == null ? 0 : request.getText().length());
+            step.setRequestPayloadJson(tsAiLogCollector.toJsonString(payload));
+        });
+    }
+
+    private void logTtsResponse(MiniMaxTtsResponseVo response, String audioUrl) {
+        tsAiLogCollector.appendStep("tts_response", "语音返回", StringUtils.hasText(audioUrl) ? "success" : "failed", step -> {
+            step.setResponseRaw(tsAiLogCollector.toJsonString(response));
+            step.setFinalOutputJson(PromptRuntimeUtil.trimToNull(audioUrl));
+        });
     }
 }

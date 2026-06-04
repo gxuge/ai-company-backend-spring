@@ -30,8 +30,8 @@ public class TsStory implements Serializable {
     private String storyIntro;
     @TableField("story_mode")
     private String storyMode;
-    @TableField("story_setting")
-    private String storySetting;
+    @TableField("site_setting")
+    private String siteSetting;
     @TableField("story_background")
     private String storyBackground;
     @TableField("cover_url")
@@ -49,7 +49,8 @@ public class TsStory implements Serializable {
     private Integer isAiCharacter;
     @TableField("is_ai_outline")
     private Integer isAiOutline;
-    private String remark;
+    @TableField("plot_outline")
+    private String plotOutline;
     @TableField("created_by")
     private String createdBy;
     @TableField("created_name")
@@ -68,4 +69,18 @@ public class TsStory implements Serializable {
     private Date updatedAt;
     @TableField("is_deleted")
     private Integer isDeleted;
+
+    /**
+     * 兼容旧代码中的 storySetting 访问，当前统一映射到 siteSetting。
+     */
+    public String getStorySetting() {
+        return this.siteSetting;
+    }
+
+    /**
+     * 兼容旧代码中的 storySetting 写入，当前统一映射到 siteSetting。
+     */
+    public void setStorySetting(String storySetting) {
+        this.siteSetting = storySetting;
+    }
 }

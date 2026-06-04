@@ -38,7 +38,7 @@ public final class TsStoryVoConverter {
         vo.setTitle(story.getTitle());
         vo.setStoryIntro(story.getStoryIntro());
         vo.setStoryMode(story.getStoryMode());
-        vo.setStorySetting(story.getStorySetting());
+        vo.setSiteSetting(story.getSiteSetting());
         vo.setStoryBackground(story.getStoryBackground());
         vo.setCoverUrl(story.getCoverUrl());
         vo.setSceneId(story.getSceneId());
@@ -48,7 +48,7 @@ public final class TsStoryVoConverter {
         vo.setIsAiStorySetting(story.getIsAiStorySetting());
         vo.setIsAiCharacter(story.getIsAiCharacter());
         vo.setIsAiOutline(story.getIsAiOutline());
-        vo.setRemark(story.getRemark());
+        vo.setPlotOutline(story.getPlotOutline());
         vo.setCreatedBy(story.getCreatedBy());
         vo.setCreatedName(story.getCreatedName());
         vo.setUpdatedBy(story.getUpdatedBy());

@@ -12,7 +12,7 @@ public class TsStoryVo {
     private String title;
     private String storyIntro;
     private String storyMode;
-    private String storySetting;
+    private String siteSetting;
     private String storyBackground;
     private String coverUrl;
     private Long sceneId;
@@ -22,7 +22,7 @@ public class TsStoryVo {
     private Integer isAiStorySetting;
     private Integer isAiCharacter;
     private Integer isAiOutline;
-    private String remark;
+    private String plotOutline;
     private String createdBy;
     private String createdName;
     private String updatedBy;

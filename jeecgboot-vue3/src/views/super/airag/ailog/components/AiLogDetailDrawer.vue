@@ -102,9 +102,7 @@
     detail.value = null;
     try {
       const res = await getAiLogDetail({ id: data?.id });
-      if (res?.success) {
-        detail.value = res.result;
-      }
+      detail.value = normalizeDetailResponse(res);
     } finally {
       loading.value = false;
     }
@@ -122,6 +120,17 @@
   function joinModel(provider?: string, modelName?: string) {
     if (!provider && !modelName) return '-';
     return `${provider || '-'} / ${modelName || '-'}`;
+  }
+
+  function normalizeDetailResponse(res: any) {
+    if (!res) return null;
+    if (res.log || res.steps) {
+      return res;
+    }
+    if (res.result && (res.result.log || res.result.steps)) {
+      return res.result;
+    }
+    return res;
   }
 
   function getLogValue(...keys: string[]) {
@@ -144,7 +153,18 @@
 
   function truncate(value?: string, maxLength = 180) {
     if (!value) return '';
-    return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
+    const normalized = normalizePreviewText(value);
+    return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
+  }
+
+  function normalizePreviewText(value: string) {
+    if (!value) return '';
+    return value
+      .replace(/\\r\\n/g, ' ')
+      .replace(/\\n/g, ' ')
+      .replace(/\\t/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 </script>
 

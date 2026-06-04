@@ -23,6 +23,7 @@ public class TsAiLogMonitorAspect {
 
     private static final String TS_ROLE_PREFIX = "/sys/ts-roles/";
     private static final String TS_STORY_PREFIX = "/sys/ts-stories/";
+    private static final String TS_CHAT_PREFIX = "/sys/ts-chat-sessions/";
 
     private final TsAiLogCollector collector;
 
@@ -30,7 +31,7 @@ public class TsAiLogMonitorAspect {
         this.collector = collector;
     }
 
-    @Around("execution(public * org.jeecg.modules.system.controller.TsRoleController.*(..)) || execution(public * org.jeecg.modules.system.controller.TsStoryController.*(..))")
+    @Around("execution(public * org.jeecg.modules.system.controller.TsRoleController.*(..)) || execution(public * org.jeecg.modules.system.controller.TsStoryController.*(..)) || execution(public * org.jeecg.modules.system.controller.TsChatSessionController.*(..))")
     public Object aroundTsAiEndpoints(ProceedingJoinPoint joinPoint) throws Throwable {
         HttpServletRequest request = currentRequest();
         String uri = request == null ? null : trimToNull(request.getRequestURI());
@@ -78,7 +79,8 @@ public class TsAiLogMonitorAspect {
         }
         boolean roleAi = uri.contains(TS_ROLE_PREFIX) && (uri.contains("/one-click-") || uri.contains("/generate-"));
         boolean storyAi = uri.contains(TS_STORY_PREFIX) && uri.contains("/story-");
-        return roleAi || storyAi;
+        boolean chatAi = uri.contains(TS_CHAT_PREFIX) && (uri.contains("/ai-reply") || uri.contains("/reply-suggestions"));
+        return roleAi || storyAi || chatAi;
     }
 
     private String resolveBizType(String uri) {
@@ -90,6 +92,9 @@ public class TsAiLogMonitorAspect {
         }
         if (uri.contains(TS_STORY_PREFIX)) {
             return "story";
+        }
+        if (uri.contains(TS_CHAT_PREFIX)) {
+            return "chat";
         }
         return "unknown";
     }

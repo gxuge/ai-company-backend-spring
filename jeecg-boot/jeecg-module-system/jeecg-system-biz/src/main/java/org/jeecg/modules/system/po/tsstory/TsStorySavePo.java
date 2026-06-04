@@ -11,7 +11,7 @@ public class TsStorySavePo {
     private String title;
     private String storyIntro;
     private String storyMode;
-    private String storySetting;
+    private String siteSetting;
     private String storyBackground;
     private String coverUrl;
     private Long sceneId;
@@ -21,7 +21,7 @@ public class TsStorySavePo {
     private Integer isAiStorySetting;
     private Integer isAiCharacter;
     private Integer isAiOutline;
-    private String remark;
+    private String plotOutline;
     public static TsStorySavePo fromRequest(TsStorySaveDto request) {
         TsStorySavePo po = new TsStorySavePo();
         if (request == null) {
@@ -30,7 +30,7 @@ public class TsStorySavePo {
         po.setTitle(trimToNull(request.getTitle()));
         po.setStoryIntro(trimToNull(request.getStoryIntro()));
         po.setStoryMode(trimToNull(request.getStoryMode()));
-        po.setStorySetting(request.getStorySetting());
+        po.setSiteSetting(request.getSiteSetting());
         po.setStoryBackground(request.getStoryBackground());
         po.setCoverUrl(trimToNull(request.getCoverUrl()));
         po.setSceneId(request.getSceneId());
@@ -40,7 +40,7 @@ public class TsStorySavePo {
         po.setIsAiStorySetting(request.getIsAiStorySetting());
         po.setIsAiCharacter(request.getIsAiCharacter());
         po.setIsAiOutline(request.getIsAiOutline());
-        po.setRemark(trimToNull(request.getRemark()));
+        po.setPlotOutline(trimToNull(request.getPlotOutline()));
         return po;
     }
     public void applyTo(TsStory story) {
@@ -50,7 +50,7 @@ public class TsStorySavePo {
         story.setTitle(this.title);
         story.setStoryIntro(this.storyIntro);
         story.setStoryMode(this.storyMode);
-        story.setStorySetting(this.storySetting);
+        story.setSiteSetting(this.siteSetting);
         story.setStoryBackground(this.storyBackground);
         story.setCoverUrl(this.coverUrl);
         story.setSceneId(this.sceneId);
@@ -60,7 +60,7 @@ public class TsStorySavePo {
         story.setIsAiStorySetting(this.isAiStorySetting);
         story.setIsAiCharacter(this.isAiCharacter);
         story.setIsAiOutline(this.isAiOutline);
-        story.setRemark(this.remark);
+        story.setPlotOutline(this.plotOutline);
     }
     public void applyForCreate(TsStory story, LoginUser user, String userId, String storyCode, Date now) {
         applyTo(story);

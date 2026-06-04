@@ -18,7 +18,7 @@ public class TsStorySaveDto {
     private String title;
     private String storyIntro;
     private String storyMode;
-    private String storySetting;
+    private String siteSetting;
     private String storyBackground;
     private String coverUrl;
     private Long sceneId;
@@ -28,7 +28,7 @@ public class TsStorySaveDto {
     private Integer isAiStorySetting;
     private Integer isAiCharacter;
     private Integer isAiOutline;
-    private String remark;
+    private String plotOutline;
     private List<TsStoryRoleBindingDto> roleBindings;
     public void applyCreateDefaults() {
         if (this.storyMode == null || this.storyMode.trim().isEmpty()) {
