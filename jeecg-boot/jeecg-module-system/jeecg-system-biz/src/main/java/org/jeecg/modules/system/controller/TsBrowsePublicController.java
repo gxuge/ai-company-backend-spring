@@ -6,15 +6,22 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.modules.system.dto.tsroleimageprofile.TsRoleImageProfileQueryDto;
-import org.jeecg.modules.system.dto.tsstory.TsStoryQueryDto;
+import org.jeecg.modules.system.dto.tsrolepublic.TsRolePublicBrowseQueryDto;
+import org.jeecg.modules.system.dto.tsstorypublic.TsStoryPublicBrowseQueryDto;
 import org.jeecg.modules.system.mapper.TsRoleImageProfileMapper;
-import org.jeecg.modules.system.mapper.TsStoryMapper;
+import org.jeecg.modules.system.mapper.TsRolePublicMapper;
+import org.jeecg.modules.system.mapper.TsStoryPublicMapper;
+import org.jeecg.modules.system.vo.tsimage.TsImageResourceResolver;
 import org.jeecg.modules.system.vo.tsroleimageprofile.TsRoleImageProfilePublicVo;
-import org.jeecg.modules.system.vo.tsstory.TsStoryPublicVo;
+import org.jeecg.modules.system.vo.tsrolepublic.TsRolePublicBrowseVo;
+import org.jeecg.modules.system.vo.tsstorypublic.TsStoryPublicBrowseVo;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @Slf4j
 @Tag(name = "Browse public APIs")
@@ -27,25 +34,70 @@ public class TsBrowsePublicController {
     private static final int DEFAULT_PAGE_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 100;
 
-    private final TsStoryMapper tsStoryMapper;
+    private final TsStoryPublicMapper tsStoryPublicMapper;
+    private final TsRolePublicMapper tsRolePublicMapper;
     private final TsRoleImageProfileMapper tsRoleImageProfileMapper;
 
-    public TsBrowsePublicController(TsStoryMapper tsStoryMapper, TsRoleImageProfileMapper tsRoleImageProfileMapper) {
-        this.tsStoryMapper = tsStoryMapper;
+    public TsBrowsePublicController(TsStoryPublicMapper tsStoryPublicMapper,
+                                    TsRolePublicMapper tsRolePublicMapper,
+                                    TsRoleImageProfileMapper tsRoleImageProfileMapper) {
+        this.tsStoryPublicMapper = tsStoryPublicMapper;
+        this.tsRolePublicMapper = tsRolePublicMapper;
         this.tsRoleImageProfileMapper = tsRoleImageProfileMapper;
     }
 
     @Operation(summary = "Public story feed")
     @GetMapping("/ts-stories/public")
-    public Result<Page<TsStoryPublicVo>> listPublicStories(TsStoryQueryDto request) {
+    public Result<Page<TsStoryPublicBrowseVo>> listPublicStories(TsStoryPublicBrowseQueryDto request) {
         int pageNo = normalizePageNo(request == null ? null : request.getPageNo());
         int pageSize = normalizePageSize(request == null ? null : request.getPageSize());
-        String keyword = trimToNull(request == null ? null : request.getKeyword());
-        String storyMode = trimToNull(request == null ? null : request.getStoryMode());
-
-        Page<TsStoryPublicVo> page = new Page<>(pageNo, pageSize);
-        Page<TsStoryPublicVo> pageData = tsStoryMapper.selectPublicStoryPage(page, keyword, storyMode);
+        Page<TsStoryPublicBrowseVo> page = new Page<>(pageNo, pageSize);
+        Page<TsStoryPublicBrowseVo> pageData = tsStoryPublicMapper.selectPublicBrowsePage(page, request);
+        enrichStoryBrowseRecords(pageData.getRecords());
         return Result.OK(pageData);
+    }
+
+    @Operation(summary = "Public story detail")
+    @GetMapping("/ts-stories/public/detail")
+    public Result<TsStoryPublicBrowseVo> getPublicStory(@RequestParam(value = "id", required = false) Long id,
+                                                        @RequestParam(value = "publicId", required = false) Long publicId,
+                                                        @RequestParam(value = "channelCode", required = false) String channelCode) {
+        if (id == null && publicId == null && !org.springframework.util.StringUtils.hasText(channelCode)) {
+            return Result.error("id、publicId、channelCode至少传一个");
+        }
+        TsStoryPublicBrowseVo detail = tsStoryPublicMapper.selectPublicBrowseDetail(id, publicId, trimToNull(channelCode));
+        if (detail == null) {
+            return Result.error("公开故事不存在");
+        }
+        enrichStoryBrowse(detail);
+        return Result.OK(detail);
+    }
+
+    @Operation(summary = "Public role feed")
+    @GetMapping("/ts-roles/public")
+    public Result<Page<TsRolePublicBrowseVo>> listPublicRoles(TsRolePublicBrowseQueryDto request) {
+        int pageNo = normalizePageNo(request == null ? null : request.getPageNo());
+        int pageSize = normalizePageSize(request == null ? null : request.getPageSize());
+        Page<TsRolePublicBrowseVo> page = new Page<>(pageNo, pageSize);
+        Page<TsRolePublicBrowseVo> pageData = tsRolePublicMapper.selectPublicBrowsePage(page, request);
+        enrichRoleBrowseRecords(pageData.getRecords());
+        return Result.OK(pageData);
+    }
+
+    @Operation(summary = "Public role detail")
+    @GetMapping("/ts-roles/public/detail")
+    public Result<TsRolePublicBrowseVo> getPublicRole(@RequestParam(value = "id", required = false) Long id,
+                                                      @RequestParam(value = "publicId", required = false) Long publicId,
+                                                      @RequestParam(value = "channelCode", required = false) String channelCode) {
+        if (id == null && publicId == null && !org.springframework.util.StringUtils.hasText(channelCode)) {
+            return Result.error("id、publicId、channelCode至少传一个");
+        }
+        TsRolePublicBrowseVo detail = tsRolePublicMapper.selectPublicBrowseDetail(id, publicId, trimToNull(channelCode));
+        if (detail == null) {
+            return Result.error("公开角色不存在");
+        }
+        enrichRoleBrowse(detail);
+        return Result.OK(detail);
     }
 
     @Operation(summary = "Public role image profile feed")
@@ -64,7 +116,62 @@ public class TsBrowsePublicController {
                 styleName,
                 sourceType
         );
+        enrichRoleImageProfileRecords(pageData.getRecords());
         return Result.OK(pageData);
+    }
+
+    private void enrichStoryBrowseRecords(List<TsStoryPublicBrowseVo> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        for (TsStoryPublicBrowseVo item : records) {
+            enrichStoryBrowse(item);
+        }
+    }
+
+    private void enrichStoryBrowse(TsStoryPublicBrowseVo item) {
+        if (item == null) {
+            return;
+        }
+        item.setImageResources(TsImageResourceResolver.buildStoryPublicBrowseImageResources(
+                item.getId(),
+                item.getSceneImageUrl(),
+                item.getCoverUrl(),
+                item.getAuthorAvatar()));
+    }
+
+    private void enrichRoleBrowseRecords(List<TsRolePublicBrowseVo> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        for (TsRolePublicBrowseVo item : records) {
+            enrichRoleBrowse(item);
+        }
+    }
+
+    private void enrichRoleBrowse(TsRolePublicBrowseVo item) {
+        if (item == null) {
+            return;
+        }
+        item.setImageResources(TsImageResourceResolver.buildRolePublicBrowseImageResources(
+                item.getId(),
+                item.getAvatarUrl(),
+                item.getCoverUrl(),
+                item.getAuthorAvatar()));
+    }
+
+    private void enrichRoleImageProfileRecords(List<TsRoleImageProfilePublicVo> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        for (TsRoleImageProfilePublicVo item : records) {
+            if (item == null) {
+                continue;
+            }
+            item.setImageResources(TsImageResourceResolver.buildRoleImageProfilePublicResources(
+                    item.getSelectedImageUrl(),
+                    item.getAuthorAvatar()));
+        }
     }
 
     private static int normalizePageNo(Integer value) {
@@ -89,4 +196,3 @@ public class TsBrowsePublicController {
         return trimmed.isEmpty() ? null : trimmed;
     }
 }
-

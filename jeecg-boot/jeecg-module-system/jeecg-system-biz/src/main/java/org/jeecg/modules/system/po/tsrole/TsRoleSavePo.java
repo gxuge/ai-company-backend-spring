@@ -11,6 +11,8 @@ public class TsRoleSavePo {
     private String coverUrl;
     private String gender;
     private String occupation;
+    /** 角色开场白。 */
+    private String greeting;
     private String introText;
     private String personaText;
     private String backgroundStory;
@@ -37,6 +39,7 @@ public class TsRoleSavePo {
         po.setCoverUrl(trimToNull(request.getCoverUrl()));
         po.setGender(trimToNull(request.getGender()));
         po.setOccupation(trimToNull(request.getOccupation()));
+        po.setGreeting(trimToNull(request.getGreeting()));
         po.setIntroText(request.getIntroText());
         po.setPersonaText(request.getPersonaText());
         po.setBackgroundStory(request.getBackgroundStory());
@@ -64,6 +67,7 @@ public class TsRoleSavePo {
         role.setCoverUrl(this.coverUrl);
         role.setGender(this.gender);
         role.setOccupation(this.occupation);
+        role.setGreeting(this.greeting);
         role.setIntroText(this.introText);
         role.setPersonaText(this.personaText);
         role.setBackgroundStory(this.backgroundStory);

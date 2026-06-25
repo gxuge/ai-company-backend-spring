@@ -1,8 +1,10 @@
 package org.jeecg.modules.system.vo.tsroleimageprofile;
 
 import lombok.Data;
+import org.jeecg.modules.system.vo.tsimage.TsImageResourceVo;
 
 import java.util.Date;
+import java.util.Map;
 
 @Data
 public class TsRoleImageProfilePublicVo {
@@ -15,5 +17,5 @@ public class TsRoleImageProfilePublicVo {
     private String authorName;
     private String authorAvatar;
     private Date updatedAt;
+    private Map<String, TsImageResourceVo> imageResources;
 }
-

@@ -3,9 +3,11 @@ package org.jeecg.modules.system.service;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.system.dto.tschatsession.TsChatAiReplyDto;
+import org.jeecg.modules.system.dto.tschatsession.TsChatMessageTtsDto;
 import org.jeecg.modules.system.dto.tschatsession.TsChatReplySuggestionsDto;
 import org.jeecg.modules.system.dto.tschatsession.TsChatTemplateReplyDto;
 import org.jeecg.modules.system.vo.tschatsession.TsChatAiReplyVo;
+import org.jeecg.modules.system.vo.tschatsession.TsChatMessageTtsVo;
 import org.jeecg.modules.system.vo.tschatsession.TsChatReplySuggestionsVo;
 import org.jeecg.modules.system.vo.tschatsession.TsChatTemplateReplyVo;
 
@@ -30,6 +32,16 @@ public interface ITsChatAiReplyService {
      * @return 模板驱动聊天回复结果
      */
     Result<TsChatTemplateReplyVo> createTemplateAiReply(LoginUser user, Long sessionId, TsChatTemplateReplyDto request);
+
+    /**
+     * 为指定聊天消息生成或命中语音播放资源。
+     *
+     * @param user 当前登录用户
+     * @param sessionId 会话 ID
+     * @param request 语音生成请求参数
+     * @return 语音播放结果
+     */
+    Result<TsChatMessageTtsVo> createMessageTts(LoginUser user, Long sessionId, TsChatMessageTtsDto request);
 
     /**
      * 在指定会话中生成 3 条可直接发送的候选回复。

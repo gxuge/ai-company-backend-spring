@@ -1,8 +1,10 @@
 package org.jeecg.modules.system.vo.tschatsession;
 
 import lombok.Data;
+import org.jeecg.modules.system.vo.tsimage.TsImageResourceVo;
 
 import java.util.Date;
+import java.util.Map;
 @Data
 public class TsChatSessionVo {
     private Long id;
@@ -12,6 +14,7 @@ public class TsChatSessionVo {
     private Boolean isSystemSession;
     private String sessionTitle;
     private Long targetRoleId;
+    private String roleAvatarUrl;
     private Long storyId;
     private Integer sessionStatus;
     private Long lastMessageId;
@@ -19,4 +22,5 @@ public class TsChatSessionVo {
     private String extJson;
     private Date createdAt;
     private Date updatedAt;
+    private Map<String, TsImageResourceVo> imageResources;
 }

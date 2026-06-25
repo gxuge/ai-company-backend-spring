@@ -36,6 +36,8 @@ public class TsStory implements Serializable {
     private String storyBackground;
     @TableField("cover_url")
     private String coverUrl;
+    @TableField("scene_image_url")
+    private String sceneImageUrl;
     @TableField("scene_id")
     private Long sceneId;
     @TableField("scene_name_snapshot")

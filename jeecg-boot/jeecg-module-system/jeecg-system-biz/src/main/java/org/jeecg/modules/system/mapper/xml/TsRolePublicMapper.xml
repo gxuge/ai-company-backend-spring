@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsRolePublicMapper">
+
+    <select id="selectManagePage" resultType="org.jeecg.modules.system.vo.tsrolepublic.TsRolePublicVo">
+        SELECT
+            rp.id AS id,
+            rp.role_id AS roleId,
+            r.role_name AS roleName,
+            r.user_id AS ownerUserId,
+            COALESCE(NULLIF(u.realname, ''), u.username) AS ownerDisplayName,
+            rp.channel_code AS channelCode,
+            c.channel_name AS channelName,
+            rp.status AS status,
+            rp.display_title AS displayTitle,
+            rp.display_subtitle AS displaySubtitle,
+            rp.cover_image_url AS coverImageUrl,
+            rp.intro_text AS introText,
+            rp.sort_order AS sortOrder,
+            rp.published_at AS publishedAt,
+            rp.offline_at AS offlineAt,
+            rp.reject_reason AS rejectReason,
+            rp.ext_json AS extJson,
+            rp.create_time AS createTime,
+            rp.update_time AS updateTime
+        FROM ts_role_public rp
+        INNER JOIN ts_role_info r ON r.id = rp.role_id
+        LEFT JOIN ts_public_channel c ON c.channel_code = rp.channel_code
+        LEFT JOIN sys_user u ON u.id = r.user_id
+        WHERE (r.status IS NULL OR r.status != 0)
+        <if test="query != null and query.keyword != null and query.keyword != ''">
+            AND (
+                r.role_name LIKE CONCAT('%', #{query.keyword}, '%')
+                OR rp.display_title LIKE CONCAT('%', #{query.keyword}, '%')
+                OR rp.intro_text LIKE CONCAT('%', #{query.keyword}, '%')
+            )
+        </if>
+        <if test="query != null and query.channelCode != null and query.channelCode != ''">
+            AND rp.channel_code = #{query.channelCode}
+        </if>
+        <if test="query != null and query.status != null and query.status != ''">
+            AND rp.status = #{query.status}
+        </if>
+        <if test="query != null and query.ownerUserId != null and query.ownerUserId != ''">
+            AND r.user_id = #{query.ownerUserId}
+        </if>
+        ORDER BY rp.sort_order ASC, rp.update_time DESC, rp.id DESC
+    </select>
+
+    <select id="selectManageDetail" resultType="org.jeecg.modules.system.vo.tsrolepublic.TsRolePublicVo">
+        SELECT
+            rp.id AS id,
+            rp.role_id AS roleId,
+            r.role_name AS roleName,
+            r.user_id AS ownerUserId,
+            COALESCE(NULLIF(u.realname, ''), u.username) AS ownerDisplayName,
+            rp.channel_code AS channelCode,
+            c.channel_name AS channelName,
+            rp.status AS status,
+            rp.display_title AS displayTitle,
+            rp.display_subtitle AS displaySubtitle,
+            rp.cover_image_url AS coverImageUrl,
+            rp.intro_text AS introText,
+            rp.sort_order AS sortOrder,
+            rp.published_at AS publishedAt,
+            rp.offline_at AS offlineAt,
+            rp.reject_reason AS rejectReason,
+            rp.ext_json AS extJson,
+            rp.create_time AS createTime,
+            rp.update_time AS updateTime
+        FROM ts_role_public rp
+        INNER JOIN ts_role_info r ON r.id = rp.role_id
+        LEFT JOIN ts_public_channel c ON c.channel_code = rp.channel_code
+        LEFT JOIN sys_user u ON u.id = r.user_id
+        WHERE rp.id = #{id}
+          AND (r.status IS NULL OR r.status != 0)
+        LIMIT 1
+    </select>
+
+    <select id="selectPublicBrowsePage" resultType="org.jeecg.modules.system.vo.tsrolepublic.TsRolePublicBrowseVo">
+        SELECT
+            r.id AS id,
+            rp.id AS publicId,
+            rp.channel_code AS channelCode,
+            COALESCE(NULLIF(rp.display_title, ''), r.role_name) AS roleName,
+            COALESCE(NULLIF(rp.display_subtitle, ''), r.role_subtitle) AS roleSubtitle,
+            r.avatar_url AS avatarUrl,
+            COALESCE(NULLIF(rp.cover_image_url, ''), r.cover_url) AS coverUrl,
+            r.gender AS gender,
+            r.occupation AS occupation,
+            COALESCE(NULLIF(rp.intro_text, ''), r.intro_text) AS introText,
+            COALESCE(NULLIF(u.realname, ''), u.username) AS authorName,
+            u.avatar AS authorAvatar,
+            r.updated_at AS updatedAt
+        FROM ts_role_public rp
+        INNER JOIN ts_role_info r ON r.id = rp.role_id
+        LEFT JOIN sys_user u ON u.id = r.user_id
+        WHERE rp.status = 'online'
+          AND (r.status IS NULL OR r.status != 0)
+        <if test="query != null and query.channelCode != null and query.channelCode != ''">
+            AND rp.channel_code = #{query.channelCode}
+        </if>
+        <if test="query != null and query.keyword != null and query.keyword != ''">
+            AND (
+                r.role_name LIKE CONCAT('%', #{query.keyword}, '%')
+                OR r.role_subtitle LIKE CONCAT('%', #{query.keyword}, '%')
+                OR rp.display_title LIKE CONCAT('%', #{query.keyword}, '%')
+                OR rp.intro_text LIKE CONCAT('%', #{query.keyword}, '%')
+            )
+        </if>
+        <if test="query != null and query.gender != null and query.gender != ''">
+            AND r.gender = #{query.gender}
+        </if>
+        ORDER BY rp.sort_order ASC, rp.published_at DESC, rp.id DESC
+    </select>
+
+    <select id="selectPublicBrowseDetail" resultType="org.jeecg.modules.system.vo.tsrolepublic.TsRolePublicBrowseVo">
+        SELECT
+            r.id AS id,
+            rp.id AS publicId,
+            rp.channel_code AS channelCode,
+            COALESCE(NULLIF(rp.display_title, ''), r.role_name) AS roleName,
+            COALESCE(NULLIF(rp.display_subtitle, ''), r.role_subtitle) AS roleSubtitle,
+            r.avatar_url AS avatarUrl,
+            COALESCE(NULLIF(rp.cover_image_url, ''), r.cover_url) AS coverUrl,
+            r.gender AS gender,
+            r.occupation AS occupation,
+            COALESCE(NULLIF(rp.intro_text, ''), r.intro_text) AS introText,
+            COALESCE(NULLIF(u.realname, ''), u.username) AS authorName,
+            u.avatar AS authorAvatar,
+            r.updated_at AS updatedAt
+        FROM ts_role_public rp
+        INNER JOIN ts_role_info r ON r.id = rp.role_id
+        LEFT JOIN sys_user u ON u.id = r.user_id
+        WHERE rp.status = 'online'
+          AND (r.status IS NULL OR r.status != 0)
+        <if test="id != null">
+            AND r.id = #{id}
+        </if>
+        <if test="publicId != null">
+            AND rp.id = #{publicId}
+        </if>
+        <if test="channelCode != null and channelCode != ''">
+            AND rp.channel_code = #{channelCode}
+        </if>
+        ORDER BY rp.published_at DESC, rp.id DESC
+        LIMIT 1
+    </select>
+
+</mapper>

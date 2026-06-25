@@ -60,6 +60,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     private static final String ENDPOINT_STORY_FULL_GENERATE = "/sys/ts-stories/story-full-generate";
     private static final String ENDPOINT_STORY_FULL_GENERATE_PRESET = "/sys/ts-stories/story-full-generate-preset";
     private static final String PROMPT_VERSION_V2 = "v2";
+    private static final String PROMPT_CODE_STORY_FULL = "story_core_fill";
     private static final String PROMPT_CODE_STORY_SETTING_OPTIMIZE = "story_setting_optimize";
     private static final String PROMPT_CODE_STORY_SITE_SETTING_OPTIMIZE = "story_site_setting_optimize";
     private static final String PROMPT_CODE_STORY_PLOT_OUTLINE_OPTIMIZE = "story_plot_outline_optimize";
@@ -361,11 +362,44 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     }
 
     /**
-     * 兼容旧接口：当前复用 preset 版全量生成链路。
+     * 通用全量生成：输入输出均为 5 个故事核心字段。
      */
     @Override
     public TsStoryFullGenerateVo generateStoryFull(LoginUser user, TsStoryFullGenerateDto request) {
-        return generateStoryFullPreset(user, request);
+        TsStoryFullGenerateDto dto = request == null ? new TsStoryFullGenerateDto() : request;
+        dto.normalize();
+
+        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
+                PROMPT_CODE_STORY_FULL, PROMPT_VERSION_V2, buildStoryFullVars(dto));
+        String renderedPrompt = promptSections.getRenderedPrompt();
+        JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, "story-full-generate");
+        logStoryLlmJson(ENDPOINT_STORY_FULL_GENERATE, modelJson, true, null);
+
+        String title = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("title")),
+                dto.getTitle());
+        String storyIntro = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("story_intro")),
+                dto.getStoryIntro());
+        String storySettingText = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("story_setting")),
+                dto.getStorySetting());
+        String siteSettingText = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("site_setting")),
+                dto.getSiteSetting());
+        String plotOutlineText = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("plot_outline")),
+                dto.getPlotOutline());
+
+        saveStoryFullSnapshot(user, renderedPrompt, modelJson, title, storyIntro, storySettingText, siteSettingText, plotOutlineText);
+
+        TsStoryFullGenerateVo vo = new TsStoryFullGenerateVo();
+        vo.setTitle(title);
+        vo.setStoryIntro(storyIntro);
+        vo.setStorySetting(storySettingText);
+        vo.setSiteSetting(siteSettingText);
+        vo.setPlotOutline(plotOutlineText);
+        return vo;
     }
 
     /**
@@ -433,6 +467,29 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         snapshot.put("plotOutline", plotOutline);
         return StoryGenerateSnapshotUtil.saveSnapshot(redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS,
                 "full-preset", user.getId(), snapshot);
+    }
+
+    private String saveStoryFullSnapshot(LoginUser user,
+                                         String renderedPrompt,
+                                         JSONObject modelJson,
+                                         String title,
+                                         String storyIntro,
+                                         String storySetting,
+                                         String siteSetting,
+                                         String plotOutline) {
+        JSONObject snapshot = new JSONObject();
+        snapshot.put("type", "story-full-generate");
+        snapshot.put("promptCode", PROMPT_CODE_STORY_FULL);
+        snapshot.put("promptVersion", PROMPT_VERSION_V2);
+        snapshot.put("promptRendered", renderedPrompt);
+        snapshot.put("rawResponse", modelJson == null ? null : modelJson.toJSONString());
+        snapshot.put("title", title);
+        snapshot.put("storyIntro", storyIntro);
+        snapshot.put("storySetting", storySetting);
+        snapshot.put("siteSetting", siteSetting);
+        snapshot.put("plotOutline", plotOutline);
+        return StoryGenerateSnapshotUtil.saveSnapshot(redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS,
+                "full", user.getId(), snapshot);
     }
 
     private TsPreset pickRandomStoryPreset() {
@@ -540,7 +597,17 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         vars.put("plot_hook", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_PLOT_HOOK)));
         vars.put("conflict", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_CONFLICT)));
         vars.put("progression_mode", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_PROGRESSION_MODE)));
-        vars.put("extra_requirements", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getExtraRequirements()));
+        return vars;
+    }
+
+    private Map<String, String> buildStoryFullVars(TsStoryFullGenerateDto dto) {
+        Map<String, String> vars = new HashMap<>();
+        vars.put("title", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getTitle()));
+        vars.put("story_mode", PromptRuntimeUtil.nullableToken(null));
+        vars.put("story_intro", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getStoryIntro()));
+        vars.put("story_setting", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getStorySetting()));
+        vars.put("site_setting", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getSiteSetting()));
+        vars.put("plot_outline", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getPlotOutline()));
         return vars;
     }
 

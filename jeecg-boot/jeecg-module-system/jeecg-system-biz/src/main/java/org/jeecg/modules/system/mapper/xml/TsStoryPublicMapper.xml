@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsStoryPublicMapper">
+
+    <select id="selectManagePage" resultType="org.jeecg.modules.system.vo.tsstorypublic.TsStoryPublicVo">
+        SELECT
+            sp.id AS id,
+            sp.story_id AS storyId,
+            s.title AS storyTitle,
+            s.user_id AS ownerUserId,
+            COALESCE(NULLIF(u.realname, ''), u.username) AS ownerDisplayName,
+            sp.channel_code AS channelCode,
+            c.channel_name AS channelName,
+            sp.status AS status,
+            sp.display_title AS displayTitle,
+            sp.display_subtitle AS displaySubtitle,
+            sp.cover_image_url AS coverImageUrl,
+            sp.intro_text AS introText,
+            sp.sort_order AS sortOrder,
+            sp.published_at AS publishedAt,
+            sp.offline_at AS offlineAt,
+            sp.reject_reason AS rejectReason,
+            sp.ext_json AS extJson,
+            sp.create_time AS createTime,
+            sp.update_time AS updateTime
+        FROM ts_story_public sp
+        INNER JOIN ts_story_info s ON s.id = sp.story_id
+        LEFT JOIN ts_public_channel c ON c.channel_code = sp.channel_code
+        LEFT JOIN sys_user u ON u.id = s.user_id
+        WHERE s.is_deleted = 0
+          AND (s.status IS NULL OR s.status != 9)
+        <if test="query != null and query.keyword != null and query.keyword != ''">
+            AND (
+                s.title LIKE CONCAT('%', #{query.keyword}, '%')
+                OR sp.display_title LIKE CONCAT('%', #{query.keyword}, '%')
+                OR sp.intro_text LIKE CONCAT('%', #{query.keyword}, '%')
+            )
+        </if>
+        <if test="query != null and query.channelCode != null and query.channelCode != ''">
+            AND sp.channel_code = #{query.channelCode}
+        </if>
+        <if test="query != null and query.status != null and query.status != ''">
+            AND sp.status = #{query.status}
+        </if>
+        <if test="query != null and query.ownerUserId != null and query.ownerUserId != ''">
+            AND s.user_id = #{query.ownerUserId}
+        </if>
+        ORDER BY sp.sort_order ASC, sp.update_time DESC, sp.id DESC
+    </select>
+
+    <select id="selectManageDetail" resultType="org.jeecg.modules.system.vo.tsstorypublic.TsStoryPublicVo">
+        SELECT
+            sp.id AS id,
+            sp.story_id AS storyId,
+            s.title AS storyTitle,
+            s.user_id AS ownerUserId,
+            COALESCE(NULLIF(u.realname, ''), u.username) AS ownerDisplayName,
+            sp.channel_code AS channelCode,
+            c.channel_name AS channelName,
+            sp.status AS status,
+            sp.display_title AS displayTitle,
+            sp.display_subtitle AS displaySubtitle,
+            sp.cover_image_url AS coverImageUrl,
+            sp.intro_text AS introText,
+            sp.sort_order AS sortOrder,
+            sp.published_at AS publishedAt,
+            sp.offline_at AS offlineAt,
+            sp.reject_reason AS rejectReason,
+            sp.ext_json AS extJson,
+            sp.create_time AS createTime,
+            sp.update_time AS updateTime
+        FROM ts_story_public sp
+        INNER JOIN ts_story_info s ON s.id = sp.story_id
+        LEFT JOIN ts_public_channel c ON c.channel_code = sp.channel_code
+        LEFT JOIN sys_user u ON u.id = s.user_id
+        WHERE sp.id = #{id}
+          AND s.is_deleted = 0
+          AND (s.status IS NULL OR s.status != 9)
+        LIMIT 1
+    </select>
+
+    <select id="selectPublicBrowsePage" resultType="org.jeecg.modules.system.vo.tsstorypublic.TsStoryPublicBrowseVo">
+        SELECT
+            s.id AS id,
+            sp.id AS publicId,
+            sp.channel_code AS channelCode,
+            COALESCE(NULLIF(sp.display_title, ''), s.title) AS title,
+            sp.display_subtitle AS displaySubtitle,
+            COALESCE(NULLIF(sp.intro_text, ''), s.story_intro) AS storyIntro,
+            s.story_mode AS storyMode,
+            s.scene_image_url AS sceneImageUrl,
+            COALESCE(NULLIF(sp.cover_image_url, ''), s.cover_url) AS coverUrl,
+            COALESCE(st.follower_count, 0) AS followerCount,
+            COALESCE(st.dialogue_count, 0) AS dialogueCount,
+            COALESCE(NULLIF(u.realname, ''), u.username) AS authorName,
+            u.avatar AS authorAvatar,
+            s.updated_at AS updatedAt
+        FROM ts_story_public sp
+        INNER JOIN ts_story_info s ON s.id = sp.story_id
+        LEFT JOIN ts_story_stat st ON st.story_id = s.id
+        LEFT JOIN sys_user u ON u.id = s.user_id
+        WHERE sp.status = 'online'
+          AND s.is_deleted = 0
+          AND (s.status IS NULL OR s.status != 9)
+        <if test="query != null and query.channelCode != null and query.channelCode != ''">
+            AND sp.channel_code = #{query.channelCode}
+        </if>
+        <if test="query != null and query.keyword != null and query.keyword != ''">
+            AND (
+                s.title LIKE CONCAT('%', #{query.keyword}, '%')
+                OR s.story_intro LIKE CONCAT('%', #{query.keyword}, '%')
+                OR sp.display_title LIKE CONCAT('%', #{query.keyword}, '%')
+                OR sp.intro_text LIKE CONCAT('%', #{query.keyword}, '%')
+            )
+        </if>
+        <if test="query != null and query.storyMode != null and query.storyMode != ''">
+            AND s.story_mode = #{query.storyMode}
+        </if>
+        ORDER BY sp.sort_order ASC, sp.published_at DESC, sp.id DESC
+    </select>
+
+    <select id="selectPublicBrowseDetail" resultType="org.jeecg.modules.system.vo.tsstorypublic.TsStoryPublicBrowseVo">
+        SELECT
+            s.id AS id,
+            sp.id AS publicId,
+            sp.channel_code AS channelCode,
+            COALESCE(NULLIF(sp.display_title, ''), s.title) AS title,
+            sp.display_subtitle AS displaySubtitle,
+            COALESCE(NULLIF(sp.intro_text, ''), s.story_intro) AS storyIntro,
+            s.story_mode AS storyMode,
+            s.scene_image_url AS sceneImageUrl,
+            COALESCE(NULLIF(sp.cover_image_url, ''), s.cover_url) AS coverUrl,
+            COALESCE(st.follower_count, 0) AS followerCount,
+            COALESCE(st.dialogue_count, 0) AS dialogueCount,
+            COALESCE(NULLIF(u.realname, ''), u.username) AS authorName,
+            u.avatar AS authorAvatar,
+            s.updated_at AS updatedAt
+        FROM ts_story_public sp
+        INNER JOIN ts_story_info s ON s.id = sp.story_id
+        LEFT JOIN ts_story_stat st ON st.story_id = s.id
+        LEFT JOIN sys_user u ON u.id = s.user_id
+        WHERE sp.status = 'online'
+          AND s.is_deleted = 0
+          AND (s.status IS NULL OR s.status != 9)
+        <if test="id != null">
+            AND s.id = #{id}
+        </if>
+        <if test="publicId != null">
+            AND sp.id = #{publicId}
+        </if>
+        <if test="channelCode != null and channelCode != ''">
+            AND sp.channel_code = #{channelCode}
+        </if>
+        ORDER BY sp.published_at DESC, sp.id DESC
+        LIMIT 1
+    </select>
+
+</mapper>

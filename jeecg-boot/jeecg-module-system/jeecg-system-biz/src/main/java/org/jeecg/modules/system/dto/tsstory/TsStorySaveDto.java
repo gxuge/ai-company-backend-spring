@@ -21,6 +21,7 @@ public class TsStorySaveDto {
     private String siteSetting;
     private String storyBackground;
     private String coverUrl;
+    private String sceneImageUrl;
     private Long sceneId;
     private String sceneNameSnapshot;
     private Integer status;

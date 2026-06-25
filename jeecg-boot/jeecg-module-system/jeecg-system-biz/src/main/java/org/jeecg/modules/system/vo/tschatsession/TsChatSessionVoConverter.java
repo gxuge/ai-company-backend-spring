@@ -2,26 +2,41 @@ package org.jeecg.modules.system.vo.tschatsession;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.jeecg.modules.system.entity.TsChatSession;
+import org.jeecg.modules.system.vo.tsimage.TsImageResourceResolver;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 public final class TsChatSessionVoConverter {
     private static final String DEFAULT_SYSTEM_SESSION_KEY = "DEFAULT_SYSTEM";
 
     private TsChatSessionVoConverter() {
     }
     public static Page<TsChatSessionVo> fromPage(Page<TsChatSession> source) {
+        return fromPage(source, null);
+    }
+
+    public static Page<TsChatSessionVo> fromPage(Page<TsChatSession> source, Map<Long, String> roleAvatarUrlMap) {
         Page<TsChatSessionVo> target = new Page<>(source.getCurrent(), source.getSize(), source.getTotal());
         List<TsChatSessionVo> records = new ArrayList<>();
         if (source.getRecords() != null) {
             for (TsChatSession item : source.getRecords()) {
-                records.add(fromEntity(item));
+                String roleAvatarUrl = null;
+                if (roleAvatarUrlMap != null && item.getTargetRoleId() != null) {
+                    roleAvatarUrl = roleAvatarUrlMap.get(item.getTargetRoleId());
+                }
+                records.add(fromEntity(item, roleAvatarUrl));
             }
         }
         target.setRecords(records);
         return target;
     }
+
     public static TsChatSessionVo fromEntity(TsChatSession source) {
+        return fromEntity(source, null);
+    }
+
+    public static TsChatSessionVo fromEntity(TsChatSession source, String roleAvatarUrl) {
         if (source == null) {
             return null;
         }
@@ -32,6 +47,7 @@ public final class TsChatSessionVoConverter {
         target.setIsSystemSession(DEFAULT_SYSTEM_SESSION_KEY.equals(source.getSystemSessionKey()));
         target.setSessionTitle(source.getSessionTitle());
         target.setTargetRoleId(source.getTargetRoleId());
+        target.setRoleAvatarUrl(roleAvatarUrl);
         target.setStoryId(source.getStoryId());
         target.setSessionStatus(source.getSessionStatus());
         target.setLastMessageId(source.getLastMessageId());
@@ -39,6 +55,9 @@ public final class TsChatSessionVoConverter {
         target.setExtJson(source.getExtJson());
         target.setCreatedAt(source.getCreatedAt());
         target.setUpdatedAt(source.getUpdatedAt());
+        target.setImageResources(TsImageResourceResolver.buildChatSessionImageResources(
+                source.getTargetRoleId(),
+                roleAvatarUrl));
         return target;
     }
 }

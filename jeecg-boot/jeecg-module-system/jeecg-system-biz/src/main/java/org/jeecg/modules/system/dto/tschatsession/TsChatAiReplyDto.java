@@ -21,7 +21,7 @@ public class TsChatAiReplyDto {
     /** 指定音色档案 ID（可选，优先级低于 voiceId） */
     private Long voiceProfileId;
 
-    /** 指定 MiniMax 音色 ID（可选，优先级最高） */
+    /** 指定音色 ID（可选，优先级最高） */
     private String voiceId;
 
     /** 是否生成语音，默认 true。false 时仅生成文本回复 */

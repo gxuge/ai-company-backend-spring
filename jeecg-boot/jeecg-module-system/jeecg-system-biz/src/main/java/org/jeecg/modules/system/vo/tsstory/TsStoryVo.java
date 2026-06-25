@@ -1,9 +1,11 @@
 package org.jeecg.modules.system.vo.tsstory;
 
 import lombok.Data;
+import org.jeecg.modules.system.vo.tsimage.TsImageResourceVo;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 @Data
 public class TsStoryVo {
     private Long id;
@@ -12,9 +14,11 @@ public class TsStoryVo {
     private String title;
     private String storyIntro;
     private String storyMode;
+    private String storySetting;
     private String siteSetting;
     private String storyBackground;
     private String coverUrl;
+    private String sceneImageUrl;
     private Long sceneId;
     private String sceneNameSnapshot;
     private Integer status;
@@ -33,4 +37,5 @@ public class TsStoryVo {
     private Long followerCount;
     private Long dialogueCount;
     private List<TsStoryRoleBindingVo> roleBindings;
+    private Map<String, TsImageResourceVo> imageResources;
 }

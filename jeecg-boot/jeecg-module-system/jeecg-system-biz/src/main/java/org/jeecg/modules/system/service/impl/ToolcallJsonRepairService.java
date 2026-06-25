@@ -54,7 +54,7 @@ public class ToolcallJsonRepairService {
             step.setPromptVersion(sections.getVersion());
             step.setToolSchema(sections.getToolSchema());
             step.setValidationIssues(String.join(", ", requiredFields));
-            step.setExtraInfoJson(buildSchemaSummaryJson(scene, requiredFields, extractRequiredFieldHints(sections.getToolSchema())));
+            step.setExtraInfoJson(buildSchemaSummaryJson(scene, sections.getToolSchema(), requiredFields, extractRequiredFieldHints(sections.getToolSchema())));
         });
 
         String rawContent = null;
@@ -109,7 +109,7 @@ public class ToolcallJsonRepairService {
             step.setPromptCode(repairTemplateRef.code());
             step.setPromptVersion(repairTemplateRef.version());
             step.setValidationIssues(String.join(", ", requiredFields));
-            step.setExtraInfoJson(buildSchemaSummaryJson(scene, requiredFields, extractRequiredFieldHints(sections.getToolSchema())));
+            step.setExtraInfoJson(buildSchemaSummaryJson(scene, sections.getToolSchema(), requiredFields, extractRequiredFieldHints(sections.getToolSchema())));
         });
         PromptRenderedSectionsVo repairPrompt = promptRenderService.renderPromptSections(
                 repairTemplateRef.code(), repairTemplateRef.version(),
@@ -387,12 +387,30 @@ public class ToolcallJsonRepairService {
         return value.trim();
     }
 
-    private String buildSchemaSummaryJson(String scene, List<String> requiredFields, String requiredFieldHints) {
+    private String buildSchemaSummaryJson(String scene, String toolSchema, List<String> requiredFields, String requiredFieldHints) {
         JSONObject info = new JSONObject();
         info.put("scene", trimToNull(scene));
+        info.put("toolName", extractToolName(toolSchema));
+        info.put("toolChoice", extractToolName(toolSchema));
         info.put("requiredFields", requiredFields);
         info.put("requiredFieldHints", trimToNull(requiredFieldHints));
         return info.toJSONString();
+    }
+
+    private String extractToolName(String toolSchema) {
+        if (!StringUtils.hasText(toolSchema)) {
+            return null;
+        }
+        try {
+            JSONObject schemaRoot = JSONObject.parseObject(toolSchema);
+            if (schemaRoot == null) {
+                return null;
+            }
+            return trimToNull(schemaRoot.getString("name"));
+        } catch (Exception ex) {
+            log.warn("Failed to extract tool name from tool_schema, reason={}", ex.getMessage());
+            return null;
+        }
     }
 
     private record PromptTemplateRef(String code, String version) {

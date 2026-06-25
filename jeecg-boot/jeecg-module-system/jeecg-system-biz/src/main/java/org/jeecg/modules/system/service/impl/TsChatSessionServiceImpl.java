@@ -25,6 +25,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Date;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class TsChatSessionServiceImpl extends ServiceImpl<TsChatSessionMapper, TsChatSession>
@@ -89,14 +94,14 @@ public class TsChatSessionServiceImpl extends ServiceImpl<TsChatSessionMapper, T
         TsChatSessionQueryPo queryPo = TsChatSessionQueryPo.fromRequest(user.getId(), request);
         Page<TsChatSession> page = new Page<>(queryPo.getPageNo(), queryPo.getPageSize());
         Page<TsChatSession> pageData = baseMapper.selectSessionPage(page, queryPo);
-        return Result.OK(TsChatSessionVoConverter.fromPage(pageData));
+        return Result.OK(TsChatSessionVoConverter.fromPage(pageData, loadRoleAvatarUrlMap(pageData.getRecords())));
     }
 
     @Override
     @CheckTsChatSessionOwnership(message = "会话不存在或无权限访问")
     public Result<TsChatSessionVo> getSession(LoginUser user, Long id) {
         TsChatSession record = TsChatSessionOwnershipAspect.SESSION_CONTEXT.get();
-        return Result.OK(TsChatSessionVoConverter.fromEntity(record));
+        return Result.OK(TsChatSessionVoConverter.fromEntity(record, loadRoleAvatarUrl(record.getTargetRoleId())));
     }
 
     @Override
@@ -112,7 +117,7 @@ public class TsChatSessionServiceImpl extends ServiceImpl<TsChatSessionMapper, T
         entity.setUpdatedAt(new Date());
         this.save(entity);
 
-        return Result.OK("创建成功", TsChatSessionVoConverter.fromEntity(entity));
+        return Result.OK("创建成功", TsChatSessionVoConverter.fromEntity(entity, loadRoleAvatarUrl(entity.getTargetRoleId())));
     }
 
     @Override
@@ -126,7 +131,7 @@ public class TsChatSessionServiceImpl extends ServiceImpl<TsChatSessionMapper, T
         record.setUpdatedAt(new Date());
         this.updateById(record);
 
-        return Result.OK("更新成功", TsChatSessionVoConverter.fromEntity(record));
+        return Result.OK("更新成功", TsChatSessionVoConverter.fromEntity(record, loadRoleAvatarUrl(record.getTargetRoleId())));
     }
 
     @Override
@@ -139,5 +144,39 @@ public class TsChatSessionServiceImpl extends ServiceImpl<TsChatSessionMapper, T
         }
         this.removeById(record.getId());
         return Result.OK("删除成功");
+    }
+
+    private Map<Long, String> loadRoleAvatarUrlMap(List<TsChatSession> sessions) {
+        if (sessions == null || sessions.isEmpty()) {
+            return Map.of();
+        }
+        Set<Long> roleIds = sessions.stream()
+            .map(TsChatSession::getTargetRoleId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        if (roleIds.isEmpty()) {
+            return Map.of();
+        }
+        List<TsRole> roles = tsRoleMapper.selectBatchIds(roleIds);
+        if (roles == null || roles.isEmpty()) {
+            return Map.of();
+        }
+        return roles.stream()
+            .filter(Objects::nonNull)
+            .filter(role -> role.getId() != null)
+            .filter(role -> role.getAvatarUrl() != null)
+            .collect(Collectors.toMap(
+                TsRole::getId,
+                role -> role.getAvatarUrl(),
+                (left, right) -> left
+            ));
+    }
+
+    private String loadRoleAvatarUrl(Long roleId) {
+        if (roleId == null) {
+            return null;
+        }
+        TsRole role = tsRoleMapper.selectById(roleId);
+        return role == null ? null : role.getAvatarUrl();
     }
 }

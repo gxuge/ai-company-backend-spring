@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.jeecg.modules.system.entity.TsStory;
 import org.jeecg.modules.system.entity.TsStoryRoleRel;
 import org.jeecg.modules.system.entity.TsStoryStat;
+import org.jeecg.modules.system.vo.tsimage.TsImageResourceResolver;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,9 +39,11 @@ public final class TsStoryVoConverter {
         vo.setTitle(story.getTitle());
         vo.setStoryIntro(story.getStoryIntro());
         vo.setStoryMode(story.getStoryMode());
+        vo.setStorySetting(story.getStorySetting());
         vo.setSiteSetting(story.getSiteSetting());
         vo.setStoryBackground(story.getStoryBackground());
         vo.setCoverUrl(story.getCoverUrl());
+        vo.setSceneImageUrl(story.getSceneImageUrl());
         vo.setSceneId(story.getSceneId());
         vo.setSceneNameSnapshot(story.getSceneNameSnapshot());
         vo.setStatus(story.getStatus());
@@ -59,6 +62,12 @@ public final class TsStoryVoConverter {
         vo.setFollowerCount(stat == null ? 0L : safeLong(stat.getFollowerCount()));
         vo.setDialogueCount(stat == null ? 0L : safeLong(stat.getDialogueCount()));
         vo.setRoleBindings(toRoleBindings(relList));
+        vo.setImageResources(TsImageResourceResolver.buildStoryImageResources(
+                story.getId(),
+                story.getSceneId(),
+                story.getUserId(),
+                story.getSceneImageUrl(),
+                story.getCoverUrl()));
         return vo;
     }
     public static List<TsStoryRoleBindingVo> toRoleBindings(List<TsStoryRoleRel> relList) {

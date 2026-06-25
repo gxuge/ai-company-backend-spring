@@ -2,10 +2,17 @@ package org.jeecg.modules.openapi.service.impl;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.request.ToolChoice;
+import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.openai.OpenAiChatRequestParameters;
+import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.chat.request.json.JsonAnyOfSchema;
 import dev.langchain4j.model.chat.request.json.JsonArraySchema;
 import dev.langchain4j.model.chat.request.json.JsonBooleanSchema;
@@ -15,7 +22,6 @@ import dev.langchain4j.model.chat.request.json.JsonNumberSchema;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.request.json.JsonSchemaElement;
 import dev.langchain4j.model.chat.request.json.JsonStringSchema;
-import dev.langchain4j.service.tool.ToolExecutor;
 import jakarta.annotation.Resource;
 import org.jeecg.common.exception.JeecgBootBizTipException;
 import org.jeecg.modules.airag.app.entity.AiragApp;
@@ -33,6 +39,7 @@ import org.springframework.util.StringUtils;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -75,7 +82,7 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
         logPromptRoute(model, branch, false);
         AIChatParams params = buildBaseParams(model, branch);
         List<ChatMessage> messages = List.of(new UserMessage(prompt));
-        logLlmRequest(model, branch, null, prompt, null, params, false);
+        logLlmRequest(model, branch, null, prompt, null, null, params, false);
         String content = aiChatHandler.completions(model.getId(), messages, params);
         logLlmResponse(model, content);
         if (!StringUtils.hasText(content)) {
@@ -101,7 +108,7 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
 
         if (!StringUtils.hasText(toolSchema)) {
             logPromptRoute(model, branch, false);
-            logLlmRequest(model, branch, developerPrompt, userPrompt, null, params, false);
+            logLlmRequest(model, branch, developerPrompt, userPrompt, null, null, params, false);
             String content = aiChatHandler.completions(model.getId(), messages, params);
             logLlmResponse(model, content);
             if (!StringUtils.hasText(content)) {
@@ -112,22 +119,16 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
 
         ToolSpecification toolSpecification = buildToolSpecification(toolSchema);
         if (toolSpecification == null) {
-            logPromptRoute(model, branch, false);
-            logLlmRequest(model, branch, developerPrompt, userPrompt, toolSchema, params, false);
-            String content = aiChatHandler.completions(model.getId(), messages, params);
-            logLlmResponse(model, content);
-            if (!StringUtils.hasText(content)) {
-                throw new JeecgBootBizTipException("Prompt chat response is empty");
-            }
-            return content.trim();
+            throw new JeecgBootBizTipException("Tool schema parse failed, model=" + model.getModelName());
         }
+        String toolChoiceName = trimToNull(toolSpecification.name());
 
         if (!supportsToolCall(model, branch)) {
             if (Boolean.FALSE.equals(promptChatConfigBean.getToolCallAutoDowngrade())) {
                 throw new JeecgBootBizTipException("Current model does not support tool call, model=" + model.getModelName());
             }
             logPromptRoute(model, branch, false);
-            logLlmRequest(model, branch, developerPrompt, userPrompt, toolSchema, params, false);
+            logLlmRequest(model, branch, developerPrompt, userPrompt, toolSchema, toolChoiceName, params, false);
             String content = aiChatHandler.completions(model.getId(), messages, params);
             logLlmResponse(model, content);
             if (!StringUtils.hasText(content)) {
@@ -136,18 +137,179 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
             return content.trim();
         }
 
-        Map<ToolSpecification, ToolExecutor> tools = new LinkedHashMap<>();
-        tools.put(toolSpecification, (toolExecutionRequest, memoryId) -> toolExecutionRequest.arguments());
-        params.setTools(tools);
-
         logPromptRoute(model, branch, true);
-        logLlmRequest(model, branch, developerPrompt, userPrompt, toolSchema, params, true);
-        String content = aiChatHandler.completions(model.getId(), messages, params);
+        logLlmRequest(model, branch, developerPrompt, userPrompt, toolSchema, toolChoiceName, params, true);
+        String content = chatToolCallSingleRound(model, branch, messages, toolSpecification);
         logLlmResponse(model, content);
         if (!StringUtils.hasText(content)) {
             throw new JeecgBootBizTipException("Prompt chat response is empty");
         }
         return content.trim();
+    }
+
+    private String chatToolCallSingleRound(AiragModel model,
+                                           PromptProviderBranch branch,
+                                           List<ChatMessage> messages,
+                                           ToolSpecification toolSpecification) {
+        OpenAiChatModel chatModel = buildSingleRoundChatModel(model, branch);
+        String modelName = trimToNull(model == null ? null : model.getModelName());
+        if (!StringUtils.hasText(modelName)) {
+            throw new JeecgBootBizTipException("Prompt chat modelName is required, modelId=" + (model == null ? null : model.getId()));
+        }
+        JSONObject modelParams = parseModelParams(model);
+        OpenAiChatRequestParameters.Builder requestBuilder = OpenAiChatRequestParameters.builder()
+                .modelName(modelName)
+                .toolSpecifications(toolSpecification)
+                .toolChoice(ToolChoice.REQUIRED)
+                .parallelToolCalls(false)
+                .customParameters(buildSingleRoundCustomParameters(branch));
+        if (modelParams != null) {
+            applyOptionalRequestParams(requestBuilder, modelParams);
+        }
+        OpenAiChatRequestParameters requestParameters = requestBuilder.build();
+        ChatRequest chatRequest = ChatRequest.builder()
+                .messages(messages)
+                .parameters(requestParameters)
+                .build();
+        ChatResponse response = chatModel.doChat(chatRequest);
+        AiMessage aiMessage = response == null ? null : response.aiMessage();
+        if (aiMessage == null) {
+            return null;
+        }
+        List<ToolExecutionRequest> toolRequests = aiMessage.toolExecutionRequests();
+        if (toolRequests != null && !toolRequests.isEmpty()) {
+            ToolExecutionRequest firstRequest = toolRequests.get(0);
+            return firstRequest == null ? null : firstRequest.arguments();
+        }
+        return trimToNull(aiMessage.text());
+    }
+
+    private OpenAiChatModel buildSingleRoundChatModel(AiragModel model,
+                                                      PromptProviderBranch branch) {
+        String apiKey = extractApiKey(model);
+        String baseUrl = normalizeOpenAiBaseUrl(model, branch);
+        String modelName = trimToNull(model.getModelName());
+        if (!StringUtils.hasText(apiKey)) {
+            throw new JeecgBootBizTipException("Prompt chat model apiKey is required, modelId=" + model.getId());
+        }
+        if (!StringUtils.hasText(baseUrl)) {
+            throw new JeecgBootBizTipException("Prompt chat model baseUrl is required, modelId=" + model.getId());
+        }
+        if (!StringUtils.hasText(modelName)) {
+            throw new JeecgBootBizTipException("Prompt chat modelName is required, modelId=" + model.getId());
+        }
+
+        JSONObject modelParams = parseModelParams(model);
+        OpenAiChatModel.OpenAiChatModelBuilder builder = OpenAiChatModel.builder()
+                .apiKey(apiKey)
+                .baseUrl(baseUrl)
+                .modelName(modelName)
+                .timeout(Duration.ofSeconds(positiveOrDefault(modelParams == null ? null : modelParams.getInteger("timeout"), 120)))
+                .maxRetries(0)
+                .returnThinking(false);
+        if (modelParams != null) {
+            applyOptionalModelParams(builder, modelParams);
+        }
+        return builder.build();
+    }
+
+    private void applyOptionalModelParams(OpenAiChatModel.OpenAiChatModelBuilder builder, JSONObject modelParams) {
+        Double temperature = modelParams.getDouble("temperature");
+        if (temperature != null) {
+            builder.temperature(temperature);
+        }
+        Double topP = modelParams.getDouble("topP");
+        if (topP != null) {
+            builder.topP(topP);
+        }
+        Double presencePenalty = modelParams.getDouble("presencePenalty");
+        if (presencePenalty != null) {
+            builder.presencePenalty(presencePenalty);
+        }
+        Double frequencyPenalty = modelParams.getDouble("frequencyPenalty");
+        if (frequencyPenalty != null) {
+            builder.frequencyPenalty(frequencyPenalty);
+        }
+        Integer maxTokens = modelParams.getInteger("maxTokens");
+        if (maxTokens != null && maxTokens > 0) {
+            builder.maxTokens(maxTokens);
+        }
+    }
+    private void applyOptionalRequestParams(OpenAiChatRequestParameters.Builder builder, JSONObject modelParams) {
+        Double temperature = modelParams.getDouble("temperature");
+        if (temperature != null) {
+            builder.temperature(temperature);
+        }
+        Double topP = modelParams.getDouble("topP");
+        if (topP != null) {
+            builder.topP(topP);
+        }
+        Double presencePenalty = modelParams.getDouble("presencePenalty");
+        if (presencePenalty != null) {
+            builder.presencePenalty(presencePenalty);
+        }
+        Double frequencyPenalty = modelParams.getDouble("frequencyPenalty");
+        if (frequencyPenalty != null) {
+            builder.frequencyPenalty(frequencyPenalty);
+        }
+        Integer maxTokens = modelParams.getInteger("maxTokens");
+        if (maxTokens != null && maxTokens > 0) {
+            builder.maxOutputTokens(maxTokens);
+        }
+    }
+
+    private Map<String, Object> buildSingleRoundCustomParameters(PromptProviderBranch branch) {
+        Map<String, Object> customParameters = new LinkedHashMap<>();
+        if (PromptProviderBranch.DEEPSEEK.equals(branch)) {
+            Map<String, Object> thinking = new LinkedHashMap<>();
+            thinking.put("type", "disabled");
+            customParameters.put("thinking", thinking);
+        }
+        return customParameters;
+    }
+
+    private String extractApiKey(AiragModel model) {
+        if (model == null || !StringUtils.hasText(model.getCredential())) {
+            return null;
+        }
+        try {
+            JSONObject credential = JSONObject.parseObject(model.getCredential());
+            if (credential == null) {
+                return null;
+            }
+            return trimToNull(credential.getString("apiKey"));
+        } catch (Exception ex) {
+            log.warn("extract prompt model apiKey failed: {}", ex.getMessage());
+            return null;
+        }
+    }
+
+    private JSONObject parseModelParams(AiragModel model) {
+        if (model == null || !StringUtils.hasText(model.getModelParams())) {
+            return null;
+        }
+        try {
+            return JSONObject.parseObject(model.getModelParams());
+        } catch (Exception ex) {
+            log.warn("parse prompt model params failed: {}", ex.getMessage());
+            return null;
+        }
+    }
+
+    private String normalizeOpenAiBaseUrl(AiragModel model, PromptProviderBranch branch) {
+        String baseUrl = trimToNull(model == null ? null : model.getBaseUrl());
+        if (PromptProviderBranch.MINIMAX.equals(branch)) {
+            String value = StringUtils.hasText(baseUrl) ? baseUrl : "https://api.minimax.io/v1";
+            while (value.endsWith("/")) {
+                value = value.substring(0, value.length() - 1);
+            }
+            return value.endsWith("/v1") ? value : value + "/v1";
+        }
+        return baseUrl;
+    }
+
+    private int positiveOrDefault(Integer value, int defaultValue) {
+        return value == null || value <= 0 ? defaultValue : value;
     }
 
     private ToolSpecification buildToolSpecification(String toolSchema) {
@@ -453,6 +615,7 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
                                String developerPrompt,
                                String userPrompt,
                                String toolSchema,
+                               String toolChoiceName,
                                AIChatParams params,
                                boolean withTools) {
         tsAiLogCollector.markModel(trimToNull(model.getProvider()), trimToNull(model.getModelName()), trimToNull(model.getId()));
@@ -472,6 +635,8 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
             payload.put("returnThinking", params == null ? null : params.getReturnThinking());
             payload.put("withTools", withTools);
             payload.put("toolSchemaProvided", StringUtils.hasText(toolSchema));
+            payload.put("toolChoice", trimToNull(toolChoiceName));
+            payload.put("toolChoiceApplied", StringUtils.hasText(toolChoiceName) && withTools);
             step.setRequestPayloadJson(payload.toJSONString());
         });
     }

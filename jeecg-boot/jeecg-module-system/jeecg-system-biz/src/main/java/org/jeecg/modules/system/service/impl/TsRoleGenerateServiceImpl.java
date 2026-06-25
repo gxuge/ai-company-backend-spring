@@ -166,7 +166,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
 
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(promptCode, PROMPT_VERSION,
                 PromptRuntimeUtil.buildSettingVars(dto.getRoleName(), dto.getGender(), dto.getOccupation(), dto.getBackgroundStory(),
-                        dto.getStyleHint(), dto.getKeywords()));
+                        dto.getGreeting(), dto.getStyleHint(), dto.getKeywords()));
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, scene);
 
@@ -190,6 +190,14 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
                 PromptRuntimeUtil.trimToNull(modelJson.getString("backgroundStory")),
                 dto.getBackgroundStory()
         );
+        String greeting = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("greeting")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("greeting_text")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("greetingText")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("opening_line")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("openingLine")),
+                dto.getGreeting()
+        );
         if (backgroundOptimizeMode) {
             // 背景优化模式：仅优化背景字段，其它字段沿用请求值，防止误改已确认内容。
             roleName = dto.getRoleName();
@@ -210,6 +218,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         resultJson.put("gender", gender);
         resultJson.put("occupation", occupation);
         resultJson.put("background_story", backgroundStory);
+        resultJson.put("greeting", greeting);
         snapshot.put("result", resultJson);
         String snapshotKey = RoleGenerateSnapshotUtil.saveSnapshot(redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS,
                 backgroundOptimizeMode ? "setting-background-optimize" : "setting", user.getId(), snapshot);
@@ -220,6 +229,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         vo.setGender(gender);
         vo.setOccupation(occupation);
         vo.setBackgroundStory(backgroundStory);
+        vo.setGreeting(greeting);
         vo.setFilledFields(null);
         vo.setKeptFields(null);
         vo.setPromptCode(promptCode);
@@ -781,6 +791,13 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
                 PromptRuntimeUtil.trimToNull(modelJson.getString("background_story")),
                 PromptRuntimeUtil.trimToNull(modelJson.getString("backgroundStory"))
         );
+        String greeting = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("greeting")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("greeting_text")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("greetingText")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("opening_line")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("openingLine"))
+        );
         String styleName = PromptRuntimeUtil.trimToNull(modelJson.getString("style_name"));
         String preferredVoiceName = PromptRuntimeUtil.trimToNull(modelJson.getString("preferred_voice_name"));
         String targetTone = PromptRuntimeUtil.trimToNull(modelJson.getString("target_tone"));
@@ -792,6 +809,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         role.setRoleName(roleName);
         role.setGender(gender);
         role.setOccupation(occupation);
+        role.setGreeting(greeting);
         role.setBackgroundStory(backgroundStory);
         role.setStatus(1);
         role.setIsPublic(0);
@@ -829,6 +847,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         settingResult.setGender(gender);
         settingResult.setOccupation(occupation);
         settingResult.setBackgroundStory(backgroundStory);
+        settingResult.setGreeting(greeting);
         settingResult.setFilledFields(null);
         settingResult.setKeptFields(null);
         settingResult.setPromptCode(PROMPT_CODE_GENERATE_ROLE);
@@ -902,6 +921,14 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
                 PromptRuntimeUtil.trimToNull(modelJson.getString("backgroundStory")),
                 dto.getBackgroundStory()
         );
+        String greeting = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("greeting")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("greeting_text")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("greetingText")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("opening_line")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("openingLine")),
+                dto.getGreeting()
+        );
 
         JSONObject snapshot = new JSONObject();
         snapshot.put("type", "setting-preset");
@@ -920,6 +947,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         resultJson.put("gender", gender);
         resultJson.put("occupation", occupation);
         resultJson.put("background_story", backgroundStory);
+        resultJson.put("greeting", greeting);
         snapshot.put("result", resultJson);
         String snapshotKey = RoleGenerateSnapshotUtil.saveSnapshot(redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS,
                 "setting-preset", user.getId(), snapshot);
@@ -929,6 +957,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         vo.setGender(gender);
         vo.setOccupation(occupation);
         vo.setBackgroundStory(backgroundStory);
+        vo.setGreeting(greeting);
         vo.setFilledFields(null);
         vo.setKeptFields(null);
         vo.setPromptCode(PROMPT_CODE_SETTING_PRESET);
@@ -1144,6 +1173,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         vars.put("ability", PromptRuntimeUtil.nullableToken(presetAbility));
         vars.put("limitation", PromptRuntimeUtil.nullableToken(presetLimitation));
         vars.put("background_story", PromptRuntimeUtil.nullableToken(PromptRuntimeUtil.firstNonBlank(dto.getBackgroundStory(), presetBackgroundStory)));
+        vars.put("greeting", PromptRuntimeUtil.nullableToken(dto.getGreeting()));
         vars.put("style_hint", PromptRuntimeUtil.nullableToken(PromptRuntimeUtil.firstNonBlank(dto.getStyleHint(), presetStyleHint)));
         vars.put("keywords", PromptRuntimeUtil.nullableToken(PromptRuntimeUtil.firstNonBlank(dto.getKeywords(), presetKeywords)));
         vars.put("preset_name", PromptRuntimeUtil.nullableToken(preset == null ? null : preset.getName()));

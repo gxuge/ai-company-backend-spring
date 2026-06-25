@@ -2,6 +2,7 @@ package org.jeecg.modules.system.vo.tsroleimageprofile;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.jeecg.modules.system.entity.TsRoleImageProfile;
+import org.jeecg.modules.system.vo.tsimage.TsImageResourceResolver;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,6 +39,11 @@ public final class TsRoleImageProfileVoConverter {
         vo.setExtJson(entity.getExtJson());
         vo.setCreatedAt(entity.getCreatedAt());
         vo.setUpdatedAt(entity.getUpdatedAt());
+        vo.setImageResources(TsImageResourceResolver.buildRoleImageProfileResources(
+                null,
+                entity.getSelectedImageUrl(),
+                "selectedImageUrl",
+                entity.getOwnerUserId()));
         return vo;
     }
 }

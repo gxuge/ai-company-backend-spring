@@ -18,6 +18,8 @@ public class TsRoleOneClickSettingGenerateDto {
     private String occupation;
     /** 角色背景故事 */
     private String backgroundStory;
+    /** 角色开场白 */
+    private String greeting;
     /** 风格提示词（可选） */
     private String styleHint;
     /** 关键词（可选） */
@@ -30,6 +32,7 @@ public class TsRoleOneClickSettingGenerateDto {
         this.gender = normalizeGender(this.gender);
         this.occupation = trimToNull(this.occupation);
         this.backgroundStory = trimToNull(this.backgroundStory);
+        this.greeting = trimToNull(this.greeting);
         this.styleHint = trimToNull(this.styleHint);
         this.keywords = trimToNull(this.keywords);
         this.templateMode = normalizeTemplateMode(this.templateMode);

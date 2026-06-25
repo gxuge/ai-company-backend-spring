@@ -1,8 +1,10 @@
 package org.jeecg.modules.system.vo.tsrole;
 
 import lombok.Data;
+import org.jeecg.modules.system.vo.tsimage.TsImageResourceVo;
 
 import java.util.Date;
+import java.util.Map;
 @Data
 public class TsRoleVo {
     private Long id;
@@ -13,6 +15,9 @@ public class TsRoleVo {
     private String coverUrl;
     private String gender;
     private String occupation;
+
+    /** 角色开场白。 */
+    private String greeting;
     private String introText;
     private String personaText;
     private String backgroundStory;
@@ -29,4 +34,5 @@ public class TsRoleVo {
     private Integer status;
     private Date createdAt;
     private Date updatedAt;
+    private Map<String, TsImageResourceVo> imageResources;
 }

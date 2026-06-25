@@ -14,6 +14,7 @@ public class TsStorySavePo {
     private String siteSetting;
     private String storyBackground;
     private String coverUrl;
+    private String sceneImageUrl;
     private Long sceneId;
     private String sceneNameSnapshot;
     private Integer status;
@@ -33,6 +34,7 @@ public class TsStorySavePo {
         po.setSiteSetting(request.getSiteSetting());
         po.setStoryBackground(request.getStoryBackground());
         po.setCoverUrl(trimToNull(request.getCoverUrl()));
+        po.setSceneImageUrl(trimToNull(request.getSceneImageUrl()));
         po.setSceneId(request.getSceneId());
         po.setSceneNameSnapshot(trimToNull(request.getSceneNameSnapshot()));
         po.setStatus(request.getStatus());
@@ -53,6 +55,7 @@ public class TsStorySavePo {
         story.setSiteSetting(this.siteSetting);
         story.setStoryBackground(this.storyBackground);
         story.setCoverUrl(this.coverUrl);
+        story.setSceneImageUrl(this.sceneImageUrl);
         story.setSceneId(this.sceneId);
         story.setSceneNameSnapshot(this.sceneNameSnapshot);
         story.setStatus(this.status);

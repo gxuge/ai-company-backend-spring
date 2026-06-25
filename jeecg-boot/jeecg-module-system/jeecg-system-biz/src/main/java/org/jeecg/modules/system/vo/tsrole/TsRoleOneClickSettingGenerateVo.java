@@ -14,6 +14,8 @@ public class TsRoleOneClickSettingGenerateVo {
     private String occupation;
     /** 背景故事 */
     private String backgroundStory;
+    /** 开场白 */
+    private String greeting;
     /** 本次由模型补全的字段列表 */
     private List<String> filledFields;
     /** 本次沿用原值的字段列表 */

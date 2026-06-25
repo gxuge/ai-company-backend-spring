@@ -124,6 +124,7 @@ public class PromptRuntimeUtil {
                                                         String gender,
                                                         String occupation,
                                                         String backgroundStory,
+                                                        String greeting,
                                                         String styleHint,
                                                         String keywords) {
         Map<String, String> variables = new HashMap<>();
@@ -131,6 +132,7 @@ public class PromptRuntimeUtil {
         variables.put("gender", nullableToken(gender));
         variables.put("occupation", nullableToken(occupation));
         variables.put("background_story", nullableToken(backgroundStory));
+        variables.put("greeting", nullableToken(greeting));
         variables.put("style_hint", nullableToken(styleHint));
         variables.put("keywords", nullableToken(keywords));
         return variables;

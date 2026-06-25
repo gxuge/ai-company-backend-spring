@@ -2,6 +2,7 @@ package org.jeecg.modules.system.vo.tsrole;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.jeecg.modules.system.entity.TsRole;
+import org.jeecg.modules.system.vo.tsimage.TsImageResourceResolver;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +34,7 @@ public final class TsRoleVoConverter {
         vo.setCoverUrl(role.getCoverUrl());
         vo.setGender(role.getGender());
         vo.setOccupation(role.getOccupation());
+        vo.setGreeting(role.getGreeting());
         vo.setIntroText(role.getIntroText());
         vo.setPersonaText(role.getPersonaText());
         vo.setBackgroundStory(role.getBackgroundStory());
@@ -49,6 +51,11 @@ public final class TsRoleVoConverter {
         vo.setStatus(role.getStatus());
         vo.setCreatedAt(role.getCreatedAt());
         vo.setUpdatedAt(role.getUpdatedAt());
+        vo.setImageResources(TsImageResourceResolver.buildRoleImageResources(
+                role.getId(),
+                role.getUserId(),
+                role.getAvatarUrl(),
+                role.getCoverUrl()));
         return vo;
     }
 }

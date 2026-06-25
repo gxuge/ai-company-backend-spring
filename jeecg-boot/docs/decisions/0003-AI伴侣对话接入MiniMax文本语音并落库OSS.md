@@ -96,3 +96,18 @@ Proposed
 - 对 `TsChatAiReplyServiceImpl` 做可维护性收敛：将发送者类型/消息类型/MIME/prompt 关键文案等隐式魔法值提取为常量并补充中文注释，保持行为不变。
 - 验证：
   - 执行 `mvn -pl jeecg-module-system/jeecg-system-biz -am -DskipTests compile`，编译通过。
+
+### 2026-06-12（聊天语音轻量化收敛）
+- 新增接口：`POST /sys/ts-chat-sessions/message-tts`
+  - 用于在消息文本已存在后，按消息维度单独获取语音播放结果
+- 职责调整：
+  - 后端只负责即时生成语音，不再查询/写入服务端数据库语音缓存
+  - 前端负责基于 `audioCacheKey` 做 Web 本地缓存复用
+- 文本清洗规则：
+  - 角色回复中的括号动作、心理活动（如 `（...）`、`(...)`）默认不进入 TTS 播报文本
+- 兼容说明：
+  - `audioCacheKey` 继续保留在返回结果与消息 `contentJson` 中，但语义调整为“前端本地缓存键”
+- 清理项：
+  - 移除 `ts_tts_audio_cache` 相关表脚本、实体与 Mapper 依赖
+- 验证：
+  - 执行 `mvn -pl jeecg-module-system/jeecg-system-start -am -DskipTests compile`，编译通过

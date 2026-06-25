@@ -13,6 +13,7 @@ import org.jeecg.common.system.query.QueryGenerator;
 import org.jeecg.modules.system.entity.TsAiLog;
 import org.jeecg.modules.system.service.ITsAiLogService;
 import org.jeecg.modules.system.vo.tsailog.TsAiLogDetailVo;
+import org.springframework.util.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -36,7 +37,12 @@ public class TsAiLogController {
             @RequestParam(name = "pageNo", defaultValue = "1") Integer pageNo,
             @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize,
             HttpServletRequest req) {
+        String endpointKeyword = tsAiLog != null ? tsAiLog.getEndpoint() : null;
+        if (tsAiLog != null) {
+            tsAiLog.setEndpoint(null);
+        }
         QueryWrapper<TsAiLog> queryWrapper = QueryGenerator.initQueryWrapper(tsAiLog, req.getParameterMap());
+        queryWrapper.like(StringUtils.hasText(endpointKeyword), "endpoint", endpointKeyword);
         queryWrapper.orderByDesc("create_time");
         Page<TsAiLog> page = new Page<>(pageNo, pageSize);
         IPage<TsAiLog> pageList = tsAiLogService.page(page, queryWrapper);

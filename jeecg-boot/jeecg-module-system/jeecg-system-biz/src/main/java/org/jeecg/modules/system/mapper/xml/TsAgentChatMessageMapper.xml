@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsAgentChatMessageMapper">
+
+    <!-- 分页查询当前用户可访问的 Agent 消息 -->
+    <select id="selectMessagePage" resultType="org.jeecg.modules.system.entity.TsAgentChatMessage">
+        SELECT m.*
+        FROM ts_agent_chat_message m
+        INNER JOIN ts_agent_chat_session s ON s.id = m.session_id
+        WHERE s.user_id = #{userId}
+          AND s.is_deleted = 0
+          AND s.session_status != 'deleted'
+          AND m.is_deleted = 0
+        <if test="sessionId != null">
+            AND m.session_id = #{sessionId}
+        </if>
+        <if test="roleType != null and roleType != ''">
+            AND m.role_type = #{roleType}
+        </if>
+        <if test="messageStatus != null and messageStatus != ''">
+            AND m.message_status = #{messageStatus}
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND (
+                m.content LIKE CONCAT('%', #{keyword}, '%')
+                OR m.content_raw LIKE CONCAT('%', #{keyword}, '%')
+            )
+        </if>
+        ORDER BY m.message_no ASC, m.id ASC
+    </select>
+
+    <!-- 查询当前用户拥有的单条 Agent 消息 -->
+    <select id="selectOwnedById" resultType="org.jeecg.modules.system.entity.TsAgentChatMessage">
+        SELECT m.*
+        FROM ts_agent_chat_message m
+        INNER JOIN ts_agent_chat_session s ON s.id = m.session_id
+        WHERE m.id = #{id}
+          AND s.user_id = #{userId}
+          AND s.is_deleted = 0
+          AND s.session_status != 'deleted'
+          AND m.is_deleted = 0
+        LIMIT 1
+    </select>
+
+    <!-- 统计当前用户是否拥有指定会话 -->
+    <select id="selectOwnedSessionCount" resultType="java.lang.Integer">
+        SELECT COUNT(1)
+        FROM ts_agent_chat_session
+        WHERE id = #{sessionId}
+          AND user_id = #{userId}
+          AND is_deleted = 0
+          AND session_status != 'deleted'
+    </select>
+
+    <!-- 查询会话下一个消息序号 -->
+    <select id="selectNextMessageNoForUpdate" resultType="java.lang.Long">
+        SELECT IFNULL(MAX(m.message_no), 0) + 1
+        FROM ts_agent_chat_message m
+        WHERE m.session_id = #{sessionId}
+        FOR UPDATE
+    </select>
+
+    <!-- 查询会话最近消息 -->
+    <select id="selectRecentMessages" resultType="org.jeecg.modules.system.entity.TsAgentChatMessage">
+        SELECT m.*
+        FROM ts_agent_chat_message m
+        WHERE m.session_id = #{sessionId}
+          AND m.is_deleted = 0
+        ORDER BY m.message_no DESC, m.id DESC
+        LIMIT #{limit}
+    </select>
+
+</mapper>

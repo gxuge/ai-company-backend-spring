@@ -16,12 +16,14 @@ public class TsChatAiReplyVo {
     private Long attachmentId;
     /** 命中的音色档案 ID */
     private Long voiceProfileId;
-    /** 实际使用的 MiniMax 音色 ID */
+    /** 实际使用的音色 ID */
     private String voiceId;
     /** AI 回复文本 */
     private String contentText;
     /** 语音可播放地址 */
     private String audioUrl;
+    /** 服务端语音缓存键 */
+    private String audioCacheKey;
     /** 语音文件大小（字节） */
     private Long audioFileSize;
     /** 语音时长（秒），当前由下游能力决定是否返回 */

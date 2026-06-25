@@ -40,6 +40,10 @@ public class TsRole implements Serializable {
     private String gender;
     private String occupation;
 
+    /** 角色开场白。 */
+    @TableField("greeting")
+    private String greeting;
+
     @TableField("intro_text")
     private String introText;
 

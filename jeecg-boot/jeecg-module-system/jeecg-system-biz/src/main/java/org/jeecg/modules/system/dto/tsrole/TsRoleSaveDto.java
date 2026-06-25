@@ -17,6 +17,8 @@ public class TsRoleSaveDto {
     private String coverUrl;
     private String gender;
     private String occupation;
+    /** 角色开场白。 */
+    private String greeting;
     private String introText;
     private String personaText;
     private String backgroundStory;

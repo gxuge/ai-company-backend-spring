@@ -9,15 +9,15 @@ import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.aop.TsChatSessionOwnershipAspect;
 import org.jeecg.modules.aop.TsChatSessionOwnershipAspect.CheckTsChatSessionOwnership;
 import org.jeecg.modules.openapi.dto.MiniMaxChatRequestDto;
-import org.jeecg.modules.openapi.dto.MiniMaxTtsRequestDto;
 import org.jeecg.modules.openapi.service.IMiniMaxDemoService;
 import org.jeecg.modules.openapi.service.IPromptChatService;
 import org.jeecg.modules.openapi.service.PromptRenderService;
 import org.jeecg.modules.openapi.vo.PromptRenderedSectionsVo;
 import org.jeecg.modules.openapi.vo.MiniMaxChatResponseVo;
-import org.jeecg.modules.openapi.vo.MiniMaxTtsResponseVo;
 import org.jeecg.modules.system.dto.tschatsession.TsChatAiReplyDto;
+import org.jeecg.modules.system.dto.tschatsession.TsChatMessageTtsDto;
 import org.jeecg.modules.system.dto.tschatsession.TsChatReplySuggestionsDto;
+import org.jeecg.modules.system.dto.tschatsession.TsChatTtsSynthesizeDto;
 import org.jeecg.modules.system.dto.tschatsession.TsChatTemplateReplyDto;
 import org.jeecg.modules.system.entity.TsChatMessage;
 import org.jeecg.modules.system.entity.TsChatMessageAttachment;
@@ -37,10 +37,13 @@ import org.jeecg.modules.system.mapper.TsUserVoiceConfigMapper;
 import org.jeecg.modules.system.mapper.TsVoiceProfileMapper;
 import org.jeecg.modules.system.monitor.TsAiLogCollector;
 import org.jeecg.modules.system.service.ITsChatAiReplyService;
+import org.jeecg.modules.system.service.ITsChatTtsGatewayService;
 import org.jeecg.modules.system.util.ChatGenerateSnapshotUtil;
 import org.jeecg.modules.system.util.PromptRuntimeUtil;
 import org.jeecg.modules.system.vo.tschatsession.TsChatAiReplyVo;
+import org.jeecg.modules.system.vo.tschatsession.TsChatMessageTtsVo;
 import org.jeecg.modules.system.vo.tschatsession.TsChatReplySuggestionsVo;
+import org.jeecg.modules.system.vo.tschatsession.TsChatTtsResultVo;
 import org.jeecg.modules.system.vo.tschatsession.TsChatTemplateReplyVo;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
@@ -57,6 +60,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Service
 public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
@@ -123,6 +127,10 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
     private static final String FALLBACK_SUGGESTION_2 = "那你更希望我现在怎么回应你？";
     /** 候选回复兜底文案 3。 */
     private static final String FALLBACK_SUGGESTION_3 = "我们先从最在意的那一件事聊起吧。";
+    /** TTS 中默认剔除的括号动作/心理活动。 */
+    private static final Pattern TTS_BRACKET_PATTERN = Pattern.compile("（[^（）]*）|\\([^()]*\\)");
+    /** TTS 文本中的连续空白压缩规则。 */
+    private static final Pattern TTS_MULTI_SPACE_PATTERN = Pattern.compile("[\\t\\x0B\\f\\r ]+");
 
     @Resource
     private TsChatMessageMapper tsChatMessageMapper;
@@ -154,6 +162,8 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
 
     @Resource
     private PromptRenderService promptRenderService;
+    @Resource
+    private ITsChatTtsGatewayService tsChatTtsGatewayService;
 
     @Resource
     private RedisTemplate<String, Object> redisTemplate;
@@ -238,66 +248,49 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         assistantContent = assistantContent.trim();
 
         boolean shouldGenerateVoice = Boolean.TRUE.equals(request.getGenerateVoice());
-        Long resolvedVoiceProfileId = request.getVoiceProfileId();
-        String resolvedVoiceId;
-        String voiceMatchSource;
-        if (shouldGenerateVoice && StringUtils.hasText(request.getVoiceId())) {
-            resolvedVoiceId = request.getVoiceId().trim();
-            voiceMatchSource = "VOICE_ID_DIRECT";
-        } else if (shouldGenerateVoice) {
-            Long voiceProfileId = request.getVoiceProfileId();
-            if (voiceProfileId == null) {
-                TsUserVoiceConfig userVoiceConfig = tsUserVoiceConfigMapper.selectByUserId(user.getId());
-                if (userVoiceConfig != null) {
-                    voiceProfileId = userVoiceConfig.getSelectedVoiceProfileId();
-                }
-            }
-            if (voiceProfileId == null) {
-                throw new JeecgBootException("未找到可用音色，请先在 /sys/ts-user-voice-config/current 设置音色");
-            }
-            TsVoiceProfile voiceProfile = tsVoiceProfileMapper.selectActiveById(voiceProfileId);
-            if (voiceProfile == null) {
-                throw new JeecgBootException("音色不存在或已停用，请重新选择");
-            }
-            if (!StringUtils.hasText(voiceProfile.getProviderVoiceId())) {
-                throw new JeecgBootException("当前音色未配置 providerVoiceId，无法进行语音合成");
-            }
-            resolvedVoiceId = voiceProfile.getProviderVoiceId().trim();
-            resolvedVoiceProfileId = voiceProfile.getId();
-            voiceMatchSource = "VOICE_PROFILE";
-        } else {
-            resolvedVoiceId = null;
-            resolvedVoiceProfileId = null;
-            voiceMatchSource = null;
-        }
+        VoiceSelection voiceSelection = shouldGenerateVoice
+                ? resolveVoiceSelection(user.getId(), request.getVoiceProfileId(), request.getVoiceId())
+                : null;
+        Long resolvedVoiceProfileId = voiceSelection == null ? null : voiceSelection.getVoiceProfileId();
+        String resolvedVoiceId = voiceSelection == null ? null : voiceSelection.getVoiceId();
+        String voiceMatchSource = voiceSelection == null ? null : voiceSelection.getMatchSource();
 
         String audioUrl = null;
-        MiniMaxTtsResponseVo ttsResponse = null;
+        TsChatTtsResultVo ttsResult = null;
         JSONObject assistantContentJson = null;
         if (shouldGenerateVoice) {
-            MiniMaxTtsRequestDto ttsRequest = new MiniMaxTtsRequestDto();
-            ttsRequest.setText(assistantContent);
+            TsChatTtsSynthesizeDto ttsRequest = new TsChatTtsSynthesizeDto();
+            String ttsText = sanitizeTtsText(assistantContent);
+            ttsRequest.setText(ttsText);
             ttsRequest.setVoiceId(resolvedVoiceId);
+            ttsRequest.setVoiceProfileId(resolvedVoiceProfileId);
             ttsRequest.setSpeed(request.getSpeed());
             ttsRequest.setPitch(request.getPitch());
             ttsRequest.setVolume(request.getVolume());
-            logTtsRequest(ttsRequest, resolvedVoiceProfileId, voiceMatchSource);
-            ttsResponse = miniMaxDemoService.tts(ttsRequest);
-            audioUrl = ttsResponse == null ? null : ttsResponse.getAudioUrl();
-            logTtsResponse(ttsResponse, audioUrl);
+            logTtsRequest(ttsRequest, voiceMatchSource);
+            ttsResult = tsChatTtsGatewayService.synthesizeForChat(ttsRequest);
+            audioUrl = ttsResult == null ? null : ttsResult.getAudioUrl();
+            if (!StringUtils.hasText(resolvedVoiceId) && ttsResult != null && StringUtils.hasText(ttsResult.getVoiceId())) {
+                resolvedVoiceId = ttsResult.getVoiceId();
+            }
+            logTtsResponse(ttsResult);
             if (!StringUtils.hasText(audioUrl)) {
-                throw new JeecgBootException("语音生成成功但未返回可播放地址，请检查 AIRAG_MINIMAX_UPLOAD_GENERATED_MEDIA 配置");
+                throw new JeecgBootException("语音生成成功但未返回可播放地址，请检查当前语音模型配置");
             }
 
             assistantContentJson = new JSONObject();
             assistantContentJson.put("audioUrl", audioUrl);
+            assistantContentJson.put("audioCacheKey", ttsResult == null ? null : ttsResult.getCacheKey());
             assistantContentJson.put("voiceId", resolvedVoiceId);
             assistantContentJson.put("voiceProfileId", resolvedVoiceProfileId);
             assistantContentJson.put("matchSource", voiceMatchSource);
+            assistantContentJson.put("ttsText", ttsRequest.getText());
             assistantContentJson.put("speed", request.getSpeed());
             assistantContentJson.put("pitch", request.getPitch());
             assistantContentJson.put("volume", request.getVolume());
-            assistantContentJson.put("mimeType", MIME_TYPE_AUDIO_MPEG);
+            assistantContentJson.put("mimeType", ttsResult == null ? MIME_TYPE_AUDIO_MPEG : ttsResult.getMimeType());
+            assistantContentJson.put("audioFileSize", ttsResult == null ? null : ttsResult.getFileSize());
+            assistantContentJson.put("durationSec", ttsResult == null ? null : ttsResult.getDurationSec());
         }
 
         TsChatMessage assistantMessage = new TsChatMessage();
@@ -315,30 +308,14 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
 
         TsChatMessageAttachment attachment = null;
         if (shouldGenerateVoice) {
-            Long estimatedAudioSize = null;
-            String audioHex = ttsResponse == null ? null : ttsResponse.getAudioHex();
-            if (StringUtils.hasText(audioHex)) {
-                String cleanHex = audioHex.trim();
-                if (cleanHex.startsWith("0x") || cleanHex.startsWith("0X")) {
-                    cleanHex = cleanHex.substring(2);
-                }
-                cleanHex = cleanHex.replaceAll("\\s+", "");
-                if (!cleanHex.isEmpty()) {
-                    if ((cleanHex.length() & 1) == 1) {
-                        cleanHex = "0" + cleanHex;
-                    }
-                    estimatedAudioSize = (long) cleanHex.length() / 2L;
-                }
-            }
-
             attachment = new TsChatMessageAttachment();
             attachment.setMessageId(assistantMessage.getId());
             attachment.setFileType(FILE_TYPE_VOICE);
             attachment.setFileUrl(audioUrl);
             attachment.setFileName(AUDIO_FILE_PREFIX + assistantMessage.getId() + AUDIO_FILE_SUFFIX);
-            attachment.setFileSize(estimatedAudioSize);
-            attachment.setDurationSec(null);
-            attachment.setMimeType(MIME_TYPE_AUDIO_MPEG);
+            attachment.setFileSize(ttsResult == null ? null : ttsResult.getFileSize());
+            attachment.setDurationSec(ttsResult == null ? null : ttsResult.getDurationSec());
+            attachment.setMimeType(ttsResult == null ? MIME_TYPE_AUDIO_MPEG : ttsResult.getMimeType());
             attachment.setCreatedAt(new Date());
             tsChatMessageAttachmentMapper.insert(attachment);
         }
@@ -358,6 +335,7 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         response.setVoiceId(resolvedVoiceId);
         response.setContentText(assistantContent);
         response.setAudioUrl(audioUrl);
+        response.setAudioCacheKey(ttsResult == null ? null : ttsResult.getCacheKey());
         response.setAudioFileSize(attachment == null ? null : attachment.getFileSize());
         response.setDurationSec(attachment == null ? null : attachment.getDurationSec());
         response.setMimeType(attachment == null ? null : attachment.getMimeType());
@@ -483,6 +461,79 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         response.setRenderedPrompt(renderedPrompt);
         response.setSnapshotKey(snapshotKey);
         response.setCreatedAt(assistantMessage.getCreatedAt());
+        return Result.OK("生成成功", response);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    @CheckTsChatSessionOwnership(message = "会话不存在或无权限访问")
+    public Result<TsChatMessageTtsVo> createMessageTts(LoginUser user, Long sessionId, TsChatMessageTtsDto request) {
+        TsChatMessageTtsDto dto = request == null ? new TsChatMessageTtsDto() : request;
+        dto.applyDefaults();
+        TsChatSession session = TsChatSessionOwnershipAspect.SESSION_CONTEXT.get();
+        if (session == null) {
+            throw new JeecgBootException("会话不存在或无权限访问");
+        }
+
+        TsChatMessage message = tsChatMessageMapper.selectOwnedById(dto.getMessageId(), user.getId());
+        if (message == null || !sessionId.equals(message.getSessionId())) {
+            throw new JeecgBootException("messageId不属于当前会话");
+        }
+        if (!SENDER_TYPE_ROLE.equalsIgnoreCase(PromptRuntimeUtil.trimToNull(message.getSenderType()))) {
+            throw new JeecgBootException("当前消息不是角色回复，无法生成语音");
+        }
+
+        String ttsText = sanitizeTtsText(message.getContentText());
+        if (!StringUtils.hasText(ttsText)) {
+            throw new JeecgBootException("当前消息没有可用于播报的文本");
+        }
+
+        VoiceSelection voiceSelection = resolveVoiceSelection(user.getId(), dto.getVoiceProfileId(), dto.getVoiceId());
+        TsChatTtsSynthesizeDto ttsRequest = new TsChatTtsSynthesizeDto();
+        ttsRequest.setText(ttsText);
+        ttsRequest.setVoiceId(voiceSelection.getVoiceId());
+        ttsRequest.setVoiceProfileId(voiceSelection.getVoiceProfileId());
+        ttsRequest.setSpeed(dto.getSpeed());
+        ttsRequest.setPitch(dto.getPitch());
+        ttsRequest.setVolume(dto.getVolume());
+
+        TsChatTtsResultVo ttsResult = tsChatTtsGatewayService.synthesizeForChat(ttsRequest);
+        String audioUrl = ttsResult == null ? null : PromptRuntimeUtil.trimToNull(ttsResult.getAudioUrl());
+        if (!StringUtils.hasText(audioUrl)) {
+            throw new JeecgBootException("语音生成成功但未返回可播放地址");
+        }
+        String resolvedVoiceId = StringUtils.hasText(voiceSelection.getVoiceId())
+                ? voiceSelection.getVoiceId()
+                : (ttsResult == null ? null : ttsResult.getVoiceId());
+
+        JSONObject contentJson = parseMessageContentJson(message.getContentJson());
+        contentJson.put("audioUrl", audioUrl);
+        contentJson.put("audioCacheKey", ttsResult == null ? null : ttsResult.getCacheKey());
+        contentJson.put("voiceId", resolvedVoiceId);
+        contentJson.put("voiceProfileId", voiceSelection.getVoiceProfileId());
+        contentJson.put("matchSource", voiceSelection.getMatchSource());
+        contentJson.put("ttsText", ttsText);
+        contentJson.put("speed", dto.getSpeed());
+        contentJson.put("pitch", dto.getPitch());
+        contentJson.put("volume", dto.getVolume());
+        contentJson.put("mimeType", ttsResult == null ? MIME_TYPE_AUDIO_MPEG : ttsResult.getMimeType());
+        contentJson.put("audioFileSize", ttsResult == null ? null : ttsResult.getFileSize());
+        contentJson.put("durationSec", ttsResult == null ? null : ttsResult.getDurationSec());
+        message.setContentJson(contentJson.toJSONString());
+        tsChatMessageMapper.updateById(message);
+
+        TsChatMessageTtsVo response = new TsChatMessageTtsVo();
+        response.setSessionId(sessionId);
+        response.setMessageId(message.getId());
+        response.setVoiceProfileId(voiceSelection.getVoiceProfileId());
+        response.setVoiceId(resolvedVoiceId);
+        response.setTtsText(ttsText);
+        response.setAudioUrl(audioUrl);
+        response.setAudioCacheKey(ttsResult == null ? null : ttsResult.getCacheKey());
+        response.setAudioFileSize(ttsResult == null ? null : ttsResult.getFileSize());
+        response.setDurationSec(ttsResult == null ? null : ttsResult.getDurationSec());
+        response.setMimeType(ttsResult == null ? MIME_TYPE_AUDIO_MPEG : ttsResult.getMimeType());
+        response.setCreatedAt(message.getCreatedAt());
         return Result.OK("生成成功", response);
     }
 
@@ -912,6 +963,91 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         return null;
     }
 
+    private JSONObject parseMessageContentJson(String contentJson) {
+        String raw = PromptRuntimeUtil.trimToNull(contentJson);
+        if (!StringUtils.hasText(raw)) {
+            return new JSONObject();
+        }
+        try {
+            JSONObject jsonObject = JSONObject.parseObject(raw);
+            return jsonObject == null ? new JSONObject() : jsonObject;
+        } catch (Exception ignored) {
+            return new JSONObject();
+        }
+    }
+
+    private VoiceSelection resolveVoiceSelection(String userId, Long requestedVoiceProfileId, String requestedVoiceId) {
+        String directVoiceId = PromptRuntimeUtil.trimToNull(requestedVoiceId);
+        if (StringUtils.hasText(directVoiceId)) {
+            return new VoiceSelection(directVoiceId, null, "VOICE_ID_DIRECT");
+        }
+
+        Long voiceProfileId = requestedVoiceProfileId;
+        if (voiceProfileId == null) {
+            TsUserVoiceConfig userVoiceConfig = tsUserVoiceConfigMapper.selectByUserId(userId);
+            if (userVoiceConfig != null) {
+                voiceProfileId = userVoiceConfig.getSelectedVoiceProfileId();
+            }
+        }
+        if (voiceProfileId == null) {
+            return new VoiceSelection(null, null, "VOICE_MODEL_DEFAULT");
+        }
+
+        TsVoiceProfile voiceProfile = tsVoiceProfileMapper.selectActiveById(voiceProfileId);
+        if (voiceProfile == null) {
+            throw new JeecgBootException("音色不存在或已停用，请重新选择");
+        }
+        if (!StringUtils.hasText(voiceProfile.getProviderVoiceId())) {
+            throw new JeecgBootException("当前音色未配置 providerVoiceId，无法进行语音合成");
+        }
+        return new VoiceSelection(voiceProfile.getProviderVoiceId().trim(), voiceProfile.getId(), "VOICE_PROFILE");
+    }
+
+    private String sanitizeTtsText(String sourceText) {
+        String raw = PromptRuntimeUtil.trimToNull(sourceText);
+        if (!StringUtils.hasText(raw)) {
+            return raw;
+        }
+        String sanitized = raw;
+        String previous;
+        do {
+            previous = sanitized;
+            sanitized = TTS_BRACKET_PATTERN.matcher(sanitized).replaceAll(" ");
+        } while (!previous.equals(sanitized));
+        sanitized = sanitized.replace('\u3000', ' ');
+        sanitized = sanitized.replaceAll("\\s*\\n\\s*", "\n");
+        sanitized = TTS_MULTI_SPACE_PATTERN.matcher(sanitized).replaceAll(" ");
+        sanitized = sanitized.replaceAll(" ?([，。！？；：,.!?;:])", "$1");
+        sanitized = sanitized.replaceAll("([（(])\\s+", "$1");
+        sanitized = sanitized.replaceAll("\\s+([）)])", "$1");
+        sanitized = sanitized.trim();
+        return StringUtils.hasText(sanitized) ? sanitized : raw;
+    }
+
+    private static final class VoiceSelection {
+        private final String voiceId;
+        private final Long voiceProfileId;
+        private final String matchSource;
+
+        private VoiceSelection(String voiceId, Long voiceProfileId, String matchSource) {
+            this.voiceId = voiceId;
+            this.voiceProfileId = voiceProfileId;
+            this.matchSource = matchSource;
+        }
+
+        private String getVoiceId() {
+            return voiceId;
+        }
+
+        private Long getVoiceProfileId() {
+            return voiceProfileId;
+        }
+
+        private String getMatchSource() {
+            return matchSource;
+        }
+    }
+
     private void logPlainChatRequest(Long sessionId,
                                      TsChatAiReplyDto request,
                                      List<TsChatMessage> historyMessages,
@@ -944,11 +1080,11 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         });
     }
 
-    private void logTtsRequest(MiniMaxTtsRequestDto request, Long voiceProfileId, String voiceMatchSource) {
+    private void logTtsRequest(TsChatTtsSynthesizeDto request, String voiceMatchSource) {
         tsAiLogCollector.appendStep("tts_request", "语音请求", "success", step -> {
             JSONObject payload = new JSONObject();
             payload.put("voiceId", request == null ? null : request.getVoiceId());
-            payload.put("voiceProfileId", voiceProfileId);
+            payload.put("voiceProfileId", request == null ? null : request.getVoiceProfileId());
             payload.put("matchSource", voiceMatchSource);
             payload.put("speed", request == null ? null : request.getSpeed());
             payload.put("pitch", request == null ? null : request.getPitch());
@@ -958,7 +1094,8 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         });
     }
 
-    private void logTtsResponse(MiniMaxTtsResponseVo response, String audioUrl) {
+    private void logTtsResponse(TsChatTtsResultVo response) {
+        String audioUrl = response == null ? null : response.getAudioUrl();
         tsAiLogCollector.appendStep("tts_response", "语音返回", StringUtils.hasText(audioUrl) ? "success" : "failed", step -> {
             step.setResponseRaw(tsAiLogCollector.toJsonString(response));
             step.setFinalOutputJson(PromptRuntimeUtil.trimToNull(audioUrl));
