@@ -148,7 +148,9 @@ public class TsRolePublicServiceImpl extends ServiceImpl<TsRolePublicMapper, TsR
                     .or()
                     .like(TsRole::getRoleSubtitle, normalizedKeyword)
                     .or()
-                    .like(TsRole::getIntroText, normalizedKeyword));
+                    .like(TsRole::getBackgroundStory, normalizedKeyword)
+                    .or()
+                    .like(TsRole::getGreeting, normalizedKeyword));
         }
         wrapper.orderByDesc(TsRole::getUpdatedAt).orderByDesc(TsRole::getId);
         Page<TsRole> sourcePage = tsRoleMapper.selectPage(new Page<>(page.getCurrent(), page.getSize()), wrapper);

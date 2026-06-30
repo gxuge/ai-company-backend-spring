@@ -8,6 +8,7 @@ import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.modules.system.dto.tsagentchatsession.TsAgentChatSessionUpdateDto;
 import org.jeecg.modules.system.dto.tsagentchatsession.TsAgentChatMessageQueryDto;
 import org.jeecg.modules.system.dto.tsagentchatsession.TsAgentChatReplyDto;
 import org.jeecg.modules.system.dto.tsagentchatsession.TsAgentChatSessionQueryDto;
@@ -17,7 +18,6 @@ import org.jeecg.modules.system.entity.TsAgentChatSession;
 import org.jeecg.modules.system.service.ITsAgentChatMessageService;
 import org.jeecg.modules.system.service.ITsAgentChatReplyService;
 import org.jeecg.modules.system.service.ITsAgentChatSessionService;
-import org.jeecg.modules.system.vo.tsagentchatsession.TsAgentChatReplyVo;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -92,6 +93,23 @@ public class TsAgentChatSessionController {
         return Result.OK(session);
     }
 
+    /**
+     * 编辑 Agent 会话标题、摘要或记忆信息。
+     */
+    @Operation(summary = "编辑Agent会话")
+    @PutMapping("/ts-agent-chat-sessions")
+    public Result<TsAgentChatSession> updateSession(@Validated @RequestBody TsAgentChatSessionUpdateDto request) {
+        LoginUser user = currentUser();
+        TsAgentChatSession session = tsAgentChatSessionService.updateSession(
+                user.getId(),
+                request.getId(),
+                request.getSessionTitle(),
+                request.getSessionSummary(),
+                request.getMemoryJson()
+        );
+        return Result.OK(session);
+    }
+
     @Operation(summary = "删除Agent会话")
     @DeleteMapping("/ts-agent-chat-sessions")
     public Result<?> deleteSession(@RequestParam("id") Long id) {
@@ -127,8 +145,12 @@ public class TsAgentChatSessionController {
 
     @Operation(summary = "Agent会话内生成回复")
     @PostMapping("/ts-agent-chat-sessions/ai-reply")
-    public Result<TsAgentChatReplyVo> createAiReply(@Validated @RequestBody TsAgentChatReplyDto request) {
-        return tsAgentChatReplyService.createAiReply(currentUser(), request.getSessionId(), request);
+    public Object createAiReply(@Validated @RequestBody TsAgentChatReplyDto request) {
+        LoginUser user = currentUser();
+        if (Boolean.TRUE.equals(request.getStream())) {
+            return tsAgentChatReplyService.createAiReplyStream(user, request.getSessionId(), request);
+        }
+        return tsAgentChatReplyService.createAiReply(user, request.getSessionId(), request);
     }
 
     /**

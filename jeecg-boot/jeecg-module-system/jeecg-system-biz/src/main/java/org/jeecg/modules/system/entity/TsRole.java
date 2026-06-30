@@ -44,17 +44,8 @@ public class TsRole implements Serializable {
     @TableField("greeting")
     private String greeting;
 
-    @TableField("intro_text")
-    private String introText;
-
-    @TableField("persona_text")
-    private String personaText;
-
     @TableField("background_story")
     private String backgroundStory;
-
-    @TableField("story_text")
-    private String storyText;
 
     @TableField("dialogue_preview")
     private String dialoguePreview;

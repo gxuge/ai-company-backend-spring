@@ -31,6 +31,11 @@ public class TsAgentChatReplyDto {
     private Integer historyCount;
 
     /**
+     * 是否流式输出。
+     */
+    private Boolean stream;
+
+    /**
      * 规范化默认参数。
      */
     public void applyDefaults() {

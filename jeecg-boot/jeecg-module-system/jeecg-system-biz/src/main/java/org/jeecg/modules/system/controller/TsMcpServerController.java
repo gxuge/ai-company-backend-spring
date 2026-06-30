@@ -204,7 +204,7 @@ public class TsMcpServerController {
         String keyword = arguments == null ? null : trimToNull(arguments.getString("keyword"));
 
         QueryWrapper<TsRole> wrapper = new QueryWrapper<>();
-        wrapper.select("id", "role_name", "role_subtitle", "avatar_url", "gender", "occupation", "intro_text", "updated_at");
+        wrapper.select("id", "role_name", "role_subtitle", "avatar_url", "gender", "occupation", "updated_at");
         wrapper.eq("is_public", 1);
         wrapper.and(q -> q.isNull("status").or().ne("status", 0));
         if (StringUtils.hasText(keyword)) {
@@ -223,7 +223,6 @@ public class TsMcpServerController {
             item.put("avatarUrl", role.getAvatarUrl());
             item.put("gender", role.getGender());
             item.put("occupation", role.getOccupation());
-            item.put("introText", role.getIntroText());
             item.put("updatedAt", role.getUpdatedAt());
             items.add(item);
         }

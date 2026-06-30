@@ -33,6 +33,22 @@ public interface ITsAgentChatSessionService extends IService<TsAgentChatSession>
                                      String memoryJson);
 
     /**
+     * 更新 Agent 会话基础信息。
+     *
+     * @param userId 用户ID
+     * @param id 会话ID
+     * @param sessionTitle 会话标题
+     * @param sessionSummary 会话摘要
+     * @param memoryJson 会话记忆快照
+     * @return 更新后的会话
+     */
+    TsAgentChatSession updateSession(String userId,
+                                     Long id,
+                                     String sessionTitle,
+                                     String sessionSummary,
+                                     String memoryJson);
+
+    /**
      * 分页查询当前用户的 Agent 会话。
      *
      * @param userId 用户ID

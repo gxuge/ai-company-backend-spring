@@ -37,8 +37,8 @@ public class FinalSummaryNode extends LlmNode {
                 "结果总结",
                 null,
                 null,
-                "你是故事创建总结助手，请基于输入内容输出一段适合返回给前端的简洁总结。",
-                "{\"storyDraft\":{{story_draft_json}},\"saveDraft\":{{save_draft_json}}}",
+                "你是故事创建总结助手。请基于故事生成结果，输出一段适合返回前端的简洁总结，说明本次将调用哪一种故事生成方式，以及已经收集到哪些核心字段。",
+                "{\"storyGenerateResult\":{{story_generate_result_json}}}",
                 null,
                 promptTemplateService,
                 modelResolver,
@@ -50,10 +50,8 @@ public class FinalSummaryNode extends LlmNode {
     @Override
     protected Map<String, String> buildPromptVariables(AgentContext context) {
         Map<String, String> variables = new LinkedHashMap<>();
-        Object storyDraft = context.getAttribute("storyDraft");
-        Object savedDraft = context.getAttribute("savedDraft");
-        variables.put("story_draft_json", storyDraft == null ? "{}" : String.valueOf(storyDraft));
-        variables.put("save_draft_json", savedDraft == null ? "{}" : String.valueOf(savedDraft));
+        Object storyGenerateResult = context.getAttribute("storyGenerateResult");
+        variables.put("story_generate_result_json", storyGenerateResult == null ? "{}" : String.valueOf(storyGenerateResult));
         return variables;
     }
 

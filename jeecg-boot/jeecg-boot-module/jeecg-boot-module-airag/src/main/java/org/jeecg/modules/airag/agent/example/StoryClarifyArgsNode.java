@@ -38,8 +38,18 @@ public class StoryClarifyArgsNode extends LlmNode {
                 "故事参数澄清",
                 null,
                 null,
-                "你是故事创建助手。请根据用户输入判断 action，只能输出 JSON，字段包含 action、reply、toolArgs、missingFields、questions。",
-                "{\"userInput\":\"{{user_input}}\",\"existingArgs\":{{existing_args_json}}}",
+                "你是故事创建助手。你的任务是判断这次请求应该直接走故事 preset 生成，还是走普通故事生成，或者继续追问用户。"
+                        + "只能输出 JSON，不得输出解释。"
+                        + "JSON 字段固定为 action、reply、toolArgs、missingFields、questions。"
+                        + "规则："
+                        + "1. action 只允许 ASK_USER、CALL_DEFAULT_TOOL、CALL_TOOL。"
+                        + "2. 如果用户没有提供任何明确故事信息，或只有很泛的表达，例如“帮我生成一个故事”，直接返回 CALL_DEFAULT_TOOL。"
+                        + "3. 不要把 title 当成必填前置条件；没有 title 也可以走 CALL_TOOL。"
+                        + "4. toolArgs 只保留这些字段：title、storyIntro、storySetting、siteSetting、plotOutline、storyMode。禁止出现 storyId。"
+                        + "5. 只要用户已经给出其中任意有价值的故事方向、设定、场景、大纲或模式信息，就优先返回 CALL_TOOL。"
+                        + "6. 只有当用户意图明显是创建故事，但关键信息仍然模糊且不适合直接 preset 时，才返回 ASK_USER。"
+                        + "7. reply 要简短自然，适合前端直接展示。",
+                "{\"userInput\":\"{{user_input}}\",\"existingArgs\":{{existing_args_json}},\"allowedFields\":[\"title\",\"storyIntro\",\"storySetting\",\"siteSetting\",\"plotOutline\",\"storyMode\"]}",
                 null,
                 promptTemplateService,
                 modelResolver,

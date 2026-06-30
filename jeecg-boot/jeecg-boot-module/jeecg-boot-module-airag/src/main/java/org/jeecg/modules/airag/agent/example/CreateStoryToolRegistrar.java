@@ -1,6 +1,5 @@
 package org.jeecg.modules.airag.agent.example;
 
-import org.jeecg.common.util.UUIDGenerator;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.tool.ToolCallRequest;
 import org.jeecg.modules.airag.agent.tool.ToolCallResult;
@@ -41,7 +40,6 @@ public class CreateStoryToolRegistrar {
     public void registerTools() {
         this.toolRegistry.register(buildGenerateStoryTool());
         this.toolRegistry.register(buildGenerateStoryWithDefaultsTool());
-        this.toolRegistry.register(buildSaveDraftTool());
     }
 
     /**
@@ -53,7 +51,7 @@ public class CreateStoryToolRegistrar {
         ToolDefinition definition = new ToolDefinition();
         definition.setName("generate_story");
         definition.setDisplayName("生成故事");
-        definition.setDescription("根据用户参数生成故事草稿");
+        definition.setDescription("根据用户已提供的信息组装故事生成请求");
         definition.setExecutor(this::executeGenerateStory);
         return definition;
     }
@@ -66,23 +64,9 @@ public class CreateStoryToolRegistrar {
     private ToolDefinition buildGenerateStoryWithDefaultsTool() {
         ToolDefinition definition = new ToolDefinition();
         definition.setName("generate_story_with_defaults");
-        definition.setDisplayName("默认参数生成故事");
-        definition.setDescription("使用默认参数生成故事草稿");
+        definition.setDisplayName("预设生成故事");
+        definition.setDescription("在缺少明确信息时直接走故事 preset 生成");
         definition.setExecutor(this::executeGenerateStoryWithDefaults);
-        return definition;
-    }
-
-    /**
-     * 构造保存草稿工具。
-     *
-     * @return 工具定义
-     */
-    private ToolDefinition buildSaveDraftTool() {
-        ToolDefinition definition = new ToolDefinition();
-        definition.setName("save_draft");
-        definition.setDisplayName("保存草稿");
-        definition.setDescription("保存故事草稿");
-        definition.setExecutor(this::executeSaveDraft);
         return definition;
     }
 
@@ -94,12 +78,13 @@ public class CreateStoryToolRegistrar {
      * @return 工具结果
      */
     private ToolCallResult executeGenerateStory(AgentContext context, ToolCallRequest request) {
-        Map<String, Object> draft = new LinkedHashMap<>();
-        draft.put("storyId", UUIDGenerator.generate());
-        draft.put("toolArgs", request.getArguments().get("toolArgs"));
-        draft.put("summary", "已根据用户参数生成故事草稿");
-        context.putAttribute("storyDraft", draft);
-        return ToolCallResult.success("故事草稿生成完成", draft);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("mode", "full-generate");
+        result.put("endpoint", "/sys/ts-stories/story-full-generate");
+        result.put("toolArgs", request.getArguments().get("toolArgs"));
+        result.put("summary", "已根据当前信息组装故事生成请求");
+        context.putAttribute("storyGenerateResult", result);
+        return ToolCallResult.success("故事生成请求已准备完成", result);
     }
 
     /**
@@ -110,27 +95,12 @@ public class CreateStoryToolRegistrar {
      * @return 工具结果
      */
     private ToolCallResult executeGenerateStoryWithDefaults(AgentContext context, ToolCallRequest request) {
-        Map<String, Object> draft = new LinkedHashMap<>();
-        draft.put("storyId", UUIDGenerator.generate());
-        draft.put("mode", "default");
-        draft.put("summary", "已使用默认参数生成故事草稿");
-        context.putAttribute("storyDraft", draft);
-        return ToolCallResult.success("默认故事草稿生成完成", draft);
-    }
-
-    /**
-     * 执行保存草稿工具。
-     *
-     * @param context 运行上下文
-     * @param request 工具请求
-     * @return 工具结果
-     */
-    private ToolCallResult executeSaveDraft(AgentContext context, ToolCallRequest request) {
-        Map<String, Object> saved = new LinkedHashMap<>();
-        saved.put("draftId", UUIDGenerator.generate());
-        saved.put("messageId", request.getArguments().get("messageId"));
-        saved.put("saved", Boolean.TRUE);
-        context.putAttribute("savedDraft", saved);
-        return ToolCallResult.success("故事草稿保存完成", saved);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("mode", "full-generate-preset");
+        result.put("endpoint", "/sys/ts-stories/story-full-generate-preset");
+        result.put("toolArgs", request.getArguments().get("toolArgs"));
+        result.put("summary", "信息不足，已切换为故事 preset 生成");
+        context.putAttribute("storyGenerateResult", result);
+        return ToolCallResult.success("故事 preset 生成请求已准备完成", result);
     }
 }

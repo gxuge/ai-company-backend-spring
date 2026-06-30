@@ -34,6 +34,10 @@ public class TsAgentChatAgent implements Agent {
      */
     private final SubAgentRegistry subAgentRegistry;
     /**
+     * 开场白子 Agent。
+     */
+    private final WelcomeIntroSubAgent welcomeIntroSubAgent;
+    /**
      * 默认聊天子 Agent。
      */
     private final GeneralChatSubAgent generalChatSubAgent;
@@ -45,6 +49,22 @@ public class TsAgentChatAgent implements Agent {
 
     @Override
     public AgentResult execute(AgentContext context) {
+        String forceSubAgentName = oConvertUtils.getString(context.getAttribute("forceSubAgentName"));
+        if (welcomeIntroSubAgent.subAgentName().equalsIgnoreCase(forceSubAgentName)) {
+            AgentResult result = this.welcomeIntroSubAgent.execute(context);
+            if (result == null) {
+                return AgentResult.failed("开场白子Agent未返回结果");
+            }
+            result.getData().put("targetSubAgent", this.welcomeIntroSubAgent.subAgentName());
+            result.getData().put("routeDecision", Map.of(
+                    "action", AgentRouteAction.CALL_SUB_AGENT.name(),
+                    "subAgentName", this.welcomeIntroSubAgent.subAgentName(),
+                    "reason", "新会话首轮自动开场",
+                    "confidence", 1.0
+            ));
+            return result;
+        }
+
         NodeResult routeNodeResult = this.nodeRunner.run(context, this.intentRouterNode);
         AgentRouteDecision decision = extractDecision(routeNodeResult);
         context.putAttribute("routeDecision", decision.toMap());

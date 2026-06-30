@@ -35,10 +35,7 @@ public final class TsRoleVoConverter {
         vo.setGender(role.getGender());
         vo.setOccupation(role.getOccupation());
         vo.setGreeting(role.getGreeting());
-        vo.setIntroText(role.getIntroText());
-        vo.setPersonaText(role.getPersonaText());
         vo.setBackgroundStory(role.getBackgroundStory());
-        vo.setStoryText(role.getStoryText());
         vo.setDialoguePreview(role.getDialoguePreview());
         vo.setDialogueLength(role.getDialogueLength());
         vo.setToneTendency(role.getToneTendency());

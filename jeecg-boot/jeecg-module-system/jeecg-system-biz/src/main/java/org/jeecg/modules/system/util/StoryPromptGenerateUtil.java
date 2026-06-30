@@ -84,25 +84,26 @@ public class StoryPromptGenerateUtil {
                 "title", PromptRuntimeUtil.nullableToken(dto.getTitle()),
                 "story_mode", PromptRuntimeUtil.nullableToken(dto.getStoryMode()),
                 "story_setting", PromptRuntimeUtil.nullableToken(dto.getStorySetting()),
-                "scene_setting", PromptRuntimeUtil.nullableToken(dto.getSceneSetting()),
-                "story_background", PromptRuntimeUtil.nullableToken(dto.getStoryBackground()),
-                "chapter_count", String.valueOf(dto.getChapterCount()),
-                "role_names", PromptRuntimeUtil.nullableToken(joinRoleNames(dto.getRoleNames())),
+                "scene_setting", PromptRuntimeUtil.nullableToken(null),
+                "story_background", PromptRuntimeUtil.nullableToken(null),
+                "chapter_count", String.valueOf(3),
+                "role_names", PromptRuntimeUtil.nullableToken(null),
+                "plot_outline", PromptRuntimeUtil.nullableToken(dto.getPlotOutline()),
                 "extra_requirements", PromptRuntimeUtil.nullableToken(dto.getExtraRequirements())
         );
     }
 
     public static Map<String, String> buildOutlineOptimizeVars(TsStoryOneClickOutlineGenerateDto dto) {
         Map<String, String> variables = new java.util.HashMap<>();
+        variables.put("title", PromptRuntimeUtil.nullableToken(dto.getTitle()));
+        variables.put("story_mode", PromptRuntimeUtil.nullableToken(dto.getStoryMode()));
         variables.put("story_setting", PromptRuntimeUtil.nullableToken(dto.getStorySetting()));
-        variables.put("scene_setting", PromptRuntimeUtil.nullableToken(dto.getSceneSetting()));
-        variables.put("plot_outline", PromptRuntimeUtil.nullableToken(dto.getPlotOutline()));
-        variables.put("extra_requirements", PromptRuntimeUtil.nullableToken(null));
-        variables.put("title", PromptRuntimeUtil.nullableToken(null));
-        variables.put("story_mode", PromptRuntimeUtil.nullableToken(null));
+        variables.put("scene_setting", PromptRuntimeUtil.nullableToken(null));
         variables.put("story_background", PromptRuntimeUtil.nullableToken(null));
-        variables.put("chapter_count", String.valueOf(dto.getChapterCount()));
+        variables.put("chapter_count", String.valueOf(3));
         variables.put("role_names", PromptRuntimeUtil.nullableToken(null));
+        variables.put("plot_outline", PromptRuntimeUtil.nullableToken(dto.getPlotOutline()));
+        variables.put("extra_requirements", PromptRuntimeUtil.nullableToken(dto.getExtraRequirements()));
         return variables;
     }
 
@@ -220,16 +221,6 @@ public class StoryPromptGenerateUtil {
             }
         }
         return result;
-    }
-
-    /**
-     * 角色名列表转逗号串。
-     */
-    public static String joinRoleNames(List<String> roleNames) {
-        if (roleNames == null || roleNames.isEmpty()) {
-            return null;
-        }
-        return String.join(", ", roleNames);
     }
 
     /**

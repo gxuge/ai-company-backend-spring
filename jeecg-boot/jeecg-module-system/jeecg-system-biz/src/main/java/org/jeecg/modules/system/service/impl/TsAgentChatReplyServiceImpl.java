@@ -5,10 +5,14 @@ import jakarta.annotation.Resource;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.common.util.UUIDGenerator;
+import org.jeecg.modules.airag.agent.chat.WelcomeIntroSubAgent;
 import org.jeecg.modules.airag.agent.chat.TsAgentChatAgent;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentResult;
 import org.jeecg.modules.airag.agent.runtime.AgentRuntimeService;
+import org.jeecg.modules.airag.agent.sse.SseConnectionManager;
+import org.jeecg.modules.airag.agent.sse.SsePayload;
 import org.jeecg.modules.system.dto.tsagentchatsession.TsAgentChatReplyDto;
 import org.jeecg.modules.system.entity.TsAgentChatMessage;
 import org.jeecg.modules.system.entity.TsAgentChatSession;
@@ -19,6 +23,8 @@ import org.jeecg.modules.system.vo.tsagentchatsession.TsAgentChatReplyVo;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -26,6 +32,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Agent 回复编排实现。
@@ -34,12 +42,18 @@ import java.util.Map;
  * @date 2026/6/25
  */
 @Service
+@Slf4j
 public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
 
     private static final String ROLE_USER = "user";
     private static final String ROLE_ASSISTANT = "assistant";
     private static final String ROLE_SYSTEM = "system";
     private static final String ROLE_TOOL = "tool";
+
+    /**
+     * SSE 流式回复执行线程池。
+     */
+    private static final ExecutorService STREAM_EXECUTOR = Executors.newFixedThreadPool(8);
 
     @Resource
     private ITsAgentChatSessionService tsAgentChatSessionService;
@@ -53,27 +67,130 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
     @Resource
     private TsAgentChatAgent tsAgentChatAgent;
 
+    @Resource
+    private WelcomeIntroSubAgent welcomeIntroSubAgent;
+
+    @Resource
+    private SseConnectionManager sseConnectionManager;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Result<TsAgentChatReplyVo> createAiReply(LoginUser user, Long sessionId, TsAgentChatReplyDto request) {
+        String validationError = validateRequest(user, sessionId, request);
+        if (validationError != null) {
+            return Result.error(validationError);
+        }
+        ReplyRuntime runtime = prepareRuntime(user, sessionId, request);
+        AgentResult agentResult = agentRuntimeService.execute(tsAgentChatAgent, runtime.context);
+        TsAgentChatReplyVo vo = saveAssistantReply(runtime, agentResult, resolveAssistantContent(agentResult, runtime.context));
+        return Result.OK(vo);
+    }
+
+    @Override
+    public SseEmitter createAiReplyStream(LoginUser user, Long sessionId, TsAgentChatReplyDto request) {
+        SseEmitter emitter = new SseEmitter(0L);
+        String connectionKey = UUIDGenerator.generate();
+        this.sseConnectionManager.register(connectionKey, emitter);
+        try {
+            String validationError = validateRequest(user, sessionId, request);
+            if (validationError != null) {
+                sendStreamEnd(connectionKey, validationError);
+                completeEmitter(emitter);
+                return emitter;
+            }
+            ReplyRuntime runtime = prepareRuntime(user, sessionId, request);
+            runtime.context.setSseConnectionKey(connectionKey);
+            STREAM_EXECUTOR.submit(() -> runStreamReply(connectionKey, emitter, runtime));
+        } catch (JeecgBootException ex) {
+            log.warn("Agent流式回复预处理失败，sessionId={}", sessionId, ex);
+            sendStreamEnd(connectionKey, ex.getMessage());
+            completeEmitter(emitter);
+        } catch (Exception ex) {
+            log.error("Agent流式回复初始化失败，sessionId={}", sessionId, ex);
+            sendStreamEnd(connectionKey, ex.getMessage());
+            completeEmitter(emitter);
+        }
+        return emitter;
+    }
+
+    /**
+     * 校验一次回复请求的基础条件。
+     *
+     * @param user 当前用户
+     * @param sessionId 会话ID
+     * @param request 请求参数
+     * @return 校验失败消息，校验通过返回 null
+     */
+    private String validateRequest(LoginUser user, Long sessionId, TsAgentChatReplyDto request) {
         if (user == null) {
-            return Result.error("未登录或登录已过期");
+            return "未登录或登录已过期";
         }
         if (request == null) {
-            return Result.error("请求参数不能为空");
+            return "请求参数不能为空";
+        }
+        request.applyDefaults();
+        String userInput = normalizeText(request.getUserInput());
+        if (!StringUtils.hasText(userInput)) {
+            return "userInput不能为空";
+        }
+        TsAgentChatSession session = tsAgentChatSessionService.getOwnedSession(user.getId(), sessionId);
+        if (session == null) {
+            return "会话不存在或无权限访问";
+        }
+        return null;
+    }
+
+    /**
+     * 执行流式回复。
+     *
+     * @param connectionKey SSE 连接键
+     * @param emitter SSE 发射器
+     * @param runtime 运行时上下文
+     */
+    private void runStreamReply(String connectionKey, SseEmitter emitter, ReplyRuntime runtime) {
+        try {
+            AgentResult agentResult = agentRuntimeService.execute(tsAgentChatAgent, runtime.context);
+            String assistantContent = resolveAssistantContent(agentResult, runtime.context);
+            if (!StringUtils.hasText(assistantContent)) {
+                throw new JeecgBootException("AI回复为空，请稍后重试");
+            }
+            saveAssistantReply(runtime, agentResult, assistantContent);
+        } catch (Exception ex) {
+            log.error("Agent流式回复执行失败，sessionId={}, userMessageId={}", runtime.session.getId(), runtime.userMessage.getId(), ex);
+        } finally {
+            completeEmitter(emitter);
+            this.sseConnectionManager.remove(connectionKey);
+        }
+    }
+
+    /**
+     * 准备一次回复所需的上下文与首条用户消息。
+     *
+     * @param user 当前用户
+     * @param sessionId 会话ID
+     * @param request 请求参数
+     * @return 运行时上下文
+     */
+    private ReplyRuntime prepareRuntime(LoginUser user, Long sessionId, TsAgentChatReplyDto request) {
+        if (user == null) {
+            throw new JeecgBootException("未登录或登录已过期");
+        }
+        if (request == null) {
+            throw new JeecgBootException("请求参数不能为空");
         }
         request.applyDefaults();
 
         String userInput = normalizeText(request.getUserInput());
         if (!StringUtils.hasText(userInput)) {
-            return Result.error("userInput不能为空");
+            throw new JeecgBootException("userInput不能为空");
         }
 
         TsAgentChatSession session = tsAgentChatSessionService.getOwnedSession(user.getId(), sessionId);
         if (session == null) {
-            return Result.error("会话不存在或无权限访问");
+            throw new JeecgBootException("会话不存在或无权限访问");
         }
 
+        boolean firstTurn = isFirstAssistantTurn(session);
         TsAgentChatMessage userMessage = tsAgentChatMessageService.saveUserMessage(
                 user.getId(),
                 sessionId,
@@ -89,11 +206,36 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
                 sessionId,
                 request.getHistoryCount()
         );
-
         Map<String, String> variables = buildPromptVariables(session, userInput, recentMessages);
         AgentContext context = buildAgentContext(user, session, userInput, userMessage, recentMessages, variables);
-        AgentResult agentResult = agentRuntimeService.execute(tsAgentChatAgent, context);
-        String assistantContent = normalizeText(agentResult == null ? null : agentResult.getContent());
+        if (firstTurn) {
+            context.putAttribute("entryMode", "welcome_intro");
+            context.putAttribute("forceSubAgentName", welcomeIntroSubAgent.subAgentName());
+        }
+
+        ReplyRuntime runtime = new ReplyRuntime();
+        runtime.session = session;
+        runtime.userMessage = userMessage;
+        runtime.recentMessages = recentMessages;
+        runtime.variables = variables;
+        runtime.context = context;
+        runtime.userInput = userInput;
+        runtime.firstTurn = firstTurn;
+        return runtime;
+    }
+
+    /**
+     * 将 Agent 结果落库为助手消息并组装返回体。
+     *
+     * @param runtime 运行时上下文
+     * @param agentResult Agent 结果
+     * @param assistantContent 助手回复文本
+     * @return 回复 VO
+     */
+    private TsAgentChatReplyVo saveAssistantReply(ReplyRuntime runtime, AgentResult agentResult, String assistantContent) {
+        if (runtime == null) {
+            throw new JeecgBootException("运行上下文不能为空");
+        }
         if (!StringUtils.hasText(assistantContent)) {
             throw new JeecgBootException("AI回复为空，请稍后重试");
         }
@@ -102,29 +244,81 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         String messageStatus = toMessageStatus(agentResult == null ? null : agentResult.getStatus());
 
         TsAgentChatMessage assistantMessage = tsAgentChatMessageService.saveAssistantMessage(
-                user.getId(),
-                sessionId,
+                runtime.context.getUserId(),
+                runtime.session.getId(),
                 assistantContent,
                 "text",
                 messageStatus,
-                userMessage.getId(),
-                context.getRunId(),
+                runtime.userMessage.getId(),
+                runtime.context.getRunId(),
                 promptCode,
-                session.getAppId(),
+                runtime.session.getAppId(),
                 null,
-                buildExtJson(session, userInput, context, agentResult, promptCode, promptVersion, variables)
+                buildExtJson(runtime.session, runtime.userInput, runtime.context, agentResult, promptCode, promptVersion, runtime.variables)
         );
 
         TsAgentChatReplyVo vo = new TsAgentChatReplyVo();
-        vo.setSessionId(sessionId);
-        vo.setUserMessageId(userMessage.getId());
+        vo.setSessionId(runtime.session.getId());
+        vo.setUserMessageId(runtime.userMessage.getId());
         vo.setAssistantMessageId(assistantMessage.getId());
         vo.setContentText(assistantContent);
         vo.setPromptCode(promptCode);
         vo.setPromptVersion(promptVersion);
         vo.setRenderedPrompt(null);
         vo.setCreatedAt(assistantMessage.getCreatedAt() == null ? new Date() : assistantMessage.getCreatedAt());
-        return Result.OK(vo);
+        return vo;
+    }
+
+    /**
+     * 发送流式终止事件。
+     *
+     * @param connectionKey SSE 连接键
+     * @param message 错误消息
+     */
+    private void sendStreamEnd(String connectionKey, String message) {
+        if (!StringUtils.hasText(connectionKey)) {
+            return;
+        }
+        SsePayload payload = new SsePayload();
+        payload.setEvent("agent.end");
+        payload.setContent(message);
+        payload.setStatus(0);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("errorMessage", message);
+        data.put("status", "FAILED");
+        payload.setData(data);
+        this.sseConnectionManager.send(connectionKey, "agent.end", payload);
+    }
+
+    /**
+     * 安全关闭 SSE 连接。
+     *
+     * @param emitter SSE 发射器
+     */
+    private void completeEmitter(SseEmitter emitter) {
+        if (emitter == null) {
+            return;
+        }
+        try {
+            emitter.complete();
+        } catch (Exception ignore) {
+            // ignore
+        }
+    }
+
+    /**
+     * 解析 Agent 的最终回复文本，兼容上下文回填。
+     *
+     * @param agentResult Agent 结果
+     * @param context 运行上下文
+     * @return 回复文本
+     */
+    private String resolveAssistantContent(AgentResult agentResult, AgentContext context) {
+        String assistantContent = normalizeText(agentResult == null ? null : agentResult.getContent());
+        if (!StringUtils.hasText(assistantContent) && context != null) {
+            assistantContent = normalizeText(context.getLatestContent());
+        }
+        return assistantContent;
     }
 
     /**
@@ -350,5 +544,36 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
             return value.trim();
         }
         return normalizeText(defaultValue);
+    }
+
+    /**
+     * 判断是否是会话首轮助手回复。
+     *
+     * @param session 会话
+     * @return 是否首轮
+     */
+    private boolean isFirstAssistantTurn(TsAgentChatSession session) {
+        if (session == null) {
+            return false;
+        }
+        Integer messageCount = session.getMessageCount();
+        Integer turnCount = session.getTurnCount();
+        if (messageCount != null && messageCount > 0) {
+            return false;
+        }
+        return turnCount == null || turnCount <= 0;
+    }
+
+    /**
+     * 回复运行时数据。
+     */
+    private static class ReplyRuntime {
+        private TsAgentChatSession session;
+        private TsAgentChatMessage userMessage;
+        private List<TsAgentChatMessage> recentMessages;
+        private Map<String, String> variables;
+        private AgentContext context;
+        private String userInput;
+        private boolean firstTurn;
     }
 }

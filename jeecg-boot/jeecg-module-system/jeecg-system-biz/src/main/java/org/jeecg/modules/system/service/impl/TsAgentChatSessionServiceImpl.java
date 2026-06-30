@@ -73,6 +73,46 @@ public class TsAgentChatSessionServiceImpl extends ServiceImpl<TsAgentChatSessio
         return entity;
     }
 
+    /**
+     * 更新当前用户拥有的 Agent 会话基础信息，主要用于重命名与摘要同步。
+     *
+     * @param userId 用户ID
+     * @param id 会话ID
+     * @param sessionTitle 会话标题
+     * @param sessionSummary 会话摘要
+     * @param memoryJson 会话记忆快照
+     * @return 更新后的会话实体
+     * @throws JeecgBootBizTipException 当会话不存在或无权限访问时抛出
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public TsAgentChatSession updateSession(String userId,
+                                            Long id,
+                                            String sessionTitle,
+                                            String sessionSummary,
+                                            String memoryJson) {
+        TsAgentChatSession record = getOwnedSession(userId, id);
+        if (record == null) {
+            throw new JeecgBootBizTipException("会话不存在或无权限访问");
+        }
+
+        if (oConvertUtils.isNotEmpty(sessionTitle)) {
+            String trimmedTitle = sessionTitle.trim();
+            if (!trimmedTitle.isEmpty()) {
+                record.setSessionTitle(trimmedTitle);
+            }
+        }
+        if (sessionSummary != null) {
+            record.setSessionSummary(sessionSummary.trim());
+        }
+        if (memoryJson != null) {
+            record.setMemoryJson(memoryJson.trim());
+        }
+        record.setUpdatedAt(new Date());
+        this.updateById(record);
+        return record;
+    }
+
     @Override
     public Page<TsAgentChatSession> pageSessions(String userId,
                                                  String agentCode,

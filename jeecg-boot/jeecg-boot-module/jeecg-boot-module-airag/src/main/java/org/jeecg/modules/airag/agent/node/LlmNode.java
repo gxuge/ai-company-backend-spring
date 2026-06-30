@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * LLM 节点基类。
@@ -119,20 +120,31 @@ public abstract class LlmNode extends BaseAgentNode {
         CountDownLatch done = new CountDownLatch(1);
         AtomicReference<Throwable> errorRef = new AtomicReference<>();
         AtomicReference<String> textRef = new AtomicReference<>("");
+        AtomicBoolean terminalReceived = new AtomicBoolean(false);
         TokenStream tokenStream = this.aiChatHandler.chat(modelId, messages, params);
 
         tokenStream.onPartialResponse(delta -> {
+            if (terminalReceived.get()) {
+                return;
+            }
             String safeDelta = delta == null ? "" : delta;
             this.eventPublisher.publishLlmDelta(context, nodeName(), safeDelta);
         }).onCompleteResponse(response -> {
+            if (!terminalReceived.compareAndSet(false, true)) {
+                return;
+            }
             String finalText = response == null || response.aiMessage() == null ? "" : response.aiMessage().text();
-            if (FinishReason.STOP.equals(response.finishReason()) || response.finishReason() == null) {
+            FinishReason finishReason = response == null ? null : response.finishReason();
+            if (FinishReason.STOP.equals(finishReason) || finishReason == null) {
                 textRef.set(finalText);
             } else {
                 errorRef.set(new RuntimeException(finalText));
             }
             done.countDown();
         }).onError(error -> {
+            if (!terminalReceived.compareAndSet(false, true)) {
+                return;
+            }
             errorRef.set(error);
             done.countDown();
         }).start();

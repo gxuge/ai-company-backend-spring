@@ -52,11 +52,13 @@ public class SseConnectionManager {
             log.debug("SSE连接不存在，忽略发送，connectionKey={}, event={}", connectionKey, eventName);
             return;
         }
-        try {
-            emitter.send(SseEmitter.event().name(eventName).data(JSON.toJSONString(payload)));
-        } catch (IOException ex) {
-            log.warn("SSE发送失败，准备移除连接，connectionKey={}, event={}", connectionKey, eventName, ex);
-            remove(connectionKey);
+        synchronized (emitter) {
+            try {
+                emitter.send(SseEmitter.event().name(eventName).data(JSON.toJSONString(payload)));
+            } catch (IOException ex) {
+                log.warn("SSE发送失败，准备移除连接，connectionKey={}, event={}", connectionKey, eventName, ex);
+                remove(connectionKey);
+            }
         }
     }
 

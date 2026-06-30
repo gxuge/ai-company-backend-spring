@@ -33,10 +33,6 @@ public class CreateStoryAgent implements Agent {
      */
     private final GenerateStoryWithDefaultsToolNode generateStoryWithDefaultsToolNode;
     /**
-     * 保存草稿节点。
-     */
-    private final SaveDraftToolNode saveDraftToolNode;
-    /**
      * 总结节点。
      */
     private final FinalSummaryNode finalSummaryNode;
@@ -48,20 +44,17 @@ public class CreateStoryAgent implements Agent {
      * @param storyClarifyArgsNode 参数澄清节点
      * @param generateStoryToolNode 生成故事节点
      * @param generateStoryWithDefaultsToolNode 默认生成故事节点
-     * @param saveDraftToolNode 保存草稿节点
      * @param finalSummaryNode 总结节点
      */
     public CreateStoryAgent(NodeRunner nodeRunner,
                             StoryClarifyArgsNode storyClarifyArgsNode,
                             GenerateStoryToolNode generateStoryToolNode,
                             GenerateStoryWithDefaultsToolNode generateStoryWithDefaultsToolNode,
-                            SaveDraftToolNode saveDraftToolNode,
                             FinalSummaryNode finalSummaryNode) {
         this.nodeRunner = nodeRunner;
         this.storyClarifyArgsNode = storyClarifyArgsNode;
         this.generateStoryToolNode = generateStoryToolNode;
         this.generateStoryWithDefaultsToolNode = generateStoryWithDefaultsToolNode;
-        this.saveDraftToolNode = saveDraftToolNode;
         this.finalSummaryNode = finalSummaryNode;
     }
 
@@ -84,7 +77,6 @@ public class CreateStoryAgent implements Agent {
         } else {
             this.nodeRunner.run(context, this.generateStoryToolNode);
         }
-        this.nodeRunner.run(context, this.saveDraftToolNode);
         NodeResult finalSummary = this.nodeRunner.run(context, this.finalSummaryNode);
         AgentResult result = AgentResult.success(finalSummary.getContent());
         result.getData().putAll(finalSummary.getData());

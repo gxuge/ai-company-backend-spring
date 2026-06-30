@@ -13,10 +13,7 @@ public class TsRoleSavePo {
     private String occupation;
     /** 角色开场白。 */
     private String greeting;
-    private String introText;
-    private String personaText;
     private String backgroundStory;
-    private String storyText;
     private String dialoguePreview;
     private String dialogueLength;
     private String toneTendency;
@@ -40,10 +37,7 @@ public class TsRoleSavePo {
         po.setGender(trimToNull(request.getGender()));
         po.setOccupation(trimToNull(request.getOccupation()));
         po.setGreeting(trimToNull(request.getGreeting()));
-        po.setIntroText(request.getIntroText());
-        po.setPersonaText(request.getPersonaText());
         po.setBackgroundStory(request.getBackgroundStory());
-        po.setStoryText(request.getStoryText());
         po.setDialoguePreview(request.getDialoguePreview());
         po.setDialogueLength(trimToNull(request.getDialogueLength()));
         po.setToneTendency(trimToNull(request.getToneTendency()));
@@ -68,10 +62,7 @@ public class TsRoleSavePo {
         role.setGender(this.gender);
         role.setOccupation(this.occupation);
         role.setGreeting(this.greeting);
-        role.setIntroText(this.introText);
-        role.setPersonaText(this.personaText);
         role.setBackgroundStory(this.backgroundStory);
-        role.setStoryText(this.storyText);
         role.setDialoguePreview(this.dialoguePreview);
         role.setDialogueLength(this.dialogueLength);
         role.setToneTendency(this.toneTendency);
