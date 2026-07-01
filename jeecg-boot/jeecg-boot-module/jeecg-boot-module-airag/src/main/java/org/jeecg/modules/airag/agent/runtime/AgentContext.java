@@ -75,6 +75,9 @@ public class AgentContext {
      * @param value 值
      */
     public void putAttribute(String key, Object value) {
+        if (key == null || key.isBlank() || value == null) {
+            return;
+        }
         this.attributes.put(key, value);
     }
 

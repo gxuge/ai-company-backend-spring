@@ -41,9 +41,9 @@ public class IntentRouterNode extends LlmNode {
                             AgentEventPublisher eventPublisher,
                             SubAgentRegistry subAgentRegistry) {
         super(
-                "agent_intent_router",
+                "intent_router_dual_mode",
                 "Agent意图路由",
-                "agent_intent_router",
+                "intent_router_dual_mode",
                 "v1",
                 null,
                 null,
@@ -72,19 +72,34 @@ public class IntentRouterNode extends LlmNode {
     protected NodeResult parseResult(String finalText, AgentContext context) {
         Map<String, Object> json = parseJsonObject(finalText);
         AgentRouteDecision decision = AgentRouteDecision.fromMap(json);
-        if (oConvertUtils.isEmpty(decision.getSubAgentName())) {
-            decision.setSubAgentName(this.subAgentRegistry.defaultSubAgentName());
-        }
         if (decision.getAction() == null) {
             decision.setAction(AgentRouteAction.CALL_DEFAULT);
         }
-        if (decision.getAction() == AgentRouteAction.CALL_DEFAULT
-                && oConvertUtils.isEmpty(decision.getSubAgentName())) {
-            decision.setSubAgentName(this.subAgentRegistry.defaultSubAgentName());
+        if (decision.getAction() == AgentRouteAction.CALL_CHAT_AGENT
+                && oConvertUtils.isEmpty(decision.getTargetAgent())) {
+            decision.setTargetAgent(this.subAgentRegistry.defaultSubAgentName());
+        }
+        if (oConvertUtils.isEmpty(decision.getSubAgentName()) && oConvertUtils.isNotEmpty(decision.getTargetAgent())) {
+            decision.setSubAgentName(decision.getTargetAgent());
+        }
+        if (decision.getIntentMode() == null) {
+            decision.setIntentMode(decision.getAction() == AgentRouteAction.CALL_TASK_AGENT
+                    ? AgentIntentMode.TASK_MODE
+                    : AgentIntentMode.CHAT_MODE);
+        }
+        if (decision.getAction() == AgentRouteAction.CALL_DEFAULT) {
+            decision.setIntentMode(AgentIntentMode.CHAT_MODE);
+        }
+        if (decision.getAction() == AgentRouteAction.CALL_CHAT_AGENT
+                && oConvertUtils.isEmpty(decision.getTargetAgent())) {
+            decision.setTargetAgent(this.subAgentRegistry.defaultSubAgentName());
         }
         NodeResult result = NodeResult.success(oConvertUtils.isEmpty(decision.getReply()) ? finalText : decision.getReply());
         result.setAction(decision.getAction().name());
         result.put("routeDecision", decision.toMap());
+        result.put("intentMode", decision.getIntentMode() == null ? null : decision.getIntentMode().name());
+        result.put("targetAgent", decision.getTargetAgent());
+        result.put("taskGoal", decision.getTaskGoal());
         result.put("promptCode", getPromptCode());
         result.put("promptVersion", getPromptVersion());
         result.put("rawText", finalText);

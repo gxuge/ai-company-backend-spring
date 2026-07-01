@@ -6,6 +6,7 @@ import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.common.util.UUIDGenerator;
+import org.jeecg.common.util.ShiroThreadPoolExecutor;
 import org.jeecg.modules.airag.agent.chat.WelcomeIntroSubAgent;
 import org.jeecg.modules.airag.agent.chat.TsAgentChatAgent;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
@@ -33,7 +34,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Agent 回复编排实现。
@@ -53,7 +55,8 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
     /**
      * SSE 流式回复执行线程池。
      */
-    private static final ExecutorService STREAM_EXECUTOR = Executors.newFixedThreadPool(8);
+    private static final ExecutorService STREAM_EXECUTOR =
+            new ShiroThreadPoolExecutor(8, 8, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
 
     @Resource
     private ITsAgentChatSessionService tsAgentChatSessionService;

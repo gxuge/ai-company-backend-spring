@@ -75,10 +75,73 @@ public class TsChatMessageEventService {
         entity.setName(name);
         entity.setContent(content);
         entity.setStatus(status);
-        entity.setJson(JSON.toJSONString(jsonData == null ? new LinkedHashMap<>() : jsonData));
+        entity.setJson(JSON.toJSONString(compactJsonData(jsonData)));
         entity.setIsDeleted(0);
         entity.setCreatedAt(now);
         entity.setUpdatedAt(now);
         this.eventMapper.insert(entity);
+    }
+
+    /**
+     * 压缩事件 JSON，避免把整包 payload 原样落库。
+     *
+     * @param jsonData 原始数据
+     * @return 压缩后的数据
+     */
+    private Map<String, Object> compactJsonData(Map<String, Object> jsonData) {
+        Map<String, Object> compact = new LinkedHashMap<>();
+        if (jsonData == null || jsonData.isEmpty()) {
+            return compact;
+        }
+        copyIfPresent(compact, jsonData, "event");
+        copyIfPresent(compact, jsonData, "nodeType");
+        copyIfPresent(compact, jsonData, "nodeName");
+        copyIfPresent(compact, jsonData, "promptCode");
+        copyIfPresent(compact, jsonData, "toolName");
+        copyIfPresent(compact, jsonData, "agentName");
+        copyIfPresent(compact, jsonData, "summary");
+        copyIfPresent(compact, jsonData, "status");
+        copyIfPresent(compact, jsonData, "action");
+        copyIfPresent(compact, jsonData, "reply");
+        copyIfPresent(compact, jsonData, "routeDecision");
+        copyIfPresent(compact, jsonData, "targetSubAgent");
+        copyIfPresent(compact, jsonData, "intentMode");
+        copyIfPresent(compact, jsonData, "targetAgent");
+        copyIfPresent(compact, jsonData, "taskGoal");
+        copyIfPresent(compact, jsonData, "executionMode");
+        copyIfPresent(compact, jsonData, "request");
+        copyIfPresent(compact, jsonData, "result");
+        copyIfPresent(compact, jsonData, "resultJson");
+        copyIfPresent(compact, jsonData, "errorCode");
+        copyIfPresent(compact, jsonData, "errorMessage");
+        copyIfPresent(compact, jsonData, "sessionId");
+        copyIfPresent(compact, jsonData, "agentSessionId");
+        copyIfPresent(compact, jsonData, "runId");
+        return compact;
+    }
+
+    /**
+     * 拷贝存在的字段。
+     *
+     * @param target 目标 Map
+     * @param source 源 Map
+     * @param key 字段名
+     */
+    private void copyIfPresent(Map<String, Object> target, Map<String, Object> source, String key) {
+        if (source == null || !source.containsKey(key)) {
+            return;
+        }
+        Object value = source.get(key);
+        if (value == null) {
+            return;
+        }
+        if (value instanceof String) {
+            String normalized = ((String) value).trim();
+            if (!normalized.isEmpty()) {
+                target.put(key, normalized);
+            }
+            return;
+        }
+        target.put(key, value);
     }
 }

@@ -8,9 +8,13 @@ package org.jeecg.modules.airag.agent.chat;
  */
 public enum AgentRouteAction {
     /**
-     * 调用指定子 Agent。
+     * 调用指定聊天子 Agent。
      */
-    CALL_SUB_AGENT,
+    CALL_CHAT_AGENT,
+    /**
+     * 调用指定任务子 Agent。
+     */
+    CALL_TASK_AGENT,
     /**
      * 调用默认子 Agent。
      */
@@ -18,5 +22,9 @@ public enum AgentRouteAction {
     /**
      * 需要追问用户。
      */
-    ASK_USER
+    ASK_USER,
+    /**
+     * 兼容旧版路由动作。
+     */
+    CALL_SUB_AGENT
 }

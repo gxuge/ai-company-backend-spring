@@ -92,8 +92,29 @@ public class SubAgentRegistry {
             return "general_chat";
         }
         return this.registry.values().stream()
-                .map(SubAgent::subAgentName)
+                .map(subAgent -> subAgent.subAgentName() + "：" + describeSubAgent(subAgent.subAgentName()))
                 .distinct()
                 .collect(Collectors.joining("\n", "- ", ""));
+    }
+
+    /**
+     * 生成子 Agent 的可读说明。
+     *
+     * @param subAgentName 子 Agent 名称
+     * @return 说明文本
+     */
+    private String describeSubAgent(String subAgentName) {
+        if (oConvertUtils.isEmpty(subAgentName)) {
+            return "未命名子 Agent";
+        }
+        return switch (subAgentName) {
+            case "welcome_intro" -> "新会话首轮开场引导";
+            case "general_chat" -> "普通聊天、陪伴对话、闲聊回复";
+            case "role_task_agent" -> "生成角色文本设定";
+            case "story_task_agent" -> "生成故事文本设定";
+            case "role_image_task_agent" -> "生成角色形象图";
+            case "story_scene_image_task_agent" -> "生成故事场景图";
+            default -> subAgentName;
+        };
     }
 }
