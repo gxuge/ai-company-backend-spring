@@ -54,6 +54,10 @@ public class SseConnectionManager {
         }
         synchronized (emitter) {
             try {
+                if ("llm.delta".equals(eventName)) {
+                    emitter.send(SseEmitter.event().name(eventName).data(payload == null ? "" : payload.getContent()));
+                    return;
+                }
                 emitter.send(SseEmitter.event().name(eventName).data(JSON.toJSONString(payload)));
             } catch (IOException ex) {
                 log.warn("SSE发送失败，准备移除连接，connectionKey={}, event={}", connectionKey, eventName, ex);

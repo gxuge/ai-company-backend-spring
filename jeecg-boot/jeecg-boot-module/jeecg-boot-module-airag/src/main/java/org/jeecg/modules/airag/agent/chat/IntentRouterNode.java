@@ -105,4 +105,9 @@ public class IntentRouterNode extends LlmNode {
         result.put("rawText", finalText);
         return result;
     }
+
+    @Override
+    protected boolean shouldPublishPartialResponse() {
+        return false;
+    }
 }

@@ -66,6 +66,7 @@ public class AgentEventPublisher {
                 null
         );
         fillContextFields(data, context);
+        recordEventTrail(context, data);
         sendOnly(context, "agent.start", null, agentName, "开始执行 " + safeText(agentName, "Agent"), data);
     }
 
@@ -89,6 +90,7 @@ public class AgentEventPublisher {
                 result == null ? null : result.getData()
         );
         fillContextFields(data, context);
+        recordEventTrail(context, data);
         sendOnly(context, "agent.end", null, agentName, result == null ? null : result.getContent(), data);
     }
 
@@ -108,6 +110,7 @@ public class AgentEventPublisher {
                 2,
                 payload
         );
+        recordEventTrail(context, data);
         persistAndSendCustom(context, "subagent.start", "subagent", subAgentName,
                 "开始执行 " + safeText(subAgentName, "SubAgent"), 2, data);
     }
@@ -136,12 +139,13 @@ public class AgentEventPublisher {
                 "subagent",
                 subAgentName,
                 result == null ? null : result.getContent(),
-                result == null || result.getStatus() == null ? 0 : (result.getStatus() == AgentResult.Status.SUCCESS ? 1 : 0),
+                result == null || result.getStatus() == null ? 0 : (result.getStatus() == AgentResult.Status.FAILED ? 0 : 1),
                 mergedPayload
         );
+        recordEventTrail(context, data);
         persistAndSendCustom(context, "subagent.end", "subagent", subAgentName,
                 result == null ? null : result.getContent(),
-                result == null || result.getStatus() == null ? 0 : (result.getStatus() == AgentResult.Status.SUCCESS ? 1 : 0),
+                result == null || result.getStatus() == null ? 0 : (result.getStatus() == AgentResult.Status.FAILED ? 0 : 1),
                 data);
     }
 
@@ -171,6 +175,7 @@ public class AgentEventPublisher {
                 0,
                 mergedPayload
         );
+        recordEventTrail(context, data);
         persistAndSendCustom(context, "subagent.error", "subagent", subAgentName,
                 error == null ? "SubAgent step failed" : error.getMessage(), 0, data);
     }
@@ -194,6 +199,7 @@ public class AgentEventPublisher {
                 2,
                 null
         );
+        recordEventTrail(context, data);
         persistAndSend(context, "llm.start", NodeKind.LLM, nodeName, "开始生成", 2, data);
     }
 
@@ -218,6 +224,7 @@ public class AgentEventPublisher {
                 2,
                 null
         );
+        recordEventTrail(context, data);
         sendOnly(context, "llm.delta", NodeKind.LLM, nodeName, delta, data);
     }
 
@@ -246,6 +253,7 @@ public class AgentEventPublisher {
                 0,
                 payload
         );
+        recordEventTrail(context, data);
         persistAndSend(context, "llm.error", NodeKind.LLM, nodeName, error == null ? "LLM step failed" : error.getMessage(), 0, data);
     }
 
@@ -265,6 +273,12 @@ public class AgentEventPublisher {
                               Map<String, Object> payload) {
         String bufferKey = buildLlmBufferKey(context, nodeName);
         String content = readBuffer(bufferKey);
+        if (content == null || content.isBlank()) {
+            content = extractText(payload, "reply", "content", "rawText", "text", "summary");
+        }
+        if (content == null || content.isBlank()) {
+            content = context.getLatestContent();
+        }
         clearBuffer(bufferKey);
         Map<String, Object> data = buildEventData(
                 "llm.end",
@@ -277,6 +291,7 @@ public class AgentEventPublisher {
                 success ? 1 : 0,
                 payload
         );
+        recordEventTrail(context, data);
         persistAndSend(context, "llm.end", NodeKind.LLM, nodeName, content, success ? 1 : 0, data);
     }
 
@@ -301,6 +316,7 @@ public class AgentEventPublisher {
                 2,
                 payload
         );
+        recordEventTrail(context, data);
         persistAndSend(context, "tool.start", NodeKind.TOOL, nodeName, content, 2, data);
     }
 
@@ -334,6 +350,7 @@ public class AgentEventPublisher {
                 0,
                 mergePayload(payload, errorPayload)
         );
+        recordEventTrail(context, data);
         persistAndSend(context, "tool.error", NodeKind.TOOL, nodeName, error == null ? "Tool step failed" : error.getMessage(), 0, data);
     }
 
@@ -365,6 +382,7 @@ public class AgentEventPublisher {
                 success ? 1 : 0,
                 payload
         );
+        recordEventTrail(context, data);
         persistAndSend(context, "tool.end", NodeKind.TOOL, nodeName, summary, success ? 1 : 0, data);
     }
 
@@ -599,6 +617,29 @@ public class AgentEventPublisher {
     }
 
     /**
+     * 从 payload 中提取可展示文本。
+     *
+     * @param payload 扩展数据
+     * @param keys 优先级字段
+     * @return 文本
+     */
+    private String extractText(Map<String, Object> payload, String... keys) {
+        if (payload == null || payload.isEmpty() || keys == null) {
+            return null;
+        }
+        for (String key : keys) {
+            if (key == null || key.isBlank()) {
+                continue;
+            }
+            String text = stringValue(payload.get(key));
+            if (text != null) {
+                return text;
+            }
+        }
+        return null;
+    }
+
+    /**
      * 合并扩展数据。
      *
      * @param source 原始扩展数据
@@ -673,6 +714,19 @@ public class AgentEventPublisher {
             data.put("agentSessionId", context.getAgentSessionId());
         }
         putString(data, "runId", context.getRunId());
+    }
+
+    /**
+     * 将事件追加到上下文轨迹中。
+     *
+     * @param context 运行上下文
+     * @param eventData 事件数据
+     */
+    private void recordEventTrail(AgentContext context, Map<String, Object> eventData) {
+        if (context == null || eventData == null || eventData.isEmpty()) {
+            return;
+        }
+        context.appendEvent(eventData);
     }
 
     /**

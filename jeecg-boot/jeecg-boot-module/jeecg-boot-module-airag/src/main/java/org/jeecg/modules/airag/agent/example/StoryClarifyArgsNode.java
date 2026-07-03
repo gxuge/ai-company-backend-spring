@@ -86,4 +86,9 @@ public class StoryClarifyArgsNode extends LlmNode {
         }
         return result;
     }
+
+    @Override
+    protected boolean shouldPublishPartialResponse() {
+        return false;
+    }
 }

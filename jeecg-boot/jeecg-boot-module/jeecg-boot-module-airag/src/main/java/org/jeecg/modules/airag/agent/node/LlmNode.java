@@ -127,6 +127,9 @@ public abstract class LlmNode extends BaseAgentNode {
             if (terminalReceived.get()) {
                 return;
             }
+            if (!shouldPublishPartialResponse()) {
+                return;
+            }
             String safeDelta = delta == null ? "" : delta;
             this.eventPublisher.publishLlmDelta(context, nodeName(), safeDelta);
         }).onCompleteResponse(response -> {
@@ -177,6 +180,15 @@ public abstract class LlmNode extends BaseAgentNode {
      * @return 节点结果
      */
     protected abstract NodeResult parseResult(String finalText, AgentContext context);
+
+    /**
+     * 是否需要把 LLM 增量响应实时推送到前端。
+     *
+     * @return true 表示推送增量；false 表示仅保留最终结果
+     */
+    protected boolean shouldPublishPartialResponse() {
+        return true;
+    }
 
     /**
      * 构造聊天参数。
