@@ -31,6 +31,10 @@ public class TsAgentChatMessageServiceImpl extends ServiceImpl<TsAgentChatMessag
     private static final String ROLE_USER = "user";
     private static final String ROLE_ASSISTANT = "assistant";
     private static final String ROLE_SYSTEM = "system";
+    private static final String SENDER_USER = "user";
+    private static final String SENDER_MAIN_AGENT = "main_agent";
+    private static final String SENDER_SYSTEM = "system";
+    private static final String DEFAULT_AGENT_CODE = "main";
 
     private static final String STATUS_STREAMING = "streaming";
     private static final String STATUS_SUCCESS = "success";
@@ -165,8 +169,11 @@ public class TsAgentChatMessageServiceImpl extends ServiceImpl<TsAgentChatMessag
         entity.setSessionId(session.getId());
         entity.setMessageNo(nextMessageNo(session.getId()));
         entity.setRoleType(roleType);
+        entity.setSenderType(resolveSenderType(roleType));
+        entity.setAgentCode(resolveAgentCode(session));
         entity.setContent(content);
         entity.setContentRaw(content);
+        entity.setVisibleToUser(1);
         String normalizedContentFormat = FORMAT_TEXT;
         if (oConvertUtils.isNotEmpty(contentFormat)) {
             String trimmedContentFormat = contentFormat.trim();
@@ -195,6 +202,24 @@ public class TsAgentChatMessageServiceImpl extends ServiceImpl<TsAgentChatMessag
         this.save(entity);
         sessionService.touchAfterMessage(session.getId(), entity.getId(), now, 1, ROLE_ASSISTANT.equals(roleType) ? 1 : 0);
         return entity;
+    }
+
+    private String resolveSenderType(String roleType) {
+        if (ROLE_USER.equalsIgnoreCase(roleType)) {
+            return SENDER_USER;
+        }
+        if (ROLE_SYSTEM.equalsIgnoreCase(roleType)) {
+            return SENDER_SYSTEM;
+        }
+        return SENDER_MAIN_AGENT;
+    }
+
+    private String resolveAgentCode(TsAgentChatSession session) {
+        if (session == null || oConvertUtils.isEmpty(session.getAgentCode())) {
+            return DEFAULT_AGENT_CODE;
+        }
+        String normalized = session.getAgentCode().trim();
+        return normalized.isEmpty() ? DEFAULT_AGENT_CODE : normalized;
     }
 
     private TsAgentChatSession ensureOwnedSession(String userId, Long sessionId) {

@@ -65,6 +65,13 @@ spring:
     password: ${REDIS_PASSWORD}
 
 jeecg:
+  airag:
+    skill:
+      root-dir: ${AIRAG_SKILL_ROOT_DIR:classpath*:deepagents/skills}
+    deepagents:
+      enabled: ${AIRAG_DEEPAGENTS_ENABLED:true}
+      default-skill-domain: ${AIRAG_DEEPAGENTS_DEFAULT_SKILL_DOMAIN:}
+      default-skill-top-k: ${AIRAG_DEEPAGENTS_DEFAULT_SKILL_TOP_K:3}
   # local|minio|alioss
   # Cloudflare R2建议使用 minio 兼容模式
   uploadType: ${UPLOAD_TYPE:minio}

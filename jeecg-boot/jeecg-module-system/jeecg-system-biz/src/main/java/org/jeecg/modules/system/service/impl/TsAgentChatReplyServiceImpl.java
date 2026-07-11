@@ -7,8 +7,9 @@ import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.common.util.UUIDGenerator;
 import org.jeecg.common.util.ShiroThreadPoolExecutor;
-import org.jeecg.modules.airag.agent.chat.WelcomeIntroSubAgent;
-import org.jeecg.modules.airag.agent.chat.TsAgentChatAgent;
+import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.airag.agent.common.SubAgentHistorySupport;
+import org.jeecg.modules.airag.agent.main.TsAgentChatAgent;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentResult;
 import org.jeecg.modules.airag.agent.runtime.AgentRuntimeService;
@@ -51,6 +52,11 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
     private static final String ROLE_ASSISTANT = "assistant";
     private static final String ROLE_SYSTEM = "system";
     private static final String ROLE_TOOL = "tool";
+    private static final String ATTR_SESSION_SUB_AGENT_HISTORY_JSON = "sessionSubAgentHistoryJson";
+    private static final String ATTR_SUB_AGENT_HISTORY_JSON = "subAgentHistoryJson";
+    private static final String ATTR_SUB_AGENT_HISTORY_BLOCK = "subAgentHistoryBlock";
+    private static final String DEFAULT_AGENT_CODE = "main";
+    private static final String SENDER_MAIN_AGENT = "main_agent";
 
     /**
      * SSE 流式回复执行线程池。
@@ -71,9 +77,6 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
     private TsAgentChatAgent tsAgentChatAgent;
 
     @Resource
-    private WelcomeIntroSubAgent welcomeIntroSubAgent;
-
-    @Resource
     private SseConnectionManager sseConnectionManager;
 
     @Override
@@ -85,6 +88,7 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         }
         ReplyRuntime runtime = prepareRuntime(user, sessionId, request);
         AgentResult agentResult = agentRuntimeService.execute(tsAgentChatAgent, runtime.context);
+        recordSubAgentHistory(runtime, agentResult);
         TsAgentChatReplyVo vo = saveAssistantReply(runtime, agentResult, resolveAssistantContent(agentResult, runtime.context));
         return Result.OK(vo);
     }
@@ -153,6 +157,7 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
     private void runStreamReply(String connectionKey, SseEmitter emitter, ReplyRuntime runtime) {
         try {
             AgentResult agentResult = agentRuntimeService.execute(tsAgentChatAgent, runtime.context);
+            recordSubAgentHistory(runtime, agentResult);
             String assistantContent = resolveAssistantContent(agentResult, runtime.context);
             if (!StringUtils.hasText(assistantContent)) {
                 throw new JeecgBootException("AI回复为空，请稍后重试");
@@ -193,7 +198,6 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
             throw new JeecgBootException("会话不存在或无权限访问");
         }
 
-        boolean firstTurn = isFirstAssistantTurn(session);
         TsAgentChatMessage userMessage = tsAgentChatMessageService.saveUserMessage(
                 user.getId(),
                 sessionId,
@@ -211,11 +215,6 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         );
         Map<String, String> variables = buildPromptVariables(session, userInput, recentMessages);
         AgentContext context = buildAgentContext(user, session, userInput, userMessage, recentMessages, variables);
-        if (firstTurn) {
-            context.putAttribute("entryMode", "welcome_intro");
-            context.putAttribute("forceSubAgentName", welcomeIntroSubAgent.subAgentName());
-        }
-
         ReplyRuntime runtime = new ReplyRuntime();
         runtime.session = session;
         runtime.userMessage = userMessage;
@@ -223,7 +222,6 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         runtime.variables = variables;
         runtime.context = context;
         runtime.userInput = userInput;
-        runtime.firstTurn = firstTurn;
         return runtime;
     }
 
@@ -318,6 +316,9 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
      */
     private String resolveAssistantContent(AgentResult agentResult, AgentContext context) {
         String assistantContent = normalizeText(agentResult == null ? null : agentResult.getContent());
+        if (!StringUtils.hasText(assistantContent) && agentResult != null && agentResult.getData() != null) {
+            assistantContent = normalizeText(extractString(agentResult.getData(), "formattedResult"));
+        }
         if (!StringUtils.hasText(assistantContent) && context != null) {
             assistantContent = normalizeText(context.getLatestContent());
         }
@@ -346,10 +347,15 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         context.setAgentSessionId(session.getId());
         context.setSessionId(session.getId());
         context.setMessageId(userMessage == null || userMessage.getId() == null ? null : String.valueOf(userMessage.getId()));
-        context.setAgentCode(session.getAgentCode());
+        context.setTurnId(userMessage == null || userMessage.getId() == null ? null : String.valueOf(userMessage.getId()));
+        context.setAgentCode(normalizeAgentCode(session.getAgentCode()));
+        context.setSenderType(SENDER_MAIN_AGENT);
         context.setUserId(user == null || user.getId() == null ? null : String.valueOf(user.getId()));
         context.setUserInput(userInput);
         context.putAttribute("sessionMemoryJson", session.getMemoryJson());
+        context.putAttribute("sessionStateJson", session.getStateJson());
+        context.putAttribute(ATTR_SESSION_SUB_AGENT_HISTORY_JSON, session.getSubAgentHistoryJson());
+        context.putAttribute(ATTR_SUB_AGENT_HISTORY_JSON, session.getSubAgentHistoryJson());
         context.putAttribute("sessionTitle", session.getSessionTitle());
         context.putAttribute("sessionSummary", session.getSessionSummary());
         context.putAttribute("recentMessagesBlock", buildRecentMessagesBlock(recentMessages));
@@ -376,7 +382,9 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         putIfHas(variables, "story_setting", memory.getString("story_setting"));
         putIfHas(variables, "site_setting", memory.getString("site_setting"));
         putIfHas(variables, "plot_outline", memory.getString("plot_outline"));
+        putIfHas(variables, "story_mode", memory.getString("story_mode"));
         putIfHas(variables, "user_input", userInput);
+        putIfHas(variables, "state_json", session == null ? null : session.getStateJson());
         putIfHas(variables, "last_assistant_message", findLastAssistantMessage(recentMessages));
         putIfHas(variables, "recent_messages_block", buildRecentMessagesBlock(recentMessages));
         return variables;
@@ -447,16 +455,159 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         JSONObject ext = new JSONObject();
         ext.put("agentName", tsAgentChatAgent.agentName());
         ext.put("sessionId", session == null ? null : session.getId());
-        ext.put("agentCode", session == null ? null : session.getAgentCode());
         ext.put("userInput", userInput);
         ext.put("runId", context == null ? null : context.getRunId());
         ext.put("promptCode", promptCode);
         ext.put("promptVersion", promptVersion);
         ext.put("agentResultStatus", agentResult == null || agentResult.getStatus() == null ? null : agentResult.getStatus().name());
-        ext.put("routeDecision", agentResult == null ? null : agentResult.getData().get("routeDecision"));
-        ext.put("targetSubAgent", agentResult == null ? null : agentResult.getData().get("targetSubAgent"));
+        ext.put("toolName", agentResult == null ? null : agentResult.getData().get("toolName"));
+        ext.put("description", agentResult == null ? null : agentResult.getData().get("description"));
+        ext.put("structuredResult", agentResult == null ? null : agentResult.getStructuredResult());
+        ext.put("subAgentEvents", context == null ? null : context.snapshotEvents());
+        ext.put("subAgentHistoryCount", SubAgentHistorySupport.countHistory(oConvertUtils.getString(context == null ? null : context.getAttribute(ATTR_SUB_AGENT_HISTORY_JSON))));
+        ext.put("subAgentHistoryBlock", context == null ? null : context.getAttribute(ATTR_SUB_AGENT_HISTORY_BLOCK));
         ext.put("promptVariables", promptVariables);
         return ext.toJSONString();
+    }
+
+    /**
+     * 将本轮子 Agent 的执行结果写回会话历史。
+     *
+     * <p>仅保留每个子 Agent 最近两条记录，供后续同名子 Agent 续跑或重试时使用。</p>
+     *
+     * @param runtime 运行上下文
+     * @param agentResult Agent 结果
+     */
+    private void recordSubAgentHistory(ReplyRuntime runtime, AgentResult agentResult) {
+        if (runtime == null || runtime.session == null || agentResult == null) {
+            return;
+        }
+        String subAgentName = resolveSubAgentName(runtime, agentResult);
+        if (!StringUtils.hasText(subAgentName)) {
+            return;
+        }
+        Object structuredResult = extractStructuredResult(agentResult);
+        if (agentResult.getStatus() == AgentResult.Status.WAITING_USER && structuredResult == null) {
+            return;
+        }
+
+        JSONObject record = new JSONObject();
+        record.put("runId", runtime.context == null ? null : runtime.context.getRunId());
+        record.put("status", agentResult.getStatus() == null ? null : agentResult.getStatus().name());
+        record.put("summary", normalizeText(agentResult.getContent()));
+        record.put("resultJson", structuredResult);
+        record.put("error", extractErrorMessage(agentResult));
+        record.put("toolName", extractString(agentResult.getData(), "toolName"));
+        record.put("description", extractString(agentResult.getData(), "description"));
+        record.put("executionMode", extractString(agentResult.getData(), "executionMode"));
+        record.put("events", runtime.context == null ? null : runtime.context.snapshotEvents());
+        record.put("createdAt", new Date());
+
+        String updatedHistoryJson = SubAgentHistorySupport.appendHistoryJson(
+                runtime.session.getSubAgentHistoryJson(),
+                subAgentName,
+                record,
+                SubAgentHistorySupport.DEFAULT_HISTORY_LIMIT
+        );
+        runtime.session.setSubAgentHistoryJson(updatedHistoryJson);
+        runtime.session.setUpdatedAt(new Date());
+        tsAgentChatSessionService.updateById(runtime.session);
+
+        if (runtime.context != null) {
+            String selectedHistoryJson = SubAgentHistorySupport.selectHistoryJson(updatedHistoryJson, subAgentName);
+            runtime.context.putAttribute(ATTR_SESSION_SUB_AGENT_HISTORY_JSON, updatedHistoryJson);
+            runtime.context.putAttribute(ATTR_SUB_AGENT_HISTORY_JSON, selectedHistoryJson);
+            runtime.context.putAttribute(ATTR_SUB_AGENT_HISTORY_BLOCK, SubAgentHistorySupport.buildHistoryBlock(selectedHistoryJson));
+        }
+    }
+
+    /**
+     * 解析本轮实际命中的子 Agent 名称。
+     *
+     * @param runtime 运行上下文
+     * @param agentResult Agent 结果
+     * @return 子 Agent 名称
+     */
+    private String resolveSubAgentName(ReplyRuntime runtime, AgentResult agentResult) {
+        String resolved = extractString(agentResult == null ? null : agentResult.getData(), "targetSubAgent");
+        if (StringUtils.hasText(resolved)) {
+            return resolved;
+        }
+        resolved = extractString(agentResult == null ? null : agentResult.getData(), "resolvedAgent");
+        if (StringUtils.hasText(resolved)) {
+            return resolved;
+        }
+        resolved = extractString(agentResult == null ? null : agentResult.getData(), "subAgentName");
+        if (StringUtils.hasText(resolved)) {
+            return resolved;
+        }
+        return null;
+    }
+
+    /**
+     * 提取结构化结果 JSON。
+     *
+     * @param agentResult Agent 结果
+     * @return 结构化结果
+     */
+    private Object extractStructuredResult(AgentResult agentResult) {
+        if (agentResult == null) {
+            return null;
+        }
+        Object structuredResult = agentResult.getStructuredResult();
+        if (structuredResult != null) {
+            return structuredResult;
+        }
+        if (agentResult.getData() == null) {
+            return null;
+        }
+        Object value = agentResult.getData().get("resultJson");
+        if (value == null) {
+            value = agentResult.getData().get("result");
+        }
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof JSONObject || value instanceof com.alibaba.fastjson.JSONArray) {
+            return value;
+        }
+        if (value instanceof String text) {
+            String normalized = normalizeText(text);
+            if (!StringUtils.hasText(normalized)) {
+                return null;
+            }
+            try {
+                return JSONObject.parse(normalized);
+            } catch (Exception ignore) {
+                return normalized;
+            }
+        }
+        try {
+            return JSONObject.parse(JSONObject.toJSONString(value));
+        } catch (Exception ignore) {
+            return String.valueOf(value);
+        }
+    }
+
+    /**
+     * 提取错误信息。
+     *
+     * @param agentResult Agent 结果
+     * @return 错误信息
+     */
+    private String extractErrorMessage(AgentResult agentResult) {
+        if (agentResult == null || agentResult.getData() == null) {
+            return null;
+        }
+        String errorMessage = extractString(agentResult.getData(), "errorMessage");
+        if (StringUtils.hasText(errorMessage)) {
+            return errorMessage;
+        }
+        errorMessage = extractString(agentResult.getData(), "message");
+        if (StringUtils.hasText(errorMessage)) {
+            return errorMessage;
+        }
+        return agentResult.getStatus() == AgentResult.Status.FAILED ? normalizeText(agentResult.getContent()) : null;
     }
 
     /**
@@ -515,6 +666,11 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    private String normalizeAgentCode(String value) {
+        String normalized = normalizeText(value);
+        return StringUtils.hasText(normalized) ? normalized : DEFAULT_AGENT_CODE;
+    }
+
     /**
      * 角色标签归一化。
      */
@@ -550,24 +706,6 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
     }
 
     /**
-     * 判断是否是会话首轮助手回复。
-     *
-     * @param session 会话
-     * @return 是否首轮
-     */
-    private boolean isFirstAssistantTurn(TsAgentChatSession session) {
-        if (session == null) {
-            return false;
-        }
-        Integer messageCount = session.getMessageCount();
-        Integer turnCount = session.getTurnCount();
-        if (messageCount != null && messageCount > 0) {
-            return false;
-        }
-        return turnCount == null || turnCount <= 0;
-    }
-
-    /**
      * 回复运行时数据。
      */
     private static class ReplyRuntime {
@@ -577,6 +715,5 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         private Map<String, String> variables;
         private AgentContext context;
         private String userInput;
-        private boolean firstTurn;
     }
 }

@@ -23,6 +23,10 @@ public class ToolDefinition {
      */
     private String description;
     /**
+     * 路由键。
+     */
+    private String routeKey;
+    /**
      * 分类。
      */
     private String category;

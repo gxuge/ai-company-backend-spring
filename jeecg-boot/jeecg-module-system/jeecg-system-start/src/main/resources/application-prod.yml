@@ -116,6 +116,7 @@ spring:
     #Spring Boot 2.6+后映射匹配的默认策略已从AntPathMatcher更改为PathPatternParser,需要手动指定为ant-path-matcher
     pathmatch:
       matching-strategy: ant_path_matcher
+    publish-request-handled-events: false
   resource:
     static-locations: classpath:/static/,classpath:/public/
   autoconfigure:

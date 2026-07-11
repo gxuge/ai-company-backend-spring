@@ -27,11 +27,6 @@ public class TsAgentChatSessionQueryDto {
     private String keyword;
 
     /**
-     * Agent编码。
-     */
-    private String agentCode;
-
-    /**
      * 会话状态。
      */
     private String sessionStatus;

@@ -32,4 +32,9 @@ public class TsAgentChatSessionUpdateDto {
      * 会话记忆快照。
      */
     private String memoryJson;
+
+    /**
+     * 会话结构化状态。
+     */
+    private String stateJson;
 }

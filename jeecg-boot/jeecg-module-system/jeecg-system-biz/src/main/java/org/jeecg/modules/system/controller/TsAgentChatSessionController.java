@@ -61,7 +61,6 @@ public class TsAgentChatSessionController {
         LoginUser user = currentUser();
         return Result.OK(tsAgentChatSessionService.pageSessions(
                 user.getId(),
-                request.getAgentCode(),
                 request.getKeyword(),
                 request.getPageNo(),
                 request.getPageSize()
@@ -88,7 +87,8 @@ public class TsAgentChatSessionController {
                 request.getAgentCode(),
                 request.getSessionTitle(),
                 request.getSessionSummary(),
-                request.getMemoryJson()
+                request.getMemoryJson(),
+                request.getStateJson()
         );
         return Result.OK(session);
     }
@@ -105,7 +105,8 @@ public class TsAgentChatSessionController {
                 request.getId(),
                 request.getSessionTitle(),
                 request.getSessionSummary(),
-                request.getMemoryJson()
+                request.getMemoryJson(),
+                request.getStateJson()
         );
         return Result.OK(session);
     }

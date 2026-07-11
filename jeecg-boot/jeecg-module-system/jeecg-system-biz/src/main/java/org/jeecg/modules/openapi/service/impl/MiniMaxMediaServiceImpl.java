@@ -137,15 +137,26 @@ public class MiniMaxMediaServiceImpl implements IMiniMaxMediaService {
     @SuppressWarnings("unchecked")
     @Override
     public List<String> generateImage(String prompt) {
+        return generateImage(prompt, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public List<String> generateImage(String prompt, String referenceImageUrl) {
         if (!StringUtils.hasText(prompt)) {
             throw new JeecgBootBizTipException("prompt must not be blank");
         }
-        Map<String, Object> req = Map.of(
-                "model", config.getImageModel(),
-                "prompt", prompt,
-                "aspect_ratio", config.getImageAspectRatio(),
-                "response_format", "url"
-        );
+        Map<String, Object> req = new LinkedHashMap<>();
+        req.put("model", config.getImageModel());
+        req.put("prompt", prompt);
+        req.put("aspect_ratio", config.getImageAspectRatio());
+        req.put("response_format", "url");
+        if (StringUtils.hasText(referenceImageUrl)) {
+            req.put("subject_reference", List.of(Map.of(
+                    "type", "character",
+                    "image_file", referenceImageUrl.trim()
+            )));
+        }
         Map<String, Object> resp = postForMap("/v1/image_generation", req, "image");
         if (resp == null || !(resp.get("data") instanceof Map<?, ?> data)) {
             throw new JeecgBootBizTipException("MiniMax image generation response is empty");

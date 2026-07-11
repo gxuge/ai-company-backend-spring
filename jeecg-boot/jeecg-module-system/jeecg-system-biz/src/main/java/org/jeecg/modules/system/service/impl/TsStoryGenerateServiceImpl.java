@@ -370,6 +370,10 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         String title = PromptRuntimeUtil.firstNonBlank(
                 PromptRuntimeUtil.trimToNull(modelJson.getString("title")),
                 dto.getTitle());
+        String storyMode = StoryPromptGenerateUtil.normalizeStoryMode(PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("story_mode")),
+                dto.getStoryMode(),
+                "chapter"));
         String storyIntro = PromptRuntimeUtil.firstNonBlank(
                 PromptRuntimeUtil.trimToNull(modelJson.getString("story_intro")),
                 dto.getStoryIntro());
@@ -383,10 +387,11 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
                 PromptRuntimeUtil.trimToNull(modelJson.getString("plot_outline")),
                 dto.getPlotOutline());
 
-        saveStoryFullSnapshot(user, renderedPrompt, modelJson, title, storyIntro, storySettingText, siteSettingText, plotOutlineText);
+        saveStoryFullSnapshot(user, renderedPrompt, modelJson, title, storyMode, storyIntro, storySettingText, siteSettingText, plotOutlineText);
 
         TsStoryFullGenerateVo vo = new TsStoryFullGenerateVo();
         vo.setTitle(title);
+        vo.setStoryMode(storyMode);
         vo.setStoryIntro(storyIntro);
         vo.setStorySetting(storySettingText);
         vo.setSiteSetting(siteSettingText);
@@ -414,17 +419,32 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, "story-full-generate-preset");
         logStoryLlmJson(ENDPOINT_STORY_FULL_GENERATE_PRESET, modelJson, true, null);
 
-        String title = PromptRuntimeUtil.firstNonBlank(PromptRuntimeUtil.trimToNull(modelJson.getString("title")));
-        String storyIntro = PromptRuntimeUtil.firstNonBlank(PromptRuntimeUtil.trimToNull(modelJson.getString("story_intro")));
-        String storySettingText = PromptRuntimeUtil.firstNonBlank(PromptRuntimeUtil.trimToNull(modelJson.getString("story_setting")));
-        String siteSettingText = PromptRuntimeUtil.firstNonBlank(PromptRuntimeUtil.trimToNull(modelJson.getString("site_setting")));
-        String plotOutlineText = PromptRuntimeUtil.firstNonBlank(PromptRuntimeUtil.trimToNull(modelJson.getString("plot_outline")));
+        String title = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("title")),
+                dto.getTitle());
+        String storyMode = StoryPromptGenerateUtil.normalizeStoryMode(PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("story_mode")),
+                dto.getStoryMode(),
+                "chapter"));
+        String storyIntro = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("story_intro")),
+                dto.getStoryIntro());
+        String storySettingText = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("story_setting")),
+                dto.getStorySetting());
+        String siteSettingText = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("site_setting")),
+                dto.getSiteSetting());
+        String plotOutlineText = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("plot_outline")),
+                dto.getPlotOutline());
 
         String snapshotKey = saveStoryFullPresetSnapshot(user, preset, presetTags, tagsByType, renderedPrompt, modelJson,
-                title, storyIntro, storySettingText, siteSettingText, plotOutlineText);
+                title, storyMode, storyIntro, storySettingText, siteSettingText, plotOutlineText);
 
         TsStoryFullGenerateVo vo = new TsStoryFullGenerateVo();
         vo.setTitle(title);
+        vo.setStoryMode(storyMode);
         vo.setStoryIntro(storyIntro);
         vo.setStorySetting(storySettingText);
         vo.setSiteSetting(siteSettingText);
@@ -439,6 +459,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
                                                String renderedPrompt,
                                                JSONObject modelJson,
                                                String title,
+                                               String storyMode,
                                                String storyIntro,
                                                String storySetting,
                                                String siteSetting,
@@ -453,6 +474,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         snapshot.put("promptRendered", renderedPrompt);
         snapshot.put("rawResponse", modelJson == null ? null : modelJson.toJSONString());
         snapshot.put("title", title);
+        snapshot.put("storyMode", storyMode);
         snapshot.put("storyIntro", storyIntro);
         snapshot.put("storySetting", storySetting);
         snapshot.put("siteSetting", siteSetting);
@@ -462,13 +484,14 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     }
 
     private String saveStoryFullSnapshot(LoginUser user,
-                                         String renderedPrompt,
-                                         JSONObject modelJson,
-                                         String title,
-                                         String storyIntro,
-                                         String storySetting,
-                                         String siteSetting,
-                                         String plotOutline) {
+                                          String renderedPrompt,
+                                          JSONObject modelJson,
+                                          String title,
+                                          String storyMode,
+                                          String storyIntro,
+                                          String storySetting,
+                                          String siteSetting,
+                                          String plotOutline) {
         JSONObject snapshot = new JSONObject();
         snapshot.put("type", "story-full-generate");
         snapshot.put("promptCode", PROMPT_CODE_STORY_FULL);
@@ -476,6 +499,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         snapshot.put("promptRendered", renderedPrompt);
         snapshot.put("rawResponse", modelJson == null ? null : modelJson.toJSONString());
         snapshot.put("title", title);
+        snapshot.put("storyMode", storyMode);
         snapshot.put("storyIntro", storyIntro);
         snapshot.put("storySetting", storySetting);
         snapshot.put("siteSetting", siteSetting);
@@ -595,7 +619,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     private Map<String, String> buildStoryFullVars(TsStoryFullGenerateDto dto) {
         Map<String, String> vars = new HashMap<>();
         vars.put("title", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getTitle()));
-        vars.put("story_mode", PromptRuntimeUtil.nullableToken(null));
+        vars.put("story_mode", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getStoryMode()));
         vars.put("story_intro", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getStoryIntro()));
         vars.put("story_setting", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getStorySetting()));
         vars.put("site_setting", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getSiteSetting()));

@@ -12,6 +12,7 @@
           AND s.is_deleted = 0
           AND s.session_status != 'deleted'
           AND m.is_deleted = 0
+          AND (m.visible_to_user IS NULL OR m.visible_to_user = 1)
         <if test="sessionId != null">
             AND m.session_id = #{sessionId}
         </if>
@@ -40,6 +41,7 @@
           AND s.is_deleted = 0
           AND s.session_status != 'deleted'
           AND m.is_deleted = 0
+          AND (m.visible_to_user IS NULL OR m.visible_to_user = 1)
         LIMIT 1
     </select>
 
@@ -67,6 +69,7 @@
         FROM ts_agent_chat_message m
         WHERE m.session_id = #{sessionId}
           AND m.is_deleted = 0
+          AND (m.visible_to_user IS NULL OR m.visible_to_user = 1)
         ORDER BY m.message_no DESC, m.id DESC
         LIMIT #{limit}
     </select>

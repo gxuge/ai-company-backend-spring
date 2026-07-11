@@ -6,6 +6,7 @@
 `type` 推荐值：`feat`、`fix`、`refactor`、`breaking`、`security`、`docs`
 
 ## 记录
+- [2026-07-10] [feat] [ts-role] 新增 `POST /sys/ts-roles/optimize-image-prompt` 角色形象提示词优化接口，读取数据库模板 `role_image_prompt_optimize::v1`，输出中文优化提示词与负面提示词，便于前端直接回填
 - [2026-04-08] [docs] [api] 将 `docs/api/hardness-api-inventory.md` 拆分并并入 `docs/api/Index.md` + 业务明细文档，移除重复资产清单文件并清理引用
 - [2026-03-30] [docs] [governance] 初始化文档骨架（AGENTS/PLANS/API/ADR）
 - [2026-03-30] [docs] [architecture] 文档升级为项目上下文化版本（模块/启动入口/Profile/配置策略）

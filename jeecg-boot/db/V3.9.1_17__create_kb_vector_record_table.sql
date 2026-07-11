@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS `kb_vector_record` (
+  `id` varchar(64) NOT NULL COMMENT '主键ID',
+  `vector_id` varchar(64) NOT NULL COMMENT '向量ID，建议使用chunk_index_id',
+  `kb_id` varchar(64) NOT NULL COMMENT '知识库ID',
+  `document_id` varchar(64) NOT NULL COMMENT '文档ID',
+  `chunk_id` varchar(64) NOT NULL COMMENT 'chunk ID',
+  `chunk_index_id` varchar(64) NOT NULL COMMENT 'chunk_index ID',
+  `embedding_model` varchar(128) DEFAULT NULL COMMENT 'embedding模型名称',
+  `vector_dimension` int NOT NULL DEFAULT 0 COMMENT '向量维度',
+  `embedding_duration_ms` bigint NOT NULL DEFAULT 0 COMMENT 'embedding耗时（毫秒）',
+  `content_preview` varchar(512) DEFAULT NULL COMMENT '内容预览',
+  `vector_json` longtext NOT NULL COMMENT '向量JSON',
+  `metadata_json` longtext DEFAULT NULL COMMENT '元数据JSON',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_kb_vector_record_vector_id` (`vector_id`),
+  KEY `idx_kb_vector_record_kb_id` (`kb_id`),
+  KEY `idx_kb_vector_record_document_id` (`document_id`),
+  KEY `idx_kb_vector_record_chunk_id` (`chunk_id`),
+  KEY `idx_kb_vector_record_chunk_index_id` (`chunk_index_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='KB向量记录表';

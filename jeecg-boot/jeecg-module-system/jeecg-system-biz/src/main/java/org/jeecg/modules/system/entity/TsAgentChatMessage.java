@@ -52,6 +52,18 @@ public class TsAgentChatMessage implements Serializable {
     private String roleType;
 
     /**
+     * 发送方类型：user/main_agent/sub_agent/system/tool。
+     */
+    @TableField("sender_type")
+    private String senderType;
+
+    /**
+     * Agent 编码。
+     */
+    @TableField("agent_code")
+    private String agentCode;
+
+    /**
      * 消息正文。
      */
     @TableField("content")
@@ -62,6 +74,18 @@ public class TsAgentChatMessage implements Serializable {
      */
     @TableField("content_raw")
     private String contentRaw;
+
+    /**
+     * 结构化内容 JSON。
+     */
+    @TableField("content_json")
+    private String contentJson;
+
+    /**
+     * 是否用户可见：0否 1是。
+     */
+    @TableField("visible_to_user")
+    private Integer visibleToUser;
 
     /**
      * 内容格式：text/markdown/json。

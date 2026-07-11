@@ -26,4 +26,13 @@ public interface IMiniMaxMediaService {
      * @return 图片地址列表
      */
     List<String> generateImage(String prompt);
+
+    /**
+     * 图生图。
+     *
+     * @param prompt 提示词
+     * @param referenceImageUrl 参考图地址
+     * @return 图片地址列表
+     */
+    List<String> generateImage(String prompt, String referenceImageUrl);
 }

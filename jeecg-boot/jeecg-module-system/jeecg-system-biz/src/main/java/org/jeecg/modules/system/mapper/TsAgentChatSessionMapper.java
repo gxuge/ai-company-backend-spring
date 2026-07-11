@@ -18,14 +18,12 @@ public interface TsAgentChatSessionMapper extends BaseMapper<TsAgentChatSession>
      *
      * @param page 分页参数
      * @param userId 用户ID
-     * @param agentCode Agent编码
      * @param keyword 关键词
      * @param sessionStatus 会话状态
      * @return 会话分页结果
      */
     Page<TsAgentChatSession> selectSessionPage(Page<TsAgentChatSession> page,
                                                @Param("userId") String userId,
-                                               @Param("agentCode") String agentCode,
                                                @Param("keyword") String keyword,
                                                @Param("sessionStatus") String sessionStatus);
 

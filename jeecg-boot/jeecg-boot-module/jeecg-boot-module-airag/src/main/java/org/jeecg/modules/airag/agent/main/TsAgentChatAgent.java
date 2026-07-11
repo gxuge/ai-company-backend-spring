@@ -1,0 +1,74 @@
+package org.jeecg.modules.airag.agent.main;
+
+import lombok.RequiredArgsConstructor;
+import org.jeecg.modules.airag.agent.common.SubAgentRegistry;
+import org.jeecg.modules.airag.agent.graph.Agent;
+import org.jeecg.modules.airag.agent.graph.AgentNode;
+import org.jeecg.modules.airag.agent.graph.NodeResult;
+import org.jeecg.modules.airag.agent.graph.DeepAgentDefinitionRegistry;
+import org.jeecg.modules.airag.agent.runtime.AgentContext;
+import org.jeecg.modules.airag.agent.runtime.AgentResult;
+import org.jeecg.modules.airag.agent.runtime.NodeRunner;
+import org.springframework.stereotype.Component;
+
+import java.util.LinkedHashMap;
+
+/**
+ * Agent 会话总入口。
+ *
+ * <p>按照 DeepAgents 风格运行：主 Agent 只负责启动主节点，
+ * 由模型通过 task 工具自行委托子 Agent，不再做旧式固定分发。</p>
+ *
+ * @author codex
+ * @date 2026/6/25
+ */
+@Component
+@RequiredArgsConstructor
+public class TsAgentChatAgent implements Agent {
+    /**
+     * 节点执行器。
+     */
+    private final NodeRunner nodeRunner;
+    /**
+     * DeepAgents 主节点。
+     */
+    private final TsAgentDeepAgentsMainNode mainNode;
+    /**
+     * 子 Agent 注册中心。
+     */
+    private final SubAgentRegistry subAgentRegistry;
+    /**
+     * Deep Agent 定义注册中心。
+     */
+    private final DeepAgentDefinitionRegistry deepAgentDefinitionRegistry;
+
+    @Override
+    public String agentName() {
+        return "ts_agent_chat";
+    }
+
+    @Override
+    public AgentResult execute(AgentContext context) {
+        if (context != null) {
+            context.putAttribute("deepAgentsPromptMode", Boolean.TRUE);
+            context.putAttribute("deepAgentsMainMode", Boolean.TRUE);
+            context.putAttribute("availableSubAgentsPrompt", this.deepAgentDefinitionRegistry.describeAvailableDeepAgents());
+            context.putAttribute("subAgentListPrompt", this.subAgentRegistry.describeAvailableSubAgents());
+        }
+        NodeResult nodeResult = this.nodeRunner.run(context, (AgentNode) this.mainNode);
+        if (nodeResult == null) {
+            return AgentResult.failed("DeepAgents 主节点未返回结果");
+        }
+        AgentResult result = nodeResult.isSuccess()
+                ? AgentResult.success(nodeResult.getContent())
+                : AgentResult.failed(nodeResult.getErrorMessage() == null ? nodeResult.getContent() : nodeResult.getErrorMessage());
+        result.setStructuredResult(nodeResult.getData());
+        if (result.getData() == null) {
+            result.setData(new LinkedHashMap<>());
+        }
+        result.getData().put("dispatchMode", "deep-agents");
+        result.getData().put("mainNode", mainNode == null ? null : mainNode.nodeName());
+        result.getData().put("deepAgentsPromptMode", Boolean.TRUE);
+        return result;
+    }
+}

@@ -9,14 +9,22 @@ import dev.langchain4j.service.TokenStream;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.airag.agent.graph.LlmNodeDefinition;
 import org.jeecg.modules.airag.agent.graph.NodeKind;
 import org.jeecg.modules.airag.agent.graph.NodeResult;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentEventPublisher;
 import org.jeecg.modules.airag.agent.runtime.AgentModelResolver;
+import org.jeecg.modules.airag.agent.runtime.DeepAgentsProperties;
+import org.jeecg.modules.airag.agent.skill.runtime.SkillProperties;
+import org.jeecg.modules.airag.agent.tool.DeepAgentTaskToolService;
+import org.jeecg.modules.airag.agent.skill.model.SkillLoadResult;
+import org.jeecg.modules.airag.agent.skill.runtime.SkillRuntimeService;
+import org.jeecg.modules.airag.agent.skill.tool.SkillTools;
 import org.jeecg.modules.airag.common.handler.AIChatParams;
 import org.jeecg.modules.airag.common.handler.IAIChatHandler;
 import org.jeecg.modules.airag.prompts.service.IAiragPromptTemplateService;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -37,25 +45,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Getter
 public abstract class LlmNode extends BaseAgentNode {
     /**
-     * 提示词编码。
+     * LLM 节点定义。
      */
-    private final String promptCode;
-    /**
-     * 提示词版本。
-     */
-    private final String promptVersion;
-    /**
-     * 原始系统提示词模板。
-     */
-    private final String systemPromptTemplate;
-    /**
-     * 原始用户提示词模板。
-     */
-    private final String userPromptTemplate;
-    /**
-     * 工具结构定义。
-     */
-    private final String toolSchema;
+    private final LlmNodeDefinition definition;
     /**
      * 模板服务。
      */
@@ -72,17 +64,38 @@ public abstract class LlmNode extends BaseAgentNode {
      * 事件发布器。
      */
     private final AgentEventPublisher eventPublisher;
+    /**
+     * Skill 运行时服务。
+     */
+    @Autowired(required = false)
+    private SkillRuntimeService skillRuntimeService;
+    /**
+     * Skill 配置。
+     */
+    @Autowired(required = false)
+    private SkillProperties skillProperties;
+    /**
+     * Skill 工具。
+     */
+    @Autowired(required = false)
+    private SkillTools skillTools;
+    /**
+     * DeepAgents task 工具。
+     */
+    @Autowired(required = false)
+    private DeepAgentTaskToolService deepAgentTaskToolService;
+    /**
+     * DeepAgents 配置。
+     */
+    @Autowired(required = false)
+    private DeepAgentsProperties deepAgentsProperties;
 
     /**
      * 构造函数。
      *
      * @param nodeName 节点名
      * @param displayName 展示名
-     * @param promptCode 模板编码
-     * @param promptVersion 模板版本
-     * @param systemPromptTemplate 系统提示词模板
-     * @param userPromptTemplate 用户提示词模板
-     * @param toolSchema 工具结构
+     * @param definition 节点定义
      * @param promptTemplateService 模板服务
      * @param modelResolver 模型解析器
      * @param aiChatHandler 大模型处理器
@@ -90,21 +103,13 @@ public abstract class LlmNode extends BaseAgentNode {
      */
     protected LlmNode(String nodeName,
                       String displayName,
-                      String promptCode,
-                      String promptVersion,
-                      String systemPromptTemplate,
-                      String userPromptTemplate,
-                      String toolSchema,
+                      LlmNodeDefinition definition,
                       IAiragPromptTemplateService promptTemplateService,
                       AgentModelResolver modelResolver,
                       IAIChatHandler aiChatHandler,
                       AgentEventPublisher eventPublisher) {
         super(nodeName, displayName, NodeKind.LLM);
-        this.promptCode = promptCode;
-        this.promptVersion = promptVersion;
-        this.systemPromptTemplate = systemPromptTemplate;
-        this.userPromptTemplate = userPromptTemplate;
-        this.toolSchema = toolSchema;
+        this.definition = definition == null ? new LlmNodeDefinition() : definition;
         this.promptTemplateService = promptTemplateService;
         this.modelResolver = modelResolver;
         this.aiChatHandler = aiChatHandler;
@@ -114,9 +119,17 @@ public abstract class LlmNode extends BaseAgentNode {
     @Override
     public NodeResult execute(AgentContext context) throws Exception {
         Map<String, String> promptVariables = buildPromptVariables(context);
-        List<ChatMessage> messages = buildMessages(promptVariables);
+        if (context != null) {
+            context.putAttribute("llmNodeDefinition", this.definition == null ? null : this.definition.toMap());
+            context.putAttribute("llmNodeSkills", this.definition == null ? null : this.definition.getSkills());
+            context.putAttribute("llmNodeTools", this.definition == null ? null : this.definition.getTools());
+            context.putAttribute("llmNodePermissions", this.definition == null ? null : this.definition.getPermissions());
+            context.putAttribute("llmNodeResponseFormat", this.definition == null ? null : this.definition.getResponseFormat());
+        }
+        SkillLoadResult skillLoadResult = prepareSkillLoadResult(context);
+        List<ChatMessage> messages = buildMessages(promptVariables, skillLoadResult, context);
         String modelId = this.modelResolver.resolveTextModelId(context.getAppId());
-        AIChatParams params = buildChatParams(context);
+        AIChatParams params = buildChatParams(context, skillLoadResult);
         CountDownLatch done = new CountDownLatch(1);
         AtomicReference<Throwable> errorRef = new AtomicReference<>();
         AtomicReference<String> textRef = new AtomicReference<>("");
@@ -203,13 +216,103 @@ public abstract class LlmNode extends BaseAgentNode {
     }
 
     /**
+     * 构造聊天参数，并注入 Skill 工具。
+     *
+     * @param context 运行上下文
+     * @param skillLoadResult Skill 准备结果
+     * @return 聊天参数
+     */
+    protected AIChatParams buildChatParams(AgentContext context, SkillLoadResult skillLoadResult) {
+        AIChatParams params = buildChatParams(context);
+        if (params == null) {
+            params = new AIChatParams();
+        }
+        if (this.skillTools != null && skillLoadResult != null && skillLoadResult.getActivation() != null) {
+            Map<dev.langchain4j.agent.tool.ToolSpecification, dev.langchain4j.service.tool.ToolExecutor> skillToolsMap =
+                    this.skillTools.buildToolMap(skillLoadResult.getActivation());
+            if (skillToolsMap != null && !skillToolsMap.isEmpty()) {
+                if (params.getTools() == null) {
+                    params.setTools(new LinkedHashMap<>());
+                }
+                params.getTools().putAll(skillToolsMap);
+            }
+        }
+        if (this.deepAgentTaskToolService != null) {
+            Map<dev.langchain4j.agent.tool.ToolSpecification, dev.langchain4j.service.tool.ToolExecutor> taskTools =
+                    this.deepAgentTaskToolService.buildToolMap(context);
+            if (taskTools != null && !taskTools.isEmpty()) {
+                if (params.getTools() == null) {
+                    params.setTools(new LinkedHashMap<>());
+                }
+                params.getTools().putAll(taskTools);
+            }
+        }
+        if (skillLoadResult != null) {
+            context.putAttribute("skillLoadResult", skillLoadResult);
+            context.putAttribute("skillActivation", skillLoadResult.getActivation());
+            context.putAttribute("skillRootDir", this.skillProperties == null ? null : this.skillProperties.getRootDir());
+        }
+        return params;
+    }
+
+    /**
      * 组装对话消息。
      *
      * @param promptVariables 提示词变量
      * @return 消息列表
      */
     protected List<ChatMessage> buildMessages(Map<String, String> promptVariables) {
+        return buildMessages(promptVariables, null, null);
+    }
+
+    /**
+     * 组装对话消息。
+     *
+     * @param promptVariables 提示词变量
+     * @param skillLoadResult Skill 准备结果
+     * @return 消息列表
+     */
+    protected List<ChatMessage> buildMessages(Map<String, String> promptVariables, SkillLoadResult skillLoadResult) {
+        return buildMessages(promptVariables, skillLoadResult, null);
+    }
+
+    /**
+     * 组装对话消息。
+     *
+     * @param promptVariables 提示词变量
+     * @param skillLoadResult Skill 准备结果
+     * @param context 运行上下文
+     * @return 消息列表
+     */
+    protected List<ChatMessage> buildMessages(Map<String, String> promptVariables,
+                                              SkillLoadResult skillLoadResult,
+                                              AgentContext context) {
+        String nodeDirectivePrompt = buildNodeDirectivePrompt();
         String developerPrompt = renderDeveloperPrompt(promptVariables);
+        String deepAgentsPrompt = org.jeecg.modules.airag.agent.runtime.DeepAgentsPromptSupport.buildBasePrompt(context, skillLoadResult);
+        if (oConvertUtils.isNotEmpty(nodeDirectivePrompt)) {
+            if (oConvertUtils.isNotEmpty(developerPrompt)) {
+                developerPrompt = nodeDirectivePrompt + "\n\n" + developerPrompt;
+            } else {
+                developerPrompt = nodeDirectivePrompt;
+            }
+        }
+        if (oConvertUtils.isNotEmpty(deepAgentsPrompt)) {
+            if (oConvertUtils.isNotEmpty(developerPrompt)) {
+                developerPrompt = deepAgentsPrompt + "\n\n" + developerPrompt;
+            } else {
+                developerPrompt = deepAgentsPrompt;
+            }
+        } else {
+            String skillIndexPrompt = skillLoadResult == null ? "" : skillLoadResult.getSkillIndexPrompt();
+            if (oConvertUtils.isNotEmpty(skillIndexPrompt)) {
+                if (oConvertUtils.isNotEmpty(developerPrompt)) {
+                    developerPrompt = developerPrompt + "\n\n" + skillIndexPrompt;
+                } else {
+                    developerPrompt = skillIndexPrompt;
+                }
+            }
+        }
         String userPrompt = renderUserPrompt(promptVariables);
         List<ChatMessage> messages = new ArrayList<>();
         if (oConvertUtils.isNotEmpty(developerPrompt)) {
@@ -226,10 +329,10 @@ public abstract class LlmNode extends BaseAgentNode {
      * @return 系统提示词
      */
     protected String renderDeveloperPrompt(Map<String, String> promptVariables) {
-        if (oConvertUtils.isNotEmpty(this.promptCode) && oConvertUtils.isNotEmpty(this.promptVersion)) {
-            return this.promptTemplateService.renderSection(this.promptCode, this.promptVersion, "developer_prompt", promptVariables);
+        if (oConvertUtils.isNotEmpty(getPromptCode()) && oConvertUtils.isNotEmpty(getPromptVersion())) {
+            return this.promptTemplateService.renderSection(getPromptCode(), getPromptVersion(), "developer_prompt", promptVariables);
         }
-        return replaceVariables(this.systemPromptTemplate, promptVariables);
+        return replaceVariables(getSystemPromptTemplate(), promptVariables);
     }
 
     /**
@@ -239,10 +342,10 @@ public abstract class LlmNode extends BaseAgentNode {
      * @return 用户提示词
      */
     protected String renderUserPrompt(Map<String, String> promptVariables) {
-        if (oConvertUtils.isNotEmpty(this.promptCode) && oConvertUtils.isNotEmpty(this.promptVersion)) {
-            return this.promptTemplateService.renderSection(this.promptCode, this.promptVersion, "user_prompt_template", promptVariables);
+        if (oConvertUtils.isNotEmpty(getPromptCode()) && oConvertUtils.isNotEmpty(getPromptVersion())) {
+            return this.promptTemplateService.renderSection(getPromptCode(), getPromptVersion(), "user_prompt_template", promptVariables);
         }
-        return replaceVariables(this.userPromptTemplate, promptVariables);
+        return replaceVariables(getUserPromptTemplate(), promptVariables);
     }
 
     /**
@@ -278,6 +381,158 @@ public abstract class LlmNode extends BaseAgentNode {
         } catch (Exception ex) {
             log.warn("LLM结果不是合法JSON，nodeName={}", nodeName(), ex);
             return new LinkedHashMap<>();
+        }
+    }
+
+    /**
+     * 准备 Skill 上下文。
+     *
+     * @param context 运行上下文
+     * @return Skill 准备结果
+     */
+    protected SkillLoadResult prepareSkillLoadResult(AgentContext context) {
+        if (this.skillRuntimeService == null || context == null) {
+            return null;
+        }
+        boolean deepAgentsMode = org.jeecg.modules.airag.agent.runtime.DeepAgentsPromptSupport.isEnabled(context);
+        String skillDomain = oConvertUtils.getString(context.getAttribute("skillDomain"));
+        if (!org.springframework.util.StringUtils.hasText(skillDomain) && this.definition != null) {
+            skillDomain = oConvertUtils.getString(this.definition.getSkillDomain());
+        }
+        if (!org.springframework.util.StringUtils.hasText(skillDomain) && deepAgentsMode && this.deepAgentsProperties != null) {
+            skillDomain = oConvertUtils.getString(this.deepAgentsProperties.getDefaultSkillDomain());
+        }
+        if (!org.springframework.util.StringUtils.hasText(skillDomain) && !deepAgentsMode) {
+            return null;
+        }
+        Integer topK = resolveSkillTopK(context.getAttribute("skillTopK"));
+        if (topK == null && this.definition != null && this.definition.getSkillTopK() != null) {
+            topK = this.definition.getSkillTopK();
+        }
+        if (topK == null && deepAgentsMode && this.deepAgentsProperties != null) {
+            topK = this.deepAgentsProperties.getDefaultSkillTopK();
+        }
+        SkillLoadResult loadResult = this.skillRuntimeService.prepare(context.getUserInput(), skillDomain, topK == null ? 3 : topK);
+        return loadResult;
+    }
+
+    /**
+     * 渲染节点级约束说明。
+     *
+     * @return 节点级约束说明
+     */
+    protected String buildNodeDirectivePrompt() {
+        if (this.definition == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        appendDirectiveLine(sb, "node_name", this.definition.getName());
+        appendDirectiveLine(sb, "node_description", this.definition.getDescription());
+        appendDirectiveLine(sb, "skill_domain", this.definition.getSkillDomain());
+        appendDirectiveLine(sb, "skill_top_k", this.definition.getSkillTopK() == null ? null : String.valueOf(this.definition.getSkillTopK()));
+        appendDirectiveLine(sb, "node_skills", joinList(this.definition.getSkills()));
+        appendDirectiveLine(sb, "node_tools", joinList(this.definition.getTools()));
+        appendDirectiveLine(sb, "node_permissions", joinList(this.definition.getPermissions()));
+        appendDirectiveLine(sb, "response_format", this.definition.getResponseFormat());
+        appendDirectiveLine(sb, "input_constraints", this.definition.getInputConstraints());
+        appendDirectiveLine(sb, "output_constraints", this.definition.getOutputConstraints());
+        appendDirectiveLine(sb, "next_step_condition", this.definition.getNextStepCondition());
+        if (this.definition.getMetadata() != null && !this.definition.getMetadata().isEmpty()) {
+            appendDirectiveLine(sb, "metadata", JSON.toJSONString(this.definition.getMetadata()));
+        }
+        return sb.toString().trim();
+    }
+
+    /**
+     * 返回节点定义。
+     *
+     * @return 节点定义
+     */
+    public LlmNodeDefinition getDefinition() {
+        return this.definition;
+    }
+
+    /**
+     * 返回提示词编码。
+     *
+     * @return 提示词编码
+     */
+    public String getPromptCode() {
+        return this.definition == null ? null : this.definition.getPromptCode();
+    }
+
+    /**
+     * 返回提示词版本。
+     *
+     * @return 提示词版本
+     */
+    public String getPromptVersion() {
+        return this.definition == null ? null : this.definition.getPromptVersion();
+    }
+
+    /**
+     * 返回系统提示词模板。
+     *
+     * @return 系统提示词模板
+     */
+    public String getSystemPromptTemplate() {
+        return this.definition == null ? null : this.definition.getSystemPromptTemplate();
+    }
+
+    /**
+     * 返回用户提示词模板。
+     *
+     * @return 用户提示词模板
+     */
+    public String getUserPromptTemplate() {
+        return this.definition == null ? null : this.definition.getUserPromptTemplate();
+    }
+
+    /**
+     * 将列表合并为文本。
+     *
+     * @param values 列表
+     * @return 文本
+     */
+    private String joinList(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return "";
+        }
+        return String.join(", ", values);
+    }
+
+    /**
+     * 追加节点约束行。
+     *
+     * @param sb 字符串构造器
+     * @param key 键
+     * @param value 值
+     */
+    private void appendDirectiveLine(StringBuilder sb, String key, String value) {
+        if (!org.springframework.util.StringUtils.hasText(value)) {
+            return;
+        }
+        if (sb.length() > 0) {
+            sb.append('\n');
+        }
+        sb.append("- ").append(key).append(": ").append(value);
+    }
+
+    private Integer resolveSkillTopK(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        try {
+            String text = String.valueOf(value).trim();
+            if (!org.springframework.util.StringUtils.hasText(text)) {
+                return null;
+            }
+            return Integer.parseInt(text);
+        } catch (Exception ex) {
+            return null;
         }
     }
 }

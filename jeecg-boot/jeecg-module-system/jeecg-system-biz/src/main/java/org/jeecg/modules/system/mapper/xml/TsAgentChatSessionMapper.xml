@@ -10,9 +10,6 @@
         WHERE s.user_id = #{userId}
           AND s.is_deleted = 0
           AND s.session_status != 'deleted'
-        <if test="agentCode != null and agentCode != ''">
-            AND s.agent_code = #{agentCode}
-        </if>
         <if test="keyword != null and keyword != ''">
             AND (
                 s.session_no LIKE CONCAT('%', #{keyword}, '%')

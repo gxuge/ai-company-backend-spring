@@ -1,11 +1,17 @@
 package org.jeecg.modules.airag.agent.tool;
 
 import lombok.extern.slf4j.Slf4j;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import org.jeecg.common.exception.JeecgBootBizTipException;
 import org.jeecg.common.util.AssertUtils;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Optional;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -33,7 +39,7 @@ public class ToolRegistry {
         AssertUtils.assertNotEmpty("工具名称不能为空", definition.getName());
         AssertUtils.assertNotEmpty("工具执行器不能为空", definition.getExecutor());
         this.toolDefinitions.put(definition.getName(), definition);
-        log.info("注册Agent工具成功，toolName={}", definition.getName());
+        log.info("注册Agent工具成功，toolName={}, routeKey={}", definition.getName(), definition.getRouteKey());
     }
 
     /**
@@ -48,6 +54,68 @@ public class ToolRegistry {
             throw new JeecgBootBizTipException("未找到工具定义：" + toolName);
         }
         return definition;
+    }
+
+    /**
+     * 根据 routeKey 查找工具定义。
+     *
+     * @param routeKey 路由键
+     * @return 工具定义
+     */
+    public Optional<ToolDefinition> findByRouteKey(String routeKey) {
+        if (routeKey == null || routeKey.isBlank()) {
+            return Optional.empty();
+        }
+        return this.toolDefinitions.values().stream()
+                .filter(definition -> definition != null
+                        && definition.getRouteKey() != null
+                        && definition.getRouteKey().equalsIgnoreCase(routeKey.trim()))
+                .findFirst();
+    }
+
+    /**
+     * 获取全部工具定义。
+     *
+     * @return 工具定义列表
+     */
+    public List<ToolDefinition> listDefinitions() {
+        return new ArrayList<>(this.toolDefinitions.values());
+    }
+
+    /**
+     * 按分类生成给模型看的工具目录。
+     *
+     * @param category 分类，可空
+     * @return 工具目录 JSON
+     */
+    public String describeRouteCatalog(String category) {
+        List<ToolDefinition> definitions = this.toolDefinitions.values().stream()
+                .filter(definition -> definition != null)
+                .filter(definition -> category == null || category.isBlank()
+                        || (definition.getCategory() != null && definition.getCategory().equalsIgnoreCase(category.trim())))
+                .sorted(Comparator.comparing(definition -> definition.getRouteKey() == null ? "" : definition.getRouteKey()))
+                .toList();
+        JSONArray array = new JSONArray();
+        for (ToolDefinition definition : definitions) {
+            if (definition == null) {
+                continue;
+            }
+            JSONObject item = new JSONObject();
+            if (definition.getRouteKey() != null) {
+                item.put("routeKey", definition.getRouteKey());
+            }
+            if (definition.getDisplayName() != null) {
+                item.put("displayName", definition.getDisplayName());
+            }
+            if (definition.getDescription() != null) {
+                item.put("description", definition.getDescription());
+            }
+            if (definition.getCategory() != null) {
+                item.put("category", definition.getCategory());
+            }
+            array.add(item);
+        }
+        return array.toJSONString();
     }
 
     /**

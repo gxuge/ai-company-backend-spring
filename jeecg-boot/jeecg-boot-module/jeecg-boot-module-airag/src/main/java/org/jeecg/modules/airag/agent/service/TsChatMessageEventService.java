@@ -70,7 +70,13 @@ public class TsChatMessageEventService {
         entity.setMessageId(messageId);
         entity.setSessionId(sessionId);
         entity.setAgentSessionId(agentSessionId);
-        entity.setRunId(jsonData == null ? null : (String) jsonData.get("runId"));
+        entity.setRunId(stringValue(jsonData == null ? null : jsonData.get("runId")));
+        entity.setTraceId(stringValue(jsonData == null ? null : jsonData.get("traceId")));
+        entity.setParentRunId(stringValue(jsonData == null ? null : jsonData.get("parentRunId")));
+        entity.setParentEventId(stringValue(jsonData == null ? null : jsonData.get("parentEventId")));
+        entity.setTurnId(stringValue(jsonData == null ? null : jsonData.get("turnId")));
+        entity.setSenderType(stringValue(jsonData == null ? null : jsonData.get("senderType")));
+        entity.setAgentCode(stringValue(jsonData == null ? null : jsonData.get("agentCode")));
         entity.setType(type);
         entity.setName(name);
         entity.setContent(content);
@@ -103,11 +109,7 @@ public class TsChatMessageEventService {
         copyIfPresent(compact, jsonData, "status");
         copyIfPresent(compact, jsonData, "action");
         copyIfPresent(compact, jsonData, "reply");
-        copyIfPresent(compact, jsonData, "routeDecision");
         copyIfPresent(compact, jsonData, "targetSubAgent");
-        copyIfPresent(compact, jsonData, "intentMode");
-        copyIfPresent(compact, jsonData, "targetAgent");
-        copyIfPresent(compact, jsonData, "taskGoal");
         copyIfPresent(compact, jsonData, "executionMode");
         copyIfPresent(compact, jsonData, "request");
         copyIfPresent(compact, jsonData, "result");
@@ -117,7 +119,21 @@ public class TsChatMessageEventService {
         copyIfPresent(compact, jsonData, "sessionId");
         copyIfPresent(compact, jsonData, "agentSessionId");
         copyIfPresent(compact, jsonData, "runId");
+        copyIfPresent(compact, jsonData, "traceId");
+        copyIfPresent(compact, jsonData, "parentRunId");
+        copyIfPresent(compact, jsonData, "parentEventId");
+        copyIfPresent(compact, jsonData, "turnId");
+        copyIfPresent(compact, jsonData, "senderType");
+        copyIfPresent(compact, jsonData, "agentCode");
         return compact;
+    }
+
+    private String stringValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = String.valueOf(value).trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 
     /**

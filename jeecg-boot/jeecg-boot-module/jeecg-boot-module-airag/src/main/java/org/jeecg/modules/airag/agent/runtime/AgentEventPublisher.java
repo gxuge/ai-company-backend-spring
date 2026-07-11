@@ -7,6 +7,7 @@ import org.jeecg.modules.airag.agent.graph.NodeKind;
 import org.jeecg.modules.airag.agent.sse.SseConnectionManager;
 import org.jeecg.modules.airag.agent.sse.SsePayload;
 import org.jeecg.modules.airag.agent.service.TsChatMessageEventService;
+import org.jeecg.common.util.oConvertUtils;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -54,7 +55,7 @@ public class AgentEventPublisher {
      * @param agentName Agent 名称
      */
     public void publishAgentStart(AgentContext context, String agentName) {
-        Map<String, Object> data = buildEventData(
+        Map<String, Object> dbData = buildEventData(
                 "agent.start",
                 null,
                 null,
@@ -65,9 +66,10 @@ public class AgentEventPublisher {
                 null,
                 null
         );
-        fillContextFields(data, context);
-        recordEventTrail(context, data);
-        sendOnly(context, "agent.start", null, agentName, "开始执行 " + safeText(agentName, "Agent"), data);
+        fillContextFields(dbData, context);
+        Map<String, Object> sseData = buildCompactAgentEventData(context, agentName, null, "running", null);
+        recordEventTrail(context, dbData);
+        sendOnlyCompact(context, "agent.start", null, agentName, "开始执行 " + safeText(agentName, "Agent"), 2, sseData);
     }
 
     /**
@@ -78,7 +80,7 @@ public class AgentEventPublisher {
      * @param result 执行结果
      */
     public void publishAgentEnd(AgentContext context, String agentName, AgentResult result) {
-        Map<String, Object> data = buildEventData(
+        Map<String, Object> dbData = buildEventData(
                 "agent.end",
                 null,
                 null,
@@ -89,9 +91,16 @@ public class AgentEventPublisher {
                 result == null || result.getStatus() == null ? null : result.getStatus().name(),
                 result == null ? null : result.getData()
         );
-        fillContextFields(data, context);
-        recordEventTrail(context, data);
-        sendOnly(context, "agent.end", null, agentName, result == null ? null : result.getContent(), data);
+        fillContextFields(dbData, context);
+        Map<String, Object> sseData = buildCompactAgentEventData(
+                context,
+                agentName,
+                result == null ? null : result.getError(),
+                result == null || result.getStatus() == null ? null : result.getStatus().name(),
+                result
+        );
+        recordEventTrail(context, dbData);
+        sendOnlyCompact(context, "agent.end", null, agentName, buildAgentEndContent(result), result == null || result.getStatus() == null ? null : (result.getStatus() == AgentResult.Status.FAILED ? 0 : 1), sseData);
     }
 
     /**
@@ -102,7 +111,7 @@ public class AgentEventPublisher {
      * @param payload 扩展数据
      */
     public void publishSubAgentStart(AgentContext context, String subAgentName, Map<String, Object> payload) {
-        Map<String, Object> data = buildCustomEventData(
+        Map<String, Object> dbData = buildCustomEventData(
                 "subagent.start",
                 "subagent",
                 subAgentName,
@@ -110,9 +119,10 @@ public class AgentEventPublisher {
                 2,
                 payload
         );
-        recordEventTrail(context, data);
-        persistAndSendCustom(context, "subagent.start", "subagent", subAgentName,
-                "开始执行 " + safeText(subAgentName, "SubAgent"), 2, data);
+        Map<String, Object> sseData = buildCompactSubAgentEventData(context, subAgentName, null, "running", payload);
+        recordEventTrail(context, dbData);
+        persistAndSendCustomCompact(context, "subagent.start", "subagent", subAgentName,
+                "开始执行 " + safeText(subAgentName, "SubAgent"), 2, dbData, sseData);
     }
 
     /**
@@ -134,7 +144,7 @@ public class AgentEventPublisher {
         if (payload != null && !payload.isEmpty()) {
             mergedPayload.putAll(payload);
         }
-        Map<String, Object> data = buildCustomEventData(
+        Map<String, Object> dbData = buildCustomEventData(
                 "subagent.end",
                 "subagent",
                 subAgentName,
@@ -142,11 +152,19 @@ public class AgentEventPublisher {
                 result == null || result.getStatus() == null ? 0 : (result.getStatus() == AgentResult.Status.FAILED ? 0 : 1),
                 mergedPayload
         );
-        recordEventTrail(context, data);
-        persistAndSendCustom(context, "subagent.end", "subagent", subAgentName,
-                result == null ? null : result.getContent(),
+        Map<String, Object> sseData = buildCompactSubAgentEventData(
+                context,
+                subAgentName,
+                result == null ? null : result.getError(),
+                result == null || result.getStatus() == null ? null : result.getStatus().name(),
+                mergedPayload
+        );
+        recordEventTrail(context, dbData);
+        persistAndSendCustomCompact(context, "subagent.end", "subagent", subAgentName,
+                buildSubAgentEndContent(result),
                 result == null || result.getStatus() == null ? 0 : (result.getStatus() == AgentResult.Status.FAILED ? 0 : 1),
-                data);
+                dbData,
+                sseData);
     }
 
     /**
@@ -167,7 +185,7 @@ public class AgentEventPublisher {
             errorPayload.put("errorMessage", error.getMessage());
         }
         Map<String, Object> mergedPayload = mergePayload(payload, errorPayload);
-        Map<String, Object> data = buildCustomEventData(
+        Map<String, Object> dbData = buildCustomEventData(
                 "subagent.error",
                 "subagent",
                 subAgentName,
@@ -175,9 +193,16 @@ public class AgentEventPublisher {
                 0,
                 mergedPayload
         );
-        recordEventTrail(context, data);
-        persistAndSendCustom(context, "subagent.error", "subagent", subAgentName,
-                error == null ? "SubAgent step failed" : error.getMessage(), 0, data);
+        Map<String, Object> sseData = buildCompactSubAgentEventData(
+                context,
+                subAgentName,
+                error == null ? "SubAgent step failed" : error.getMessage(),
+                "FAILED",
+                mergedPayload
+        );
+        recordEventTrail(context, dbData);
+        persistAndSendCustomCompact(context, "subagent.error", "subagent", subAgentName,
+                error == null ? "SubAgent step failed" : error.getMessage(), 0, dbData, sseData);
     }
 
     /**
@@ -188,7 +213,7 @@ public class AgentEventPublisher {
      * @param promptCode 模板编码
      */
     public void publishLlmStart(AgentContext context, String nodeName, String promptCode) {
-        Map<String, Object> data = buildEventData(
+        Map<String, Object> dbData = buildEventData(
                 "llm.start",
                 NodeKind.LLM,
                 nodeName,
@@ -199,8 +224,9 @@ public class AgentEventPublisher {
                 2,
                 null
         );
-        recordEventTrail(context, data);
-        persistAndSend(context, "llm.start", NodeKind.LLM, nodeName, "开始生成", 2, data);
+        Map<String, Object> sseData = buildCompactLlmEventData(nodeName, promptCode, null, null);
+        recordEventTrail(context, dbData);
+        persistAndSendCompact(context, "llm.start", NodeKind.LLM, nodeName, "开始生成", 2, dbData, sseData);
     }
 
     /**
@@ -213,7 +239,7 @@ public class AgentEventPublisher {
     public void publishLlmDelta(AgentContext context, String nodeName, String delta) {
         String bufferKey = buildLlmBufferKey(context, nodeName);
         appendBuffer(bufferKey, delta);
-        Map<String, Object> data = buildEventData(
+        Map<String, Object> dbData = buildEventData(
                 "llm.delta",
                 NodeKind.LLM,
                 nodeName,
@@ -224,8 +250,8 @@ public class AgentEventPublisher {
                 2,
                 null
         );
-        recordEventTrail(context, data);
-        sendOnly(context, "llm.delta", NodeKind.LLM, nodeName, delta, data);
+        recordEventTrail(context, dbData);
+        sendOnly(context, "llm.delta", NodeKind.LLM, nodeName, delta, delta);
     }
 
     /**
@@ -237,24 +263,25 @@ public class AgentEventPublisher {
      * @param error 错误对象
      */
     public void publishLlmError(AgentContext context, String nodeName, String promptCode, Throwable error) {
+        String errorText = error == null ? "LLM step failed" : error.getMessage();
         Map<String, Object> payload = new LinkedHashMap<>();
         if (error != null) {
             payload.put("errorCode", error.getClass().getSimpleName());
             payload.put("errorMessage", error.getMessage());
         }
-        Map<String, Object> data = buildEventData(
+        Map<String, Object> dbData = buildEventData(
                 "llm.error",
                 NodeKind.LLM,
                 nodeName,
                 promptCode,
                 null,
                 null,
-                error == null ? "LLM step failed" : error.getMessage(),
+                errorText,
                 0,
                 payload
         );
-        recordEventTrail(context, data);
-        persistAndSend(context, "llm.error", NodeKind.LLM, nodeName, error == null ? "LLM step failed" : error.getMessage(), 0, data);
+        recordEventTrail(context, dbData);
+        persistAndSendCompact(context, "llm.error", NodeKind.LLM, nodeName, errorText, 0, dbData, errorText);
     }
 
     /**
@@ -280,7 +307,7 @@ public class AgentEventPublisher {
             content = context.getLatestContent();
         }
         clearBuffer(bufferKey);
-        Map<String, Object> data = buildEventData(
+        Map<String, Object> dbData = buildEventData(
                 "llm.end",
                 NodeKind.LLM,
                 nodeName,
@@ -291,8 +318,9 @@ public class AgentEventPublisher {
                 success ? 1 : 0,
                 payload
         );
-        recordEventTrail(context, data);
-        persistAndSend(context, "llm.end", NodeKind.LLM, nodeName, content, success ? 1 : 0, data);
+        Map<String, Object> sseData = buildCompactLlmEventData(nodeName, promptCode, content, success ? 1 : 0);
+        recordEventTrail(context, dbData);
+        persistAndSendCompact(context, "llm.end", NodeKind.LLM, nodeName, content, success ? 1 : 0, dbData, sseData);
     }
 
     /**
@@ -305,7 +333,7 @@ public class AgentEventPublisher {
      */
     public void publishToolStart(AgentContext context, String nodeName, String toolName, Map<String, Object> payload) {
         String content = "开始调用 " + safeText(toolName, "Tool");
-        Map<String, Object> data = buildEventData(
+        Map<String, Object> dbData = buildEventData(
                 "tool.start",
                 NodeKind.TOOL,
                 nodeName,
@@ -316,8 +344,9 @@ public class AgentEventPublisher {
                 2,
                 payload
         );
-        recordEventTrail(context, data);
-        persistAndSend(context, "tool.start", NodeKind.TOOL, nodeName, content, 2, data);
+        Map<String, Object> sseData = buildCompactToolEventData("tool.start", toolName, content, 2, payload, null);
+        recordEventTrail(context, dbData);
+        persistAndSendCompact(context, "tool.start", NodeKind.TOOL, nodeName, content, 2, dbData, sseData);
     }
 
     /**
@@ -339,7 +368,7 @@ public class AgentEventPublisher {
             errorPayload.put("errorCode", error.getClass().getSimpleName());
             errorPayload.put("errorMessage", error.getMessage());
         }
-        Map<String, Object> data = buildEventData(
+        Map<String, Object> dbData = buildEventData(
                 "tool.error",
                 NodeKind.TOOL,
                 nodeName,
@@ -350,8 +379,17 @@ public class AgentEventPublisher {
                 0,
                 mergePayload(payload, errorPayload)
         );
-        recordEventTrail(context, data);
-        persistAndSend(context, "tool.error", NodeKind.TOOL, nodeName, error == null ? "Tool step failed" : error.getMessage(), 0, data);
+        Map<String, Object> sseData = buildCompactToolEventData(
+                "tool.error",
+                toolName,
+                error == null ? "Tool step failed" : error.getMessage(),
+                0,
+                mergePayload(payload, errorPayload),
+                null
+        );
+        recordEventTrail(context, dbData);
+        persistAndSendCompact(context, "tool.error", NodeKind.TOOL, nodeName,
+                error == null ? "Tool step failed" : error.getMessage(), 0, dbData, sseData);
     }
 
     /**
@@ -371,7 +409,7 @@ public class AgentEventPublisher {
                                String content,
                                Map<String, Object> payload) {
         String summary = safeText(summarize(content), "调用完成 " + safeText(toolName, "Tool"));
-        Map<String, Object> data = buildEventData(
+        Map<String, Object> dbData = buildEventData(
                 "tool.end",
                 NodeKind.TOOL,
                 nodeName,
@@ -382,8 +420,16 @@ public class AgentEventPublisher {
                 success ? 1 : 0,
                 payload
         );
-        recordEventTrail(context, data);
-        persistAndSend(context, "tool.end", NodeKind.TOOL, nodeName, summary, success ? 1 : 0, data);
+        Map<String, Object> sseData = buildCompactToolEventData(
+                "tool.end",
+                toolName,
+                summary,
+                success ? 1 : 0,
+                payload,
+                content
+        );
+        recordEventTrail(context, dbData);
+        persistAndSendCompact(context, "tool.end", NodeKind.TOOL, nodeName, summary, success ? 1 : 0, dbData, sseData);
     }
 
     /**
@@ -423,7 +469,6 @@ public class AgentEventPublisher {
         if (payload != null && !payload.isEmpty()) {
             putString(data, "action", stringValue(payload.get("action")));
             putString(data, "reply", stringValue(payload.get("reply")));
-            putString(data, "routeDecision", stringValue(payload.get("routeDecision")));
             putString(data, "targetSubAgent", stringValue(payload.get("targetSubAgent")));
             putString(data, "errorCode", stringValue(payload.get("errorCode")));
             putString(data, "errorMessage", stringValue(payload.get("errorMessage")));
@@ -522,6 +567,26 @@ public class AgentEventPublisher {
     }
 
     /**
+     * 仅发送精简版 SSE 事件。
+     */
+    private void sendOnlyCompact(AgentContext context,
+                                 String eventName,
+                                 NodeKind nodeKind,
+                                 String nodeName,
+                                 String content,
+                                 Integer status,
+                                 Object data) {
+        SsePayload payload = new SsePayload();
+        payload.setEvent(eventName);
+        payload.setType(nodeKind == null ? null : nodeKind.name().toLowerCase());
+        payload.setName(nodeName);
+        payload.setContent(content);
+        payload.setStatus(status);
+        payload.setData(data);
+        this.sseConnectionManager.send(context.getSseConnectionKey(), eventName, payload);
+    }
+
+    /**
      * 持久化并发送节点事件。
      *
      * @param context 运行上下文
@@ -540,9 +605,7 @@ public class AgentEventPublisher {
                                 Integer status,
                                 Map<String, Object> data) {
         if (data != null) {
-            data.put("sessionId", context.getSessionId());
-            data.put("agentSessionId", context.getAgentSessionId());
-            data.put("runId", context.getRunId());
+            fillContextFields(data, context);
         }
         this.eventService.saveEvent(
                 context.getMessageId(),
@@ -603,6 +666,325 @@ public class AgentEventPublisher {
         payload.setData(data);
         this.sseConnectionManager.send(context.getSseConnectionKey(), eventName, payload);
         log.debug("[AGENT_EVENT] {}", JSONObject.toJSONString(payload));
+    }
+
+    /**
+     * 持久化自定义事件并发送精简版 SSE 数据。
+     */
+    private void persistAndSendCustomCompact(AgentContext context,
+                                             String eventName,
+                                             String type,
+                                             String nodeName,
+                                             String content,
+                                             Integer status,
+                                             Map<String, Object> dbData,
+                                             Map<String, Object> sseData) {
+        fillContextFields(dbData, context);
+        this.eventService.saveEvent(
+                context.getMessageId(),
+                context.getSessionId(),
+                context.getAgentSessionId(),
+                type,
+                nodeName,
+                content,
+                status,
+                dbData
+        );
+        SsePayload payload = new SsePayload();
+        payload.setEvent(eventName);
+        payload.setType(type);
+        payload.setName(nodeName);
+        payload.setContent(content);
+        payload.setStatus(status);
+        payload.setData(sseData);
+        this.sseConnectionManager.send(context.getSseConnectionKey(), eventName, payload);
+        log.debug("[AGENT_EVENT] {}", JSONObject.toJSONString(payload));
+    }
+
+    /**
+     * 持久化原始事件并发送精简版 SSE 数据。
+     *
+     * @param context 运行上下文
+     * @param eventName 事件名
+     * @param nodeKind 节点类型
+     * @param nodeName 节点名
+     * @param content 主体内容
+     * @param status 状态值
+     * @param dbData 落库数据
+     * @param sseData SSE 精简数据
+     */
+    private void persistAndSendCompact(AgentContext context,
+                                       String eventName,
+                                       NodeKind nodeKind,
+                                       String nodeName,
+                                       String content,
+                                       Integer status,
+                                       Map<String, Object> dbData,
+                                       Object sseData) {
+        if (dbData != null) {
+            fillContextFields(dbData, context);
+        }
+        this.eventService.saveEvent(
+                context.getMessageId(),
+                context.getSessionId(),
+                context.getAgentSessionId(),
+                nodeKind.name().toLowerCase(),
+                nodeName,
+                content,
+                status,
+                dbData
+        );
+        SsePayload payload = new SsePayload();
+        payload.setEvent(eventName);
+        payload.setType(nodeKind.name().toLowerCase());
+        payload.setName(nodeName);
+        payload.setContent(content);
+        payload.setStatus(status);
+        payload.setData(sseData);
+        this.sseConnectionManager.send(context.getSseConnectionKey(), eventName, payload);
+        log.debug("[AGENT_EVENT] {}", JSONObject.toJSONString(payload));
+    }
+
+    /**
+     * 构建工具事件的精简 SSE 数据。
+     *
+     * @param eventName 事件名
+     * @param nodeName 节点名
+     * @param toolName 工具名
+     * @param content 展示内容
+     * @param status 状态值
+     * @param payload 原始载荷
+     * @param rawContent 原始结果文本
+     * @return 精简数据
+     */
+    private Map<String, Object> buildCompactToolEventData(String eventName,
+                                                          String toolName,
+                                                          String content,
+                                                          Integer status,
+                                                          Map<String, Object> payload,
+                                                          String rawContent) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        putString(data, "toolName", toolName);
+        putString(data, "summary", summarize(content));
+        if ("tool.start".equals(eventName)) {
+            putString(data, "contentType", "progress");
+        } else if ("tool.error".equals(eventName)) {
+            putString(data, "contentType", "error");
+            putString(data, "error", buildToolResultPreview(payload, rawContent));
+        } else if (status != null) {
+            data.put("status", status);
+            putString(data, "contentType", resolveToolContentType(payload, rawContent));
+            String preview = buildToolResultPreview(payload, rawContent);
+            putString(data, "result", preview);
+        }
+        return data;
+    }
+
+    /**
+     * 构建 Agent 控制流事件的精简数据。
+     */
+    private Map<String, Object> buildCompactAgentEventData(AgentContext context,
+                                                           String agentName,
+                                                           String error,
+                                                           String status,
+                                                           AgentResult result) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        putString(data, "agentName", agentName);
+        putString(data, "status", status);
+        if (error != null) {
+            putString(data, "error", error);
+        }
+        return data;
+    }
+
+    /**
+     * 构建子 Agent 控制流事件的精简数据。
+     */
+    private Map<String, Object> buildCompactSubAgentEventData(AgentContext context,
+                                                              String subAgentName,
+                                                              String error,
+                                                              String status,
+                                                              Map<String, Object> payload) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        putString(data, "subAgentName", subAgentName);
+        putString(data, "status", status);
+        if (error != null) {
+            putString(data, "error", error);
+        }
+        if (payload != null) {
+            putString(data, "toolName", stringValue(payload.get("toolName")));
+        }
+        return data;
+    }
+
+    /**
+     * 构建 LLM 起止事件的精简数据。
+     */
+    private Map<String, Object> buildCompactLlmEventData(String nodeName,
+                                                         String promptCode,
+                                                         String content,
+                                                         Integer status) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        putString(data, "nodeName", nodeName);
+        putString(data, "promptCode", promptCode);
+        putString(data, "summary", summarize(content));
+        if (status != null) {
+            data.put("status", status);
+        }
+        return data;
+    }
+
+    /**
+     * 判断工具结果的内容类型。
+     *
+     * @param payload 原始载荷
+     * @param rawContent 原始结果文本
+     * @return 内容类型
+     */
+    private String resolveToolContentType(Map<String, Object> payload, String rawContent) {
+        if (payload == null || payload.isEmpty()) {
+            if (looksLikeJson(rawContent)) {
+                return "json";
+            }
+            return "text";
+        }
+        if (hasAnyKey(payload, "imageUrl", "imageUrls", "image_urls", "snapshotKey")) {
+            return "image";
+        }
+        if (hasAnyKey(payload, "resultJson", "structuredResult")) {
+            return "json";
+        }
+        Object result = payload.get("result");
+        if (result != null && !(result instanceof String)) {
+            return "json";
+        }
+        if (result instanceof String text && looksLikeJson(text)) {
+            return "json";
+        }
+        if (looksLikeJson(rawContent)) {
+            return "json";
+        }
+        return "text";
+    }
+
+    /**
+     * 构建工具结果预览文本。
+     *
+     * @param payload 原始载荷
+     * @param rawContent 原始结果文本
+     * @return 预览文本
+     */
+    private String buildToolResultPreview(Map<String, Object> payload, String rawContent) {
+        String preview = previewValue(payload == null ? null : payload.get("formattedResult"));
+        if (preview == null) {
+            preview = previewValue(payload == null ? null : payload.get("resultJson"));
+        }
+        if (preview == null) {
+            preview = previewValue(payload == null ? null : payload.get("result"));
+        }
+        if (preview == null) {
+            preview = previewValue(payload == null ? null : payload.get("structuredResult"));
+        }
+        if (preview == null) {
+            preview = previewValue(payload == null ? null : payload.get("content"));
+        }
+        if (preview == null) {
+            preview = rawContent;
+        }
+        if (preview == null && payload != null && !payload.isEmpty()) {
+            preview = JSONObject.toJSONString(payload);
+        }
+        if (preview == null) {
+            return null;
+        }
+        return truncateText(preview, 400);
+    }
+
+    /**
+     * 生成 agent.end 的展示文本。
+     */
+    private String buildAgentEndContent(AgentResult result) {
+        if (result == null || result.getStatus() == null) {
+            return "执行结束";
+        }
+        return switch (result.getStatus()) {
+            case SUCCESS -> "执行完成";
+            case FAILED -> "执行失败";
+            case WAITING_USER -> "等待用户继续输入";
+        };
+    }
+
+    /**
+     * 生成 subagent.end 的展示文本。
+     */
+    private String buildSubAgentEndContent(AgentResult result) {
+        if (result == null || result.getStatus() == null) {
+            return "子Agent执行结束";
+        }
+        String base = switch (result.getStatus()) {
+            case SUCCESS -> "子Agent执行完成";
+            case FAILED -> "子Agent执行失败";
+            case WAITING_USER -> "子Agent等待用户继续输入";
+        };
+        return base;
+    }
+
+    /**
+     * 判断是否存在任意键。
+     */
+    private boolean hasAnyKey(Map<String, Object> payload, String... keys) {
+        if (payload == null || payload.isEmpty() || keys == null) {
+            return false;
+        }
+        for (String key : keys) {
+            if (key != null && payload.containsKey(key) && payload.get(key) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 判断文本是否像 JSON。
+     */
+    private boolean looksLikeJson(String text) {
+        if (text == null) {
+            return false;
+        }
+        String trimmed = text.trim();
+        return (trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"));
+    }
+
+    /**
+     * 截断文本。
+     */
+    private String truncateText(String text, int maxLength) {
+        if (text == null) {
+            return null;
+        }
+        String normalized = text.trim();
+        if (normalized.length() <= maxLength) {
+            return normalized;
+        }
+        return normalized.substring(0, Math.max(0, maxLength - 1)) + "…";
+    }
+
+    /**
+     * 将预览值转为适合展示的文本。
+     */
+    private String previewValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof String text) {
+            return truncateText(text, 400);
+        }
+        try {
+            return truncateText(JSONObject.toJSONString(value), 400);
+        } catch (Exception ex) {
+            String text = String.valueOf(value);
+            return text == null ? null : truncateText(text, 400);
+        }
     }
 
     /**
@@ -714,6 +1096,11 @@ public class AgentEventPublisher {
             data.put("agentSessionId", context.getAgentSessionId());
         }
         putString(data, "runId", context.getRunId());
+        putString(data, "traceId", context.getTraceId());
+        putString(data, "parentRunId", context.getParentRunId());
+        putString(data, "turnId", context.getTurnId());
+        putString(data, "senderType", context.getSenderType());
+        putString(data, "agentCode", context.getAgentCode());
     }
 
     /**

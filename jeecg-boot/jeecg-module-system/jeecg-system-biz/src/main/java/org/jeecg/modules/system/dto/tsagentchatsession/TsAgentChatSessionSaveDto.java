@@ -19,9 +19,8 @@ public class TsAgentChatSessionSaveDto {
     private String appId;
 
     /**
-     * Agent编码。
+     * 主 Agent 编码。
      */
-    @NotBlank(message = "agentCode不能为空")
     private String agentCode;
 
     /**
@@ -38,4 +37,9 @@ public class TsAgentChatSessionSaveDto {
      * 会话记忆快照。
      */
     private String memoryJson;
+
+    /**
+     * 会话结构化状态。
+     */
+    private String stateJson;
 }

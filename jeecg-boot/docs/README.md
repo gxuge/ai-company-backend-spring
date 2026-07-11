@@ -20,6 +20,8 @@
 ## 4. 决策记录
 - `decisions/0001-template.md`：ADR 模板
 - `decisions/*.md`：架构/策略决策记录
+- `decisions/0005-agent-sse-event-streaming.md`：Agent SSE 事件传输与落库说明
+- `decisions/0006-main-subagent-context-storage.md`：MainAgent / SubAgent 对话与上下文存储机制
 
 ## 5. 推荐使用流程
 1. 涉及 Spring Boot 代码任务时，先加载 `spring-boot-dev.skill` 与 `spring-boot-hardness.skill`。

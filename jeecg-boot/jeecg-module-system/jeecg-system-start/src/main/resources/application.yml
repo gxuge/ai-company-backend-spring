@@ -3,6 +3,8 @@ spring:
     name: jeecg-system
   config:
     import: optional:classpath:config/application-liteflow.yml
+  mvc:
+    publish-request-handled-events: false
   profiles:
     active: '@profile.name@'
 

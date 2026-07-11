@@ -14,8 +14,11 @@ import org.jeecg.modules.openapi.service.IPromptChatService;
 import org.jeecg.modules.openapi.service.PromptRenderService;
 import org.jeecg.modules.openapi.vo.MiniMaxImageResponseVo;
 import org.jeecg.modules.openapi.vo.PromptRenderedSectionsVo;
+import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateImageByPromptDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateRoleDto;
+import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateImagePromptByTemplateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateTextByTemplateDto;
+import org.jeecg.modules.system.dto.tsrole.TsRoleImagePromptOptimizeDto;
 import org.jeecg.modules.system.dto.tsrole.ImageGenerateRuntimeResult;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickImageGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickSettingGenerateDto;
@@ -45,8 +48,11 @@ import org.jeecg.modules.system.service.ITsUserImageAssetService;
 import org.jeecg.modules.system.util.PromptRuntimeUtil;
 import org.jeecg.modules.system.util.RoleGenerateSnapshotUtil;
 import org.jeecg.modules.system.util.VoiceProfileMatchUtil;
+import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateImageByPromptVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateRoleVo;
+import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateImagePromptByTemplateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateTextByTemplateVo;
+import org.jeecg.modules.system.vo.tsrole.TsRoleImagePromptOptimizeVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickImageGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickSettingGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickVoiceGenerateVo;
@@ -88,10 +94,19 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
     private static final String PROMPT_CODE_SETTING_PRESET = "role_core_fill_preset";
     private static final String PROMPT_CODE_GENERATE_ROLE = "role_generate_role";
     private static final String PROMPT_CODE_IMAGE = "role_image_generate";
+    private static final String PROMPT_CODE_IMAGE_PROMPT_TEMPLATE = "role_create_image_prompt";
+    private static final String PROMPT_VERSION_IMAGE_PROMPT_TEMPLATE = "v1";
+    private static final String PROMPT_CODE_IMAGE_PROMPT_OPTIMIZE = "role_image_prompt_optimize";
+    private static final String PROMPT_VERSION_IMAGE_PROMPT_OPTIMIZE = "v1";
     private static final String PROMPT_CODE_VOICE = "role_voice_generate";
     private static final String PROMPT_CODE_TEXT_TEMPLATE = "role_ai_generate_text";
     private static final String REDIS_SNAPSHOT_PREFIX = "ts:role:generate:snapshot:";
     private static final long REDIS_SNAPSHOT_TTL_HOURS = 72L;
+    private static final int IMAGE_PROMPT_MAX_LENGTH = 180;
+    private static final int IMAGE_NEGATIVE_PROMPT_MAX_LENGTH = 60;
+    private static final int IMAGE_PROMPT_TEMPLATE_MAX_LENGTH = 220;
+    private static final int IMAGE_NEGATIVE_PROMPT_TEMPLATE_MAX_LENGTH = 80;
+    private static final String DEFAULT_IMAGE_PROMPT_STYLE = "写实风";
     private static final String DEFAULT_PREVIEW_TEXT = "你好呀，很高兴认识你。";
     private static final String IMAGE_GENERATE_STATUS_PENDING = "pending";
     private static final String IMAGE_GENERATE_STATUS_RUNNING = "running";
@@ -335,6 +350,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
 
         MiniMaxImageRequestDto imageRequest = new MiniMaxImageRequestDto();
         imageRequest.setPrompt(imagePrompt);
+        imageRequest.setReferenceImageUrl(dto.getReferenceImageUrl());
         MiniMaxImageResponseVo imageResponse = miniMaxDemoService.image(imageRequest);
 
         String imageUrl = null;
@@ -418,6 +434,30 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
             builder.append("aspect_ratio: ").append(aspectRatio.trim());
         }
         return builder.length() == 0 ? visualPrompt : builder.toString();
+    }
+
+    private static String limitText(String text, int maxLength) {
+        String value = PromptRuntimeUtil.trimToNull(text);
+        if (!StringUtils.hasText(value) || maxLength <= 0 || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength).trim();
+    }
+
+    private String buildImagePrompt(String promptText, String styleName) {
+        StringBuilder builder = new StringBuilder();
+        String normalizedPrompt = PromptRuntimeUtil.trimToNull(promptText);
+        if (StringUtils.hasText(normalizedPrompt)) {
+            builder.append(normalizedPrompt);
+        }
+        String normalizedStyle = PromptRuntimeUtil.trimToNull(styleName);
+        if (StringUtils.hasText(normalizedStyle)) {
+            if (builder.length() > 0) {
+                builder.append("，");
+            }
+            builder.append("风格：").append(normalizedStyle);
+        }
+        return builder.toString();
     }
 
     private void processAsyncImageGenerateTask(LoginUser user, TsRoleOneClickImageGenerateDto dto, Long roleId, Long recordId) {
@@ -757,6 +797,176 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         vo.setPromptCode(promptCode);
         vo.setPromptVersion(promptVersion);
         vo.setRenderedPrompt(renderedPrompt);
+        vo.setSnapshotKey(snapshotKey);
+        return vo;
+    }
+
+    @Override
+    public TsRoleGenerateImagePromptByTemplateVo generateImagePromptByTemplate(LoginUser user, TsRoleGenerateImagePromptByTemplateDto request) {
+        TsRoleGenerateImagePromptByTemplateDto dto = request == null ? new TsRoleGenerateImagePromptByTemplateDto() : request;
+        dto.normalize();
+        if (!StringUtils.hasText(dto.getPromptText())) {
+            throw new JeecgBootException("提示词不能为空");
+        }
+
+        String styleName = PromptRuntimeUtil.firstNonBlank(dto.getStyleName(), DEFAULT_IMAGE_PROMPT_STYLE);
+
+        Map<String, String> variables = new LinkedHashMap<>();
+        variables.put("prompt_text", PromptRuntimeUtil.nullableToken(dto.getPromptText()));
+        variables.put("style_name", PromptRuntimeUtil.nullableToken(styleName));
+
+        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
+                PROMPT_CODE_IMAGE_PROMPT_TEMPLATE,
+                PROMPT_VERSION_IMAGE_PROMPT_TEMPLATE,
+                variables
+        );
+        String renderedPrompt = promptSections.getRenderedPrompt();
+        JSONObject modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, promptSections);
+
+        String visualPrompt = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("visual_prompt")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("visualPrompt")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("generated_text")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("text")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("result"))
+        );
+        String negativePrompt = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("negative_prompt")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("negativePrompt"))
+        );
+        String styleUsed = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("style_used")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("styleUsed")),
+                styleName
+        );
+        if (!StringUtils.hasText(visualPrompt)) {
+            throw new JeecgBootException("形象提示词生成失败，模型未返回有效内容");
+        }
+        if (!StringUtils.hasText(negativePrompt)) {
+            negativePrompt = "低质量, 模糊, 畸形, 多余手指, 脸崩坏, 错位肢体, 水印, 文字, logo, 噪点";
+        }
+
+        visualPrompt = limitText(visualPrompt, IMAGE_PROMPT_TEMPLATE_MAX_LENGTH);
+        negativePrompt = limitText(negativePrompt, IMAGE_NEGATIVE_PROMPT_TEMPLATE_MAX_LENGTH);
+        styleUsed = limitText(styleUsed, 40);
+
+        JSONObject snapshot = new JSONObject();
+        snapshot.put("type", "image-prompt-template");
+        snapshot.put("promptCode", PROMPT_CODE_IMAGE_PROMPT_TEMPLATE);
+        snapshot.put("promptVersion", PROMPT_VERSION_IMAGE_PROMPT_TEMPLATE);
+        snapshot.put("promptRendered", renderedPrompt);
+        snapshot.put("rawResponse", modelJson == null ? null : modelJson.toJSONString());
+        snapshot.put("styleName", styleName);
+        snapshot.put("styleUsed", styleUsed);
+        snapshot.put("visualPrompt", visualPrompt);
+        snapshot.put("negativePrompt", negativePrompt);
+        String snapshotKey = RoleGenerateSnapshotUtil.saveSnapshot(redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS,
+                "image-prompt-template", user.getId(), snapshot);
+
+        TsRoleGenerateImagePromptByTemplateVo vo = new TsRoleGenerateImagePromptByTemplateVo();
+        vo.setStyleUsed(styleUsed);
+        vo.setVisualPrompt(visualPrompt);
+        vo.setNegativePrompt(negativePrompt);
+        vo.setPromptCode(PROMPT_CODE_IMAGE_PROMPT_TEMPLATE);
+        vo.setPromptVersion(PROMPT_VERSION_IMAGE_PROMPT_TEMPLATE);
+        vo.setRenderedPrompt(renderedPrompt);
+        vo.setSnapshotKey(snapshotKey);
+        return vo;
+    }
+
+    @Override
+    public TsRoleImagePromptOptimizeVo optimizeRoleImagePrompt(LoginUser user, TsRoleImagePromptOptimizeDto request) {
+        TsRoleImagePromptOptimizeDto dto = request == null ? new TsRoleImagePromptOptimizeDto() : request;
+        dto.normalize();
+        if (!StringUtils.hasText(dto.getPromptText())) {
+            throw new JeecgBootException("提示词不能为空");
+        }
+
+        Map<String, String> variables = new LinkedHashMap<>();
+        variables.put("prompt_text", PromptRuntimeUtil.nullableToken(dto.getPromptText()));
+
+        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
+                PROMPT_CODE_IMAGE_PROMPT_OPTIMIZE,
+                PROMPT_VERSION_IMAGE_PROMPT_OPTIMIZE,
+                variables
+        );
+        String renderedPrompt = promptSections.getRenderedPrompt();
+        JSONObject modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, promptSections);
+        String visualPrompt = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("visual_prompt")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("visualPrompt")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("optimized_prompt")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("optimizedPrompt")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("generated_text")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("text")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("result"))
+        );
+        String negativePrompt = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("negative_prompt")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("negativePrompt"))
+        );
+        if (!StringUtils.hasText(visualPrompt)) {
+            throw new JeecgBootException("提示词优化失败，模型未返回有效内容");
+        }
+        if (!StringUtils.hasText(negativePrompt)) {
+            negativePrompt = "低质量, 模糊, 畸形, 多余手指, 脸崩坏, 错位肢体, 水印, 文字, logo, 噪点";
+        }
+
+        visualPrompt = limitText(visualPrompt, IMAGE_PROMPT_MAX_LENGTH);
+        negativePrompt = limitText(negativePrompt, IMAGE_NEGATIVE_PROMPT_MAX_LENGTH);
+
+        JSONObject snapshot = new JSONObject();
+        snapshot.put("type", "image-prompt-optimize");
+        snapshot.put("promptCode", PROMPT_CODE_IMAGE_PROMPT_OPTIMIZE);
+        snapshot.put("promptRendered", renderedPrompt);
+        snapshot.put("rawResponse", modelJson == null ? null : modelJson.toJSONString());
+        snapshot.put("visualPrompt", visualPrompt);
+        snapshot.put("negativePrompt", negativePrompt);
+        String snapshotKey = RoleGenerateSnapshotUtil.saveSnapshot(redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS,
+                "image-prompt-optimize", user.getId(), snapshot);
+
+        TsRoleImagePromptOptimizeVo vo = new TsRoleImagePromptOptimizeVo();
+        vo.setVisualPrompt(visualPrompt);
+        vo.setNegativePrompt(negativePrompt);
+        vo.setPromptCode(PROMPT_CODE_IMAGE_PROMPT_OPTIMIZE);
+        vo.setPromptVersion(PROMPT_VERSION_IMAGE_PROMPT_OPTIMIZE);
+        vo.setRenderedPrompt(renderedPrompt);
+        vo.setSnapshotKey(snapshotKey);
+        return vo;
+    }
+
+    @Override
+    public TsRoleGenerateImageByPromptVo generateImageByPrompt(LoginUser user, TsRoleGenerateImageByPromptDto request) {
+        TsRoleGenerateImageByPromptDto dto = request == null ? new TsRoleGenerateImageByPromptDto() : request;
+        dto.normalize();
+        if (!StringUtils.hasText(dto.getPromptText())) {
+            throw new JeecgBootException("promptText不能为空");
+        }
+
+        String styleUsed = PromptRuntimeUtil.firstNonBlank(dto.getStyleName(), DEFAULT_IMAGE_PROMPT_STYLE);
+        String promptUsed = buildImagePrompt(dto.getPromptText(), styleUsed);
+
+        MiniMaxImageRequestDto imageRequest = new MiniMaxImageRequestDto();
+        imageRequest.setPrompt(promptUsed);
+        imageRequest.setReferenceImageUrl(dto.getReferenceImageUrl());
+        MiniMaxImageResponseVo imageResponse = miniMaxDemoService.image(imageRequest);
+
+        JSONObject snapshot = new JSONObject();
+        snapshot.put("type", "image-by-prompt");
+        snapshot.put("promptUsed", promptUsed);
+        snapshot.put("styleUsed", styleUsed);
+        snapshot.put("referenceImageUrl", dto.getReferenceImageUrl());
+        snapshot.put("originalImageUrls", imageResponse == null ? null : imageResponse.getOriginalImageUrls());
+        snapshot.put("imageUrls", imageResponse == null ? null : imageResponse.getImageUrls());
+        String snapshotKey = RoleGenerateSnapshotUtil.saveSnapshot(redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS,
+                "image-by-prompt", user.getId(), snapshot);
+
+        TsRoleGenerateImageByPromptVo vo = new TsRoleGenerateImageByPromptVo();
+        vo.setPromptUsed(promptUsed);
+        vo.setStyleUsed(styleUsed);
+        vo.setReferenceImageUrl(dto.getReferenceImageUrl());
+        vo.setOriginalImageUrls(imageResponse == null ? null : imageResponse.getOriginalImageUrls());
+        vo.setImageUrls(imageResponse == null ? null : imageResponse.getImageUrls());
         vo.setSnapshotKey(snapshotKey);
         return vo;
     }

@@ -46,7 +46,7 @@ public class TsAgentChatSession implements Serializable {
     private String appId;
 
     /**
-     * Agent编码。
+     * 主 Agent 编码。
      */
     @TableField("agent_code")
     private String agentCode;
@@ -80,6 +80,18 @@ public class TsAgentChatSession implements Serializable {
      */
     @TableField("memory_json")
     private String memoryJson;
+
+    /**
+     * 会话结构化状态。
+     */
+    @TableField("state_json")
+    private String stateJson;
+
+    /**
+     * 子 Agent 最近执行历史快照。
+     */
+    @TableField("sub_agent_history_json")
+    private String subAgentHistoryJson;
 
     /**
      * 最后一条消息ID。

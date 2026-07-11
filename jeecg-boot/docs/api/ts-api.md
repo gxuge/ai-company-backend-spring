@@ -83,6 +83,9 @@
 | POST | `/ts-roles/one-click-setting` | 角色一键设定生成 |
 | POST | `/ts-roles/one-click-setting-preset` | 角色一键设定生成预设版 |
 | POST | `/ts-roles/one-click-image` | 角色一键生图 |
+| POST | `/ts-roles/optimize-image-prompt` | 角色形象提示词优化（读取数据库模板 `role_image_prompt_optimize::v1`，返回 `visualPrompt` / `negativePrompt`） |
+| POST | `/ts-roles/generate-image-prompt-by-template` | 角色形象提示词生成（读取数据库模板 `role_create_image_prompt::v1`，返回 `styleUsed` / `visualPrompt` / `negativePrompt`） |
+| POST | `/ts-roles/generate-image-by-prompt` | 角色形象生图（传入 `promptText`，可选 `styleName` / `referenceImageUrl`，直接调用 image-01 模型） |
 | POST | `/ts-roles/one-click-voice` | 角色一键生音色 |
 | POST | `/ts-roles/generate-text-by-template` | 角色模板文本生成 |
 | POST | `/ts-roles/generate-role` | 随机完整角色生成 |

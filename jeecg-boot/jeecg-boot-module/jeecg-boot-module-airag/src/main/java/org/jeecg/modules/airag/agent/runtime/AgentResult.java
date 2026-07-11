@@ -2,7 +2,9 @@ package org.jeecg.modules.airag.agent.runtime;
 
 import lombok.Data;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -40,6 +42,14 @@ public class AgentResult {
      * 最终返回文本。
      */
     private String content;
+    /**
+     * 结构化结果。
+     */
+    private Object structuredResult;
+    /**
+     * 错误信息。
+     */
+    private String error;
     /**
      * 扩展数据。
      */

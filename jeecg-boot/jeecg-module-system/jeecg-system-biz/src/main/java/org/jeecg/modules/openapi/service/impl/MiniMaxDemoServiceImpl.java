@@ -126,6 +126,10 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
      */
     @Override
     public MiniMaxImageResponseVo image(MiniMaxImageRequestDto requestDto) {
+        if (requestDto == null) {
+            throw new JeecgBootBizTipException("requestDto不能为空");
+        }
+        requestDto.normalize();
         if (!StringUtils.hasText(requestDto.getPrompt())) {
             throw new JeecgBootBizTipException("prompt不能为空");
         }
@@ -134,7 +138,9 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
         if (promptLength > maxImagePromptChars) {
             throw new JeecgBootBizTipException("prompt长度超过限制，当前长度=" + promptLength + "，上限=" + maxImagePromptChars);
         }
-        List<String> imageUrls = miniMaxMediaService.generateImage(requestDto.getPrompt());
+        List<String> imageUrls = StringUtils.hasText(requestDto.getReferenceImageUrl())
+                ? miniMaxMediaService.generateImage(requestDto.getPrompt(), requestDto.getReferenceImageUrl())
+                : miniMaxMediaService.generateImage(requestDto.getPrompt());
         MiniMaxImageResponseVo responseVo = new MiniMaxImageResponseVo();
         responseVo.setOriginalImageUrls(imageUrls);
         if (miniMaxDemoConfig.isUploadGeneratedMedia()) {

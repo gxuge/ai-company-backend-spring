@@ -8,8 +8,11 @@ import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateImageByPromptDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateRoleDto;
+import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateImagePromptByTemplateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateTextByTemplateDto;
+import org.jeecg.modules.system.dto.tsrole.TsRoleImagePromptOptimizeDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickImageGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickSettingGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickVoiceGenerateDto;
@@ -17,7 +20,10 @@ import org.jeecg.modules.system.dto.tsrole.TsRoleQueryDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleSaveDto;
 import org.jeecg.modules.system.service.ITsRoleService;
 import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateRoleVo;
+import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateImageByPromptVo;
+import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateImagePromptByTemplateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateTextByTemplateVo;
+import org.jeecg.modules.system.vo.tsrole.TsRoleImagePromptOptimizeVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickImageGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickSettingGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickVoiceGenerateVo;
@@ -88,9 +94,27 @@ public class TsRoleController {
         return tsRoleService.generateTextByTemplate(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
     }
 
+    @Operation(summary = "Role generate image prompt by template")
+    @PostMapping("/ts-roles/generate-image-prompt-by-template")
+    public Result<TsRoleGenerateImagePromptByTemplateVo> generateImagePromptByTemplate(@Validated @RequestBody TsRoleGenerateImagePromptByTemplateDto request) {
+        return tsRoleService.generateImagePromptByTemplate(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
+    }
+
+    @Operation(summary = "角色形象提示词优化")
+    @PostMapping("/ts-roles/optimize-image-prompt")
+    public Result<TsRoleImagePromptOptimizeVo> optimizeImagePrompt(@Validated @RequestBody TsRoleImagePromptOptimizeDto request) {
+        return tsRoleService.optimizeRoleImagePrompt(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
+    }
+
     @Operation(summary = "Role generate role")
     @PostMapping("/ts-roles/generate-role")
     public Result<TsRoleGenerateRoleVo> generateRole(@RequestBody TsRoleGenerateRoleDto request) {
         return tsRoleService.generateRole(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
+    }
+
+    @Operation(summary = "Role generate image by prompt")
+    @PostMapping("/ts-roles/generate-image-by-prompt")
+    public Result<TsRoleGenerateImageByPromptVo> generateImageByPrompt(@Validated @RequestBody TsRoleGenerateImageByPromptDto request) {
+        return tsRoleService.generateImageByPrompt(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
     }
 }

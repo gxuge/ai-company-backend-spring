@@ -28,6 +28,7 @@ public class TsAgentChatSessionServiceImpl extends ServiceImpl<TsAgentChatSessio
     private static final String ARCHIVED_SESSION_STATUS = "archived";
     private static final String DELETED_SESSION_STATUS = "deleted";
     private static final String DEFAULT_SESSION_TITLE = "新会话";
+    private static final String DEFAULT_AGENT_CODE = "main";
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -36,15 +37,13 @@ public class TsAgentChatSessionServiceImpl extends ServiceImpl<TsAgentChatSessio
                                             String agentCode,
                                             String sessionTitle,
                                             String sessionSummary,
-                                            String memoryJson) {
+                                            String memoryJson,
+                                            String stateJson) {
         if (oConvertUtils.isEmpty(userId)) {
             throw new JeecgBootBizTipException("用户ID不能为空");
         }
         if (oConvertUtils.isEmpty(appId)) {
             throw new JeecgBootBizTipException("应用ID不能为空");
-        }
-        if (oConvertUtils.isEmpty(agentCode)) {
-            throw new JeecgBootBizTipException("Agent编码不能为空");
         }
 
         Date now = new Date();
@@ -58,12 +57,13 @@ public class TsAgentChatSessionServiceImpl extends ServiceImpl<TsAgentChatSessio
         TsAgentChatSession entity = new TsAgentChatSession();
         entity.setSessionNo(UUIDGenerator.generate());
         entity.setAppId(appId);
-        entity.setAgentCode(agentCode);
+        entity.setAgentCode(normalizeAgentCode(agentCode));
         entity.setUserId(userId);
         entity.setSessionTitle(normalizedTitle);
         entity.setSessionSummary(sessionSummary);
         entity.setSessionStatus(DEFAULT_SESSION_STATUS);
         entity.setMemoryJson(memoryJson);
+        entity.setStateJson(stateJson);
         entity.setMessageCount(0);
         entity.setTurnCount(0);
         entity.setIsDeleted(0);
@@ -90,7 +90,8 @@ public class TsAgentChatSessionServiceImpl extends ServiceImpl<TsAgentChatSessio
                                             Long id,
                                             String sessionTitle,
                                             String sessionSummary,
-                                            String memoryJson) {
+                                            String memoryJson,
+                                            String stateJson) {
         TsAgentChatSession record = getOwnedSession(userId, id);
         if (record == null) {
             throw new JeecgBootBizTipException("会话不存在或无权限访问");
@@ -108,6 +109,9 @@ public class TsAgentChatSessionServiceImpl extends ServiceImpl<TsAgentChatSessio
         if (memoryJson != null) {
             record.setMemoryJson(memoryJson.trim());
         }
+        if (stateJson != null) {
+            record.setStateJson(stateJson.trim());
+        }
         record.setUpdatedAt(new Date());
         this.updateById(record);
         return record;
@@ -115,12 +119,11 @@ public class TsAgentChatSessionServiceImpl extends ServiceImpl<TsAgentChatSessio
 
     @Override
     public Page<TsAgentChatSession> pageSessions(String userId,
-                                                 String agentCode,
                                                  String keyword,
                                                  long pageNo,
                                                  long pageSize) {
         Page<TsAgentChatSession> page = new Page<>(pageNo, pageSize);
-        return this.baseMapper.selectSessionPage(page, userId, agentCode, keyword, null);
+        return this.baseMapper.selectSessionPage(page, userId, keyword, null);
     }
 
     @Override
@@ -177,5 +180,13 @@ public class TsAgentChatSessionServiceImpl extends ServiceImpl<TsAgentChatSessio
                 .setSql("message_count = IFNULL(message_count, 0) + " + messageDelta
                         + ", turn_count = IFNULL(turn_count, 0) + " + turnDelta)
                 .set(TsAgentChatSession::getUpdatedAt, new Date()));
+    }
+
+    private String normalizeAgentCode(String agentCode) {
+        if (oConvertUtils.isEmpty(agentCode)) {
+            return DEFAULT_AGENT_CODE;
+        }
+        String normalized = agentCode.trim();
+        return normalized.isEmpty() ? DEFAULT_AGENT_CODE : normalized;
     }
 }

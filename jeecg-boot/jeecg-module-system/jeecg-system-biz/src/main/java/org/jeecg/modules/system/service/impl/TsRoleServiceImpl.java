@@ -7,8 +7,11 @@ import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.aop.TsRoleOwnershipAspect;
 import org.jeecg.modules.aop.TsRoleOwnershipAspect.CheckTsRoleOwnership;
+import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateImageByPromptDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateRoleDto;
+import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateImagePromptByTemplateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateTextByTemplateDto;
+import org.jeecg.modules.system.dto.tsrole.TsRoleImagePromptOptimizeDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickImageGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickSettingGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickVoiceGenerateDto;
@@ -20,8 +23,11 @@ import org.jeecg.modules.system.po.tsrole.TsRoleQueryPo;
 import org.jeecg.modules.system.po.tsrole.TsRoleSavePo;
 import org.jeecg.modules.system.service.ITsRoleGenerateService;
 import org.jeecg.modules.system.service.ITsRoleService;
+import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateImageByPromptVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateRoleVo;
+import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateImagePromptByTemplateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateTextByTemplateVo;
+import org.jeecg.modules.system.vo.tsrole.TsRoleImagePromptOptimizeVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickImageGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickSettingGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickVoiceGenerateVo;
@@ -147,7 +153,23 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Result<TsRoleGenerateImageByPromptVo> generateImageByPrompt(LoginUser user, TsRoleGenerateImageByPromptDto request) {
+        return Result.OK(tsRoleGenerateService.generateImageByPrompt(user, request));
+    }
+
+    @Override
     public Result<TsRoleGenerateTextByTemplateVo> generateTextByTemplate(LoginUser user, TsRoleGenerateTextByTemplateDto request) {
         return Result.OK(tsRoleGenerateService.generateTextByTemplate(user, request));
+    }
+
+    @Override
+    public Result<TsRoleGenerateImagePromptByTemplateVo> generateImagePromptByTemplate(LoginUser user, TsRoleGenerateImagePromptByTemplateDto request) {
+        return Result.OK(tsRoleGenerateService.generateImagePromptByTemplate(user, request));
+    }
+
+    @Override
+    public Result<TsRoleImagePromptOptimizeVo> optimizeRoleImagePrompt(LoginUser user, TsRoleImagePromptOptimizeDto request) {
+        return Result.OK(tsRoleGenerateService.optimizeRoleImagePrompt(user, request));
     }
 }

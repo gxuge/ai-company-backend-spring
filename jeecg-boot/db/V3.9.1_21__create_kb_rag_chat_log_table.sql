@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS `kb_rag_chat_log` (
+    `id` varchar(64) NOT NULL COMMENT '主键ID',
+    `query` text NULL COMMENT '原始问题',
+    `answer` longtext NULL COMMENT '回答',
+    `kb_ids_json` longtext NULL COMMENT '内部知识库ID JSON',
+    `external_kb_ids_json` longtext NULL COMMENT '外部知识库ID JSON',
+    `answer_mode` varchar(32) NULL COMMENT '回答模式',
+    `actual_params_json` longtext NULL COMMENT '实际参数 JSON',
+    `used_queries_json` longtext NULL COMMENT '使用 query JSON',
+    `used_context_json` longtext NULL COMMENT '使用上下文 JSON',
+    `citations_json` longtext NULL COMMENT '引用 JSON',
+    `result_count` int NULL COMMENT '返回条数',
+    `used_reference_length` int NULL COMMENT '使用引用长度',
+    `debug_json` longtext NULL COMMENT '调试 JSON',
+    `status` varchar(32) NULL COMMENT '状态',
+    `error_message` longtext NULL COMMENT '错误信息',
+    `created_at` datetime NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` datetime NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_kb_rag_chat_log_query` (`query`(128)),
+    KEY `idx_kb_rag_chat_log_status` (`status`),
+    KEY `idx_kb_rag_chat_log_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='RAG 问答日志';

@@ -46,6 +46,36 @@ public class TsChatMessageEventEntity implements Serializable {
     @TableField("run_id")
     private String runId;
     /**
+     * 链路追踪ID。
+     */
+    @TableField("trace_id")
+    private String traceId;
+    /**
+     * 父运行ID。
+     */
+    @TableField("parent_run_id")
+    private String parentRunId;
+    /**
+     * 父事件ID。
+     */
+    @TableField("parent_event_id")
+    private String parentEventId;
+    /**
+     * 对话轮次ID。
+     */
+    @TableField("turn_id")
+    private String turnId;
+    /**
+     * 发送方类型。
+     */
+    @TableField("sender_type")
+    private String senderType;
+    /**
+     * Agent 编码。
+     */
+    @TableField("agent_code")
+    private String agentCode;
+    /**
      * 事件块类型。
      */
     private String type;
