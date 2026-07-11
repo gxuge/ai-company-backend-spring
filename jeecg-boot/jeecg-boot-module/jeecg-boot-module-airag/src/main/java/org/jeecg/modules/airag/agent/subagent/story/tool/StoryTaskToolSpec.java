@@ -20,13 +20,23 @@ public final class StoryTaskToolSpec {
      * 预留工具名。
      */
     public static final String STORY_FULL_GENERATE = "story_full_generate";
+    /**
+     * 故事流程门禁工具。
+     */
+    public static final String STORY_FLOW_GATE = "story_flow_gate";
+    /**
+     * 故事背景 / 场景生成工具。
+     */
+    public static final String STORY_GENERATE_SCENE = "story_generate_scene";
 
     /**
      * 当前故事链路的预留工具列表。
      */
     public static final List<String> TOOL_NAMES = List.of(
             STORY_FULL_GENERATE_PRESET,
-            STORY_FULL_GENERATE
+            STORY_FULL_GENERATE,
+            STORY_FLOW_GATE,
+            STORY_GENERATE_SCENE
     );
 
     private StoryTaskToolSpec() {

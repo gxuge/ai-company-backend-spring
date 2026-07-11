@@ -145,21 +145,26 @@ public class DeepAgentDefinitionRegistry {
     private DeepAgentDefinition buildStoryDefinition() {
         DeepAgentDefinition definition = new DeepAgentDefinition();
         definition.setName("story_task_agent");
-        definition.setDescription("创建故事对话子 Agent，支持追问、preset/full 生成与结果确认。");
+        definition.setDescription("创建故事对话子 Agent，支持追问、preset/full 生成、确认后补背景与场景。");
         definition.setSkillDomain("story");
         definition.setSkillTopK(3);
-        definition.setSkills(List.of("story_create_dialog"));
+        definition.setSkills(List.of("story_create_dialog", "story_create_background"));
         definition.setTools(List.of(
+                "story_flow_gate",
                 "story_full_generate_preset",
-                "story_full_generate"
+                "story_full_generate",
+                "story_generate_scene"
         ));
         definition.setPermissions(List.of(
+                "story_flow_gate",
                 "story_full_generate_preset",
-                "story_full_generate"
+                "story_full_generate",
+                "story_generate_scene"
         ));
         definition.setResponseFormat("text");
         definition.getMetadata().put("flow", "create-story");
         definition.getMetadata().put("mode", "deep-agents");
+        definition.getMetadata().put("chain", List.of("story_create_dialog", "story_flow_gate", "story_create_background"));
         return definition;
     }
 

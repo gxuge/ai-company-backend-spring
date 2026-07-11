@@ -3,6 +3,7 @@ package org.jeecg.modules.system.agent.task.story;
 import com.alibaba.fastjson.JSONObject;
 import jakarta.annotation.PostConstruct;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.airag.agent.common.SubAgentHistorySupport;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.subagent.story.tool.StoryTaskToolSpec;
@@ -12,7 +13,9 @@ import org.jeecg.modules.airag.agent.tool.ToolCallResult;
 import org.jeecg.modules.airag.agent.tool.ToolDefinition;
 import org.jeecg.modules.airag.agent.tool.ToolRegistry;
 import org.jeecg.modules.system.dto.tsstory.TsStoryFullGenerateDto;
+import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneGenerateDto;
 import org.jeecg.modules.system.service.ITsStoryGenerateService;
+import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneGenerateVo;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -32,6 +35,8 @@ public class StoryTaskToolRegistrar {
 
     private static final String ROUTE_STORY_CORE_FILL = "STORY_CORE_FILL";
     private static final String ROUTE_STORY_FULL_GENERATE = "STORY_FULL_GENERATE";
+    private static final String ROUTE_STORY_FLOW_GATE = "STORY_FLOW_GATE";
+    private static final String ROUTE_STORY_SCENE_GENERATE = "STORY_SCENE_GENERATE";
 
     private final ToolRegistry toolRegistry;
     private final ITsStoryGenerateService storyGenerateService;
@@ -46,6 +51,8 @@ public class StoryTaskToolRegistrar {
     public void registerTools() {
         this.toolRegistry.register(buildStoryFullGenerateTool());
         this.toolRegistry.register(buildStoryFullGeneratePresetTool());
+        this.toolRegistry.register(buildStoryFlowGateTool());
+        this.toolRegistry.register(buildStorySceneGenerateTool());
     }
 
     private ToolDefinition buildStoryFullGenerateTool() {
@@ -70,6 +77,28 @@ public class StoryTaskToolRegistrar {
         return definition;
     }
 
+    private ToolDefinition buildStoryFlowGateTool() {
+        ToolDefinition definition = new ToolDefinition();
+        definition.setName(StoryTaskToolSpec.STORY_FLOW_GATE);
+        definition.setRouteKey(ROUTE_STORY_FLOW_GATE);
+        definition.setCategory("story_task");
+        definition.setDisplayName("故事流程门禁");
+        definition.setDescription("判断故事核心结果是否可以进入背景 / 场景阶段");
+        definition.setExecutor(this::executeStoryFlowGate);
+        return definition;
+    }
+
+    private ToolDefinition buildStorySceneGenerateTool() {
+        ToolDefinition definition = new ToolDefinition();
+        definition.setName(StoryTaskToolSpec.STORY_GENERATE_SCENE);
+        definition.setRouteKey(ROUTE_STORY_SCENE_GENERATE);
+        definition.setCategory("story_task");
+        definition.setDisplayName("故事背景生成");
+        definition.setDescription("基于已确认的故事核心生成背景 / 场景设定");
+        definition.setExecutor(this::executeStorySceneGenerate);
+        return definition;
+    }
+
     private ToolCallResult executeStoryFullGenerate(AgentContext context, ToolCallRequest request) {
         LoginUser user = TaskAgentSupport.buildLoginUser(context);
         TsStoryFullGenerateDto dto = buildStoryRequest(context, request);
@@ -77,6 +106,14 @@ public class StoryTaskToolRegistrar {
         Object result = this.storyGenerateService.generateStoryFull(user, dto);
         payload.put("result", result);
         payload.put("resultJson", JSONObject.toJSONString(result));
+        if (context != null) {
+            String resultJson = JSONObject.toJSONString(result);
+            context.putAttribute("storyFullGenerateResult", result);
+            context.putAttribute("storyFullGenerateResultJson", resultJson);
+            context.putAttribute("storyCoreResult", result);
+            context.putAttribute("storyCoreResultJson", resultJson);
+            context.putAttribute("storyFlowStage", "story_confirm");
+        }
         ToolCallResult callResult = ToolCallResult.success("已生成完整故事", result);
         callResult.setPayload(payload);
         return callResult;
@@ -89,7 +126,63 @@ public class StoryTaskToolRegistrar {
         Object result = this.storyGenerateService.generateStoryFullPreset(user, dto);
         payload.put("result", result);
         payload.put("resultJson", JSONObject.toJSONString(result));
+        if (context != null) {
+            String resultJson = JSONObject.toJSONString(result);
+            context.putAttribute("storyCorePresetResult", result);
+            context.putAttribute("storyCorePresetResultJson", resultJson);
+            context.putAttribute("storyCoreResult", result);
+            context.putAttribute("storyCoreResultJson", resultJson);
+            context.putAttribute("storyFlowStage", "story_confirm");
+        }
         ToolCallResult callResult = ToolCallResult.success("已生成故事 preset", result);
+        callResult.setPayload(payload);
+        return callResult;
+    }
+
+    private ToolCallResult executeStoryFlowGate(AgentContext context, ToolCallRequest request) {
+        String stage = firstNonBlank(context, request, "stage");
+        if (!StringUtils.hasText(stage) && context != null) {
+            stage = oConvertUtils.getString(context.getAttribute("storyFlowStage"));
+        }
+        if (!StringUtils.hasText(stage) && hasStoryCoreState(context)) {
+            stage = "story_confirm";
+        }
+        boolean shouldWait = "story_confirm".equalsIgnoreCase(stage)
+                || "core".equalsIgnoreCase(stage)
+                || "preset".equalsIgnoreCase(stage);
+        Map<String, Object> decision = new LinkedHashMap<>();
+        decision.put("action", shouldWait ? "WAIT_CONFIRM" : "NEXT");
+        decision.put("nextStage", shouldWait ? "background" : "done");
+        decision.put("question", shouldWait ? "你对这版故事满意吗？想先改哪部分？" : null);
+        decision.put("reason", shouldWait ? "故事核心已生成，先确认再继续补背景" : "当前阶段可继续");
+        if (context != null) {
+            context.putAttribute("storyFlowGateDecision", decision);
+            context.putAttribute("storyFlowGateDecisionJson", JSONObject.toJSONString(decision));
+            context.putAttribute("storyFlowStage", shouldWait ? "story_confirm" : "done");
+        }
+        ToolCallResult callResult = ToolCallResult.success(shouldWait ? "需要用户确认" : "可以继续下一步", decision);
+        Map<String, Object> payload = buildStoryPayload(context, request, "gate", StoryTaskToolSpec.STORY_FLOW_GATE);
+        payload.put("decision", decision);
+        callResult.setPayload(payload);
+        return callResult;
+    }
+
+    private ToolCallResult executeStorySceneGenerate(AgentContext context, ToolCallRequest request) {
+        LoginUser user = TaskAgentSupport.buildLoginUser(context);
+        TsStoryOneClickSceneGenerateDto dto = buildStorySceneRequest(context, request);
+        Map<String, Object> payload = buildStoryPayload(context, request, "scene", StoryTaskToolSpec.STORY_GENERATE_SCENE);
+        TsStoryOneClickSceneGenerateVo result = this.storyGenerateService.generateStoryScene(user, dto);
+        payload.put("result", result);
+        payload.put("resultJson", JSONObject.toJSONString(result));
+        if (context != null) {
+            String resultJson = JSONObject.toJSONString(result);
+            context.putAttribute("storySceneResult", result);
+            context.putAttribute("storySceneResultJson", resultJson);
+            context.putAttribute("storyBackgroundResult", result);
+            context.putAttribute("storyBackgroundResultJson", resultJson);
+            context.putAttribute("storyFlowStage", "done");
+        }
+        ToolCallResult callResult = ToolCallResult.success("已生成故事背景", result);
         callResult.setPayload(payload);
         return callResult;
     }
@@ -108,6 +201,23 @@ public class StoryTaskToolRegistrar {
         return dto;
     }
 
+    private TsStoryOneClickSceneGenerateDto buildStorySceneRequest(AgentContext context, ToolCallRequest toolRequest) {
+        TsStoryOneClickSceneGenerateDto dto = new TsStoryOneClickSceneGenerateDto();
+        Map<String, Object> args = toolRequest == null ? null : toolRequest.getArguments();
+        Map<String, Object> promptVariables = TaskAgentSupport.readMapAttribute(context, "promptVariables");
+        dto.setTitle(firstText(args, promptVariables, "title"));
+        dto.setStoryMode(firstText(args, promptVariables, "storyMode", "story_mode"));
+        dto.setStorySetting(firstText(args, promptVariables, "storySetting", "story_setting"));
+        dto.setStoryIntro(firstText(args, promptVariables, "storyIntro", "story_intro"));
+        dto.setStoryBackground(firstText(args, promptVariables, "storyBackground", "story_background", "userInput", "user_input"));
+        dto.setSceneSetting(firstText(args, promptVariables, "sceneSetting", "scene_setting"));
+        dto.setPlotOutline(firstText(args, promptVariables, "plotOutline", "plot_outline"));
+        dto.setStyleHint(firstText(args, promptVariables, "styleHint", "style_hint"));
+        dto.setTemplateMode(firstText(args, promptVariables, "templateMode", "template_mode"));
+        dto.normalize();
+        return dto;
+    }
+
     private Map<String, Object> buildStoryPayload(AgentContext context, ToolCallRequest request, String executionMode, String toolName) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("toolName", toolName);
@@ -119,6 +229,43 @@ public class StoryTaskToolRegistrar {
         payload.put("historyCount", SubAgentHistorySupport.countHistory(historyJson));
         payload.put("historyBlock", context == null ? null : context.getAttribute("subAgentHistoryBlock"));
         return payload;
+    }
+
+    private boolean hasStoryCoreState(AgentContext context) {
+        if (context == null) {
+            return false;
+        }
+        return context.getAttribute("storyCoreResultJson") != null
+                || context.getAttribute("storyCorePresetResultJson") != null
+                || context.getAttribute("storyFullGenerateResultJson") != null;
+    }
+
+    private String firstNonBlank(AgentContext context, ToolCallRequest request, String... keys) {
+        String value = normalizeText(request, keys == null || keys.length == 0 ? null : keys[0]);
+        if (StringUtils.hasText(value)) {
+            return value;
+        }
+        Map<String, Object> promptVariables = TaskAgentSupport.readMapAttribute(context, "promptVariables");
+        value = firstText(promptVariables, keys);
+        if (StringUtils.hasText(value)) {
+            return value;
+        }
+        if (context != null && StringUtils.hasText(context.getUserInput())) {
+            return context.getUserInput().trim();
+        }
+        return null;
+    }
+
+    private String normalizeText(ToolCallRequest request, String key) {
+        if (request == null || request.getArguments() == null || !StringUtils.hasText(key)) {
+            return null;
+        }
+        Object value = request.getArguments().get(key);
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value).trim();
+        return text.isEmpty() ? null : text;
     }
 
     private String firstText(Map<String, Object> firstSource, Map<String, Object> secondSource, String... keys) {

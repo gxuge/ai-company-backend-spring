@@ -3,6 +3,7 @@ package org.jeecg.modules.system.agent.task.role;
 import com.alibaba.fastjson.JSONObject;
 import jakarta.annotation.PostConstruct;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.airag.agent.common.SubAgentHistorySupport;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.subagent.role.tool.RoleTaskToolSpec;
@@ -16,6 +17,7 @@ import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickImageGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickSettingGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickVoiceGenerateDto;
 import org.jeecg.modules.system.service.ITsRoleGenerateService;
+import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateRoleVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickImageGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickVoiceGenerateVo;
 import org.springframework.stereotype.Component;
@@ -116,16 +118,29 @@ public class RoleTaskToolRegistrar {
 
     private ToolCallResult executeRoleCoreFillPreset(AgentContext context, ToolCallRequest request) {
         LoginUser user = TaskAgentSupport.buildLoginUser(context);
-        String userInput = normalizeText(request, "userInput");
+        String userInput = firstNonBlank(context, request, "userInput", "user_input");
+        Map<String, Object> promptVariables = TaskAgentSupport.readMapAttribute(context, "promptVariables");
         TsRoleOneClickSettingGenerateDto dto = new TsRoleOneClickSettingGenerateDto();
-        dto.setBackgroundStory(userInput);
-        dto.setStyleHint(userInput);
-        dto.setKeywords(userInput);
+        dto.setRoleName(firstText(promptVariables, "roleName", "role_name"));
+        dto.setGender(firstText(promptVariables, "gender"));
+        dto.setOccupation(firstText(promptVariables, "occupation"));
+        dto.setBackgroundStory(firstNonBlank(promptVariables, userInput, "backgroundStory", "background_story"));
+        dto.setGreeting(firstText(promptVariables, "greeting"));
+        dto.setStyleHint(firstNonBlank(promptVariables, userInput, "styleHint", "style_hint"));
+        dto.setKeywords(firstNonBlank(promptVariables, userInput, "keywords"));
         dto.normalize();
         Map<String, Object> payload = buildRolePayload(context, request, "preset", RoleTaskToolSpec.ROLE_CORE_FILL_PRESET);
         Object result = this.roleGenerateService.generateRoleSettingPreset(user, dto);
         payload.put("result", result);
         payload.put("resultJson", JSONObject.toJSONString(result));
+        if (context != null) {
+            String resultJson = JSONObject.toJSONString(result);
+            context.putAttribute("roleCorePresetResult", result);
+            context.putAttribute("roleCorePresetResultJson", resultJson);
+            context.putAttribute("roleCoreResult", result);
+            context.putAttribute("roleCoreResultJson", resultJson);
+            context.putAttribute("roleFlowStage", "core_confirm");
+        }
         ToolCallResult callResult = ToolCallResult.success("已生成角色核心设定", result);
         callResult.setPayload(payload);
         return callResult;
@@ -133,22 +148,45 @@ public class RoleTaskToolRegistrar {
 
     private ToolCallResult executeRoleGenerateRole(AgentContext context, ToolCallRequest request) {
         LoginUser user = TaskAgentSupport.buildLoginUser(context);
-        String userInput = normalizeText(request, "userInput");
+        String userInput = firstNonBlank(context, request, "userInput", "user_input");
         TsRoleGenerateRoleDto dto = new TsRoleGenerateRoleDto();
-        dto.setStorySetting(userInput);
-        dto.setStoryBackground(userInput);
+        dto.setStorySetting(firstNonBlank(context, request, "storySetting", "story_setting"));
+        dto.setStoryBackground(firstNonBlank(context, request, "storyBackground", "story_background", "userInput", "user_input"));
+        if (!StringUtils.hasText(dto.getStorySetting()) && StringUtils.hasText(userInput)) {
+            dto.setStorySetting(userInput);
+        }
+        if (!StringUtils.hasText(dto.getStoryBackground()) && StringUtils.hasText(userInput)) {
+            dto.setStoryBackground(userInput);
+        }
         dto.normalize();
         Map<String, Object> payload = buildRolePayload(context, request, "full", RoleTaskToolSpec.ROLE_GENERATE_ROLE);
-        Object result = this.roleGenerateService.generateRole(user, dto);
+        TsRoleGenerateRoleVo result = this.roleGenerateService.generateRole(user, dto);
         payload.put("result", result);
         payload.put("resultJson", JSONObject.toJSONString(result));
+        if (context != null) {
+            String resultJson = JSONObject.toJSONString(result);
+            context.putAttribute("roleGenerateRoleResult", result);
+            context.putAttribute("roleGenerateRoleResultJson", resultJson);
+            if (result != null && result.getSettingResult() != null) {
+                String coreJson = JSONObject.toJSONString(result.getSettingResult());
+                context.putAttribute("roleCoreResult", result.getSettingResult());
+                context.putAttribute("roleCoreResultJson", coreJson);
+            }
+            context.putAttribute("roleFlowStage", "core_confirm");
+        }
         ToolCallResult callResult = ToolCallResult.success("已生成完整角色", result);
         callResult.setPayload(payload);
         return callResult;
     }
 
     private ToolCallResult executeRoleFlowGate(AgentContext context, ToolCallRequest request) {
-        String stage = normalizeText(request, "stage");
+        String stage = firstNonBlank(context, request, "stage");
+        if (!StringUtils.hasText(stage) && context != null) {
+            stage = oConvertUtils.getString(context.getAttribute("roleFlowStage"));
+        }
+        if (!StringUtils.hasText(stage) && hasRoleCoreState(context)) {
+            stage = "core_confirm";
+        }
         boolean shouldWait = "core_confirm".equalsIgnoreCase(stage)
                 || "core".equalsIgnoreCase(stage)
                 || "preset".equalsIgnoreCase(stage);
@@ -157,6 +195,11 @@ public class RoleTaskToolRegistrar {
         decision.put("nextStage", shouldWait ? "image" : "done");
         decision.put("question", shouldWait ? "你对这版角色满意吗？想先改哪部分？" : null);
         decision.put("reason", shouldWait ? "核心设定已生成，先确认再继续补形象与声音" : "当前阶段可继续");
+        if (context != null) {
+            context.putAttribute("roleFlowGateDecision", decision);
+            context.putAttribute("roleFlowGateDecisionJson", JSONObject.toJSONString(decision));
+            context.putAttribute("roleFlowStage", shouldWait ? "core_confirm" : "done");
+        }
         ToolCallResult callResult = ToolCallResult.success(shouldWait ? "需要用户确认" : "可以继续下一步", decision);
         Map<String, Object> payload = buildCommonPayload(context, request, "gate", RoleTaskToolSpec.ROLE_FLOW_GATE);
         payload.put("decision", decision);
@@ -184,6 +227,11 @@ public class RoleTaskToolRegistrar {
         Map<String, Object> payload = buildCommonPayload(context, request, "role_image", RoleTaskToolSpec.ROLE_GENERATE_ROLE_IMAGE);
         payload.put("result", result);
         payload.put("resultJson", JSONObject.toJSONString(result));
+        if (context != null) {
+            String resultJson = JSONObject.toJSONString(result);
+            context.putAttribute("roleImageResult", result);
+            context.putAttribute("roleImageResultJson", resultJson);
+        }
         callResult.setPayload(payload);
         return callResult;
     }
@@ -207,6 +255,11 @@ public class RoleTaskToolRegistrar {
         Map<String, Object> payload = buildCommonPayload(context, request, "role_voice", RoleTaskToolSpec.ROLE_GENERATE_ROLE_VOICE);
         payload.put("result", result);
         payload.put("resultJson", JSONObject.toJSONString(result));
+        if (context != null) {
+            String resultJson = JSONObject.toJSONString(result);
+            context.putAttribute("roleVoiceResult", result);
+            context.putAttribute("roleVoiceResultJson", resultJson);
+        }
         callResult.setPayload(payload);
         return callResult;
     }
@@ -228,6 +281,39 @@ public class RoleTaskToolRegistrar {
         payload.put("historyCount", SubAgentHistorySupport.countHistory(historyJson));
         payload.put("historyBlock", context == null ? null : context.getAttribute("subAgentHistoryBlock"));
         return payload;
+    }
+
+    private boolean hasRoleCoreState(AgentContext context) {
+        if (context == null) {
+            return false;
+        }
+        return context.getAttribute("roleCoreResultJson") != null
+                || context.getAttribute("roleCorePresetResultJson") != null
+                || context.getAttribute("roleGenerateRoleResultJson") != null;
+    }
+
+    private String firstNonBlank(AgentContext context, ToolCallRequest request, String... keys) {
+        String value = normalizeText(request, keys == null || keys.length == 0 ? null : keys[0]);
+        if (StringUtils.hasText(value)) {
+            return value;
+        }
+        Map<String, Object> promptVariables = TaskAgentSupport.readMapAttribute(context, "promptVariables");
+        value = firstText(promptVariables, keys);
+        if (StringUtils.hasText(value)) {
+            return value;
+        }
+        if (context != null && StringUtils.hasText(context.getUserInput())) {
+            return context.getUserInput().trim();
+        }
+        return null;
+    }
+
+    private String firstNonBlank(Map<String, Object> source, String fallback, String... keys) {
+        String value = firstText(source, keys);
+        if (StringUtils.hasText(value)) {
+            return value;
+        }
+        return StringUtils.hasText(fallback) ? fallback.trim() : null;
     }
 
     private String normalizeText(ToolCallRequest request, String key) {

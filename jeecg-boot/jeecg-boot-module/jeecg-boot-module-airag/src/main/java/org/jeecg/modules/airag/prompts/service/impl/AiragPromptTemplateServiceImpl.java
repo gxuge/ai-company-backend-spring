@@ -6,7 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.exception.JeecgBootBizTipException;
 import org.jeecg.common.util.AssertUtils;
 import org.jeecg.modules.airag.prompts.entity.AiragPrompts;
-import org.jeecg.modules.airag.prompts.service.IAiragPromptsService;
+import org.jeecg.modules.airag.prompts.mapper.AiragPromptsMapper;
 import org.jeecg.modules.airag.prompts.service.IAiragPromptTemplateService;
 import org.jeecg.modules.airag.prompts.vo.AiragPromptTemplateVo;
 import org.springframework.core.io.Resource;
@@ -58,14 +58,14 @@ public class AiragPromptTemplateServiceImpl implements IAiragPromptTemplateServi
     private static final Pattern SECTION_PATTERN = Pattern.compile("^SECTION::([\\w-]+)$");
 
     private final ResourceLoader resourceLoader;
-    private final IAiragPromptsService airagPromptsService;
+    private final AiragPromptsMapper airagPromptsMapper;
 
     private volatile Map<String, AiragPromptTemplateVo> templateCache = Collections.emptyMap();
 
     public AiragPromptTemplateServiceImpl(ResourceLoader resourceLoader,
-                                          IAiragPromptsService airagPromptsService) {
+                                          AiragPromptsMapper airagPromptsMapper) {
         this.resourceLoader = resourceLoader;
-        this.airagPromptsService = airagPromptsService;
+        this.airagPromptsMapper = airagPromptsMapper;
     }
 
     @Override
@@ -314,7 +314,7 @@ public class AiragPromptTemplateServiceImpl implements IAiragPromptTemplateServi
      * 生成模板缓存 key
      */
     private AiragPromptTemplateVo loadTemplateFromDb(String code, String version) {
-        AiragPrompts prompts = airagPromptsService.getOne(
+        AiragPrompts prompts = airagPromptsMapper.selectOne(
                 new LambdaQueryWrapper<AiragPrompts>()
                         .eq(AiragPrompts::getPromptKey, code)
                         .eq(AiragPrompts::getVersion, version)

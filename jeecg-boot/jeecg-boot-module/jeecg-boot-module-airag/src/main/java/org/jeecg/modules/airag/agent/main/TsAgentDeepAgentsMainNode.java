@@ -2,15 +2,20 @@ package org.jeecg.modules.airag.agent.main;
 
 import com.alibaba.fastjson2.JSON;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.airag.agent.runtime.DeepAgentsProperties;
 import org.jeecg.modules.airag.agent.graph.LlmNodeDefinition;
 import org.jeecg.modules.airag.agent.graph.NodeResult;
 import org.jeecg.modules.airag.agent.node.LlmNode;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentEventPublisher;
 import org.jeecg.modules.airag.agent.runtime.AgentModelResolver;
+import org.jeecg.modules.airag.agent.skill.model.SkillLoadResult;
+import org.jeecg.modules.airag.agent.tool.DeepAgentTaskToolService;
 import org.jeecg.modules.airag.common.handler.IAIChatHandler;
 import org.jeecg.modules.airag.prompts.service.IAiragPromptTemplateService;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.ObjectProvider;
+import org.jeecg.modules.airag.common.handler.AIChatParams;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -23,11 +28,16 @@ import java.util.Map;
  */
 @Component
 public class TsAgentDeepAgentsMainNode extends LlmNode {
+    /**
+     * task 工具按需获取，避免启动期拉起子 agent 依赖链。
+     */
+    private final ObjectProvider<DeepAgentTaskToolService> deepAgentTaskToolServiceProvider;
 
     public TsAgentDeepAgentsMainNode(IAiragPromptTemplateService promptTemplateService,
                                      AgentModelResolver modelResolver,
                                      IAIChatHandler aiChatHandler,
-                                     AgentEventPublisher eventPublisher) {
+                                     AgentEventPublisher eventPublisher,
+                                     ObjectProvider<DeepAgentTaskToolService> deepAgentTaskToolServiceProvider) {
         super(
                 "ts_agent_deep_agents_main",
                 "DeepAgents 主代理",
@@ -37,6 +47,7 @@ public class TsAgentDeepAgentsMainNode extends LlmNode {
                 aiChatHandler,
                 eventPublisher
         );
+        this.deepAgentTaskToolServiceProvider = deepAgentTaskToolServiceProvider;
     }
 
     private static LlmNodeDefinition buildDefinition() {
@@ -85,6 +96,25 @@ public class TsAgentDeepAgentsMainNode extends LlmNode {
         variables.putIfAbsent("confirmed_fields_json", JSON.toJSONString(context == null ? null : context.getAttribute("confirmedFieldsJson")));
         variables.putIfAbsent("missing_fields_json", JSON.toJSONString(context == null ? null : context.getAttribute("missingFieldsJson")));
         return variables;
+    }
+
+    @Override
+    protected AIChatParams buildChatParams(AgentContext context, SkillLoadResult skillLoadResult) {
+        AIChatParams params = super.buildChatParams(context, skillLoadResult);
+        DeepAgentTaskToolService taskToolService = this.deepAgentTaskToolServiceProvider == null
+                ? null
+                : this.deepAgentTaskToolServiceProvider.getIfAvailable();
+        if (taskToolService != null) {
+            Map<dev.langchain4j.agent.tool.ToolSpecification, dev.langchain4j.service.tool.ToolExecutor> taskTools =
+                    taskToolService.buildToolMap(context);
+            if (taskTools != null && !taskTools.isEmpty()) {
+                if (params.getTools() == null) {
+                    params.setTools(new LinkedHashMap<>());
+                }
+                params.getTools().putAll(taskTools);
+            }
+        }
+        return params;
     }
 
     @Override

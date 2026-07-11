@@ -13,6 +13,10 @@ public class TsStoryOneClickOutlineGenerateDto {
     private String storyMode;
     /** Story setting, can be null. */
     private String storySetting;
+    /** Scene setting, can be null. */
+    private String sceneSetting;
+    /** Story intro text. */
+    private String storyIntro;
     /** Existing plot outline text. */
     private String plotOutline;
     /** Extra requirements from caller. */
@@ -22,6 +26,8 @@ public class TsStoryOneClickOutlineGenerateDto {
         this.title = trimToNull(this.title);
         this.storyMode = normalizeStoryMode(this.storyMode);
         this.storySetting = trimToNull(this.storySetting);
+        this.sceneSetting = trimToNull(this.sceneSetting);
+        this.storyIntro = trimToNull(this.storyIntro);
         this.plotOutline = trimToNull(this.plotOutline);
         this.extraRequirements = trimToNull(this.extraRequirements);
     }

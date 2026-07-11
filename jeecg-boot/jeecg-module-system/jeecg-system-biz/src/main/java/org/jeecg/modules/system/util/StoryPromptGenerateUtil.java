@@ -28,6 +28,8 @@ public class StoryPromptGenerateUtil {
                 "story_mode", PromptRuntimeUtil.nullableToken(dto.getStoryMode()),
                 "story_intro", PromptRuntimeUtil.nullableToken(dto.getStoryIntro()),
                 "story_setting", PromptRuntimeUtil.nullableToken(dto.getStorySetting()),
+                "scene_setting", PromptRuntimeUtil.nullableToken(dto.getSceneSetting()),
+                "plot_outline", PromptRuntimeUtil.nullableToken(dto.getPlotOutline()),
                 "story_background", PromptRuntimeUtil.nullableToken(dto.getStoryBackground()),
                 "idea_input", PromptRuntimeUtil.nullableToken(dto.getIdeaInput()),
                 "style_hint", PromptRuntimeUtil.nullableToken(dto.getStyleHint())
@@ -37,6 +39,7 @@ public class StoryPromptGenerateUtil {
     public static Map<String, String> buildSettingOptimizeVars(TsStoryOneClickSettingGenerateDto dto) {
         Map<String, String> variables = new java.util.HashMap<>();
         variables.put("story_setting", PromptRuntimeUtil.nullableToken(dto.getStorySetting()));
+        variables.put("story_intro", PromptRuntimeUtil.nullableToken(dto.getStoryIntro()));
         variables.put("scene_setting", PromptRuntimeUtil.nullableToken(dto.getSceneSetting()));
         variables.put("plot_outline", PromptRuntimeUtil.nullableToken(dto.getPlotOutline()));
         variables.put("story_mode", PromptRuntimeUtil.nullableToken(null));
@@ -57,8 +60,10 @@ public class StoryPromptGenerateUtil {
                 "title", PromptRuntimeUtil.nullableToken(dto.getTitle()),
                 "story_mode", PromptRuntimeUtil.nullableToken(dto.getStoryMode()),
                 "story_setting", PromptRuntimeUtil.nullableToken(dto.getStorySetting()),
+                "story_intro", PromptRuntimeUtil.nullableToken(dto.getStoryIntro()),
                 "story_background", PromptRuntimeUtil.nullableToken(dto.getStoryBackground()),
                 "scene_setting", PromptRuntimeUtil.nullableToken(dto.getSceneSetting()),
+                "plot_outline", PromptRuntimeUtil.nullableToken(dto.getPlotOutline()),
                 "style_hint", PromptRuntimeUtil.nullableToken(dto.getStyleHint())
         );
     }
@@ -66,6 +71,7 @@ public class StoryPromptGenerateUtil {
     public static Map<String, String> buildSceneOptimizeVars(TsStoryOneClickSceneGenerateDto dto) {
         Map<String, String> variables = new java.util.HashMap<>();
         variables.put("story_setting", PromptRuntimeUtil.nullableToken(dto.getStorySetting()));
+        variables.put("story_intro", PromptRuntimeUtil.nullableToken(dto.getStoryIntro()));
         variables.put("scene_setting", PromptRuntimeUtil.nullableToken(dto.getSceneSetting()));
         variables.put("site_setting", PromptRuntimeUtil.nullableToken(dto.getSceneSetting()));
         variables.put("plot_outline", PromptRuntimeUtil.nullableToken(dto.getPlotOutline()));
@@ -84,7 +90,8 @@ public class StoryPromptGenerateUtil {
                 "title", PromptRuntimeUtil.nullableToken(dto.getTitle()),
                 "story_mode", PromptRuntimeUtil.nullableToken(dto.getStoryMode()),
                 "story_setting", PromptRuntimeUtil.nullableToken(dto.getStorySetting()),
-                "scene_setting", PromptRuntimeUtil.nullableToken(null),
+                "story_intro", PromptRuntimeUtil.nullableToken(dto.getStoryIntro()),
+                "scene_setting", PromptRuntimeUtil.nullableToken(dto.getSceneSetting()),
                 "story_background", PromptRuntimeUtil.nullableToken(null),
                 "chapter_count", String.valueOf(3),
                 "role_names", PromptRuntimeUtil.nullableToken(null),
@@ -98,7 +105,8 @@ public class StoryPromptGenerateUtil {
         variables.put("title", PromptRuntimeUtil.nullableToken(dto.getTitle()));
         variables.put("story_mode", PromptRuntimeUtil.nullableToken(dto.getStoryMode()));
         variables.put("story_setting", PromptRuntimeUtil.nullableToken(dto.getStorySetting()));
-        variables.put("scene_setting", PromptRuntimeUtil.nullableToken(null));
+        variables.put("story_intro", PromptRuntimeUtil.nullableToken(dto.getStoryIntro()));
+        variables.put("scene_setting", PromptRuntimeUtil.nullableToken(dto.getSceneSetting()));
         variables.put("story_background", PromptRuntimeUtil.nullableToken(null));
         variables.put("chapter_count", String.valueOf(3));
         variables.put("role_names", PromptRuntimeUtil.nullableToken(null));

@@ -14,6 +14,8 @@ public class TsStoryOneClickSceneGenerateDto {
     private String storyMode;
     /** Story setting text. */
     private String storySetting;
+    /** Story intro text. */
+    private String storyIntro;
     /** Story background text. */
     private String storyBackground;
     /** Existing scene input. */
@@ -29,6 +31,7 @@ public class TsStoryOneClickSceneGenerateDto {
         this.title = trimToNull(this.title);
         this.storyMode = normalizeStoryMode(this.storyMode);
         this.storySetting = trimToNull(this.storySetting);
+        this.storyIntro = trimToNull(this.storyIntro);
         this.storyBackground = trimToNull(this.storyBackground);
         this.sceneSetting = trimToNull(this.sceneSetting);
         this.plotOutline = trimToNull(this.plotOutline);

@@ -17,7 +17,6 @@ import org.jeecg.modules.airag.agent.runtime.AgentEventPublisher;
 import org.jeecg.modules.airag.agent.runtime.AgentModelResolver;
 import org.jeecg.modules.airag.agent.runtime.DeepAgentsProperties;
 import org.jeecg.modules.airag.agent.skill.runtime.SkillProperties;
-import org.jeecg.modules.airag.agent.tool.DeepAgentTaskToolService;
 import org.jeecg.modules.airag.agent.skill.model.SkillLoadResult;
 import org.jeecg.modules.airag.agent.skill.runtime.SkillRuntimeService;
 import org.jeecg.modules.airag.agent.skill.tool.SkillTools;
@@ -80,16 +79,10 @@ public abstract class LlmNode extends BaseAgentNode {
     @Autowired(required = false)
     private SkillTools skillTools;
     /**
-     * DeepAgents task 工具。
-     */
-    @Autowired(required = false)
-    private DeepAgentTaskToolService deepAgentTaskToolService;
-    /**
      * DeepAgents 配置。
      */
     @Autowired(required = false)
     private DeepAgentsProperties deepAgentsProperties;
-
     /**
      * 构造函数。
      *
@@ -235,16 +228,6 @@ public abstract class LlmNode extends BaseAgentNode {
                     params.setTools(new LinkedHashMap<>());
                 }
                 params.getTools().putAll(skillToolsMap);
-            }
-        }
-        if (this.deepAgentTaskToolService != null) {
-            Map<dev.langchain4j.agent.tool.ToolSpecification, dev.langchain4j.service.tool.ToolExecutor> taskTools =
-                    this.deepAgentTaskToolService.buildToolMap(context);
-            if (taskTools != null && !taskTools.isEmpty()) {
-                if (params.getTools() == null) {
-                    params.setTools(new LinkedHashMap<>());
-                }
-                params.getTools().putAll(taskTools);
             }
         }
         if (skillLoadResult != null) {
