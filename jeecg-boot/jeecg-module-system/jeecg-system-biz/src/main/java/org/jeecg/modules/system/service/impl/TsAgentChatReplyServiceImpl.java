@@ -21,6 +21,7 @@ import org.jeecg.modules.system.entity.TsAgentChatSession;
 import org.jeecg.modules.system.service.ITsAgentChatMessageService;
 import org.jeecg.modules.system.service.ITsAgentChatReplyService;
 import org.jeecg.modules.system.service.ITsAgentChatSessionService;
+import org.jeecg.modules.system.monitor.TsAiLogTraceContext;
 import org.jeecg.modules.system.vo.tsagentchatsession.TsAgentChatReplyVo;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +38,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Agent 回复编排实现。
@@ -361,7 +363,24 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         context.putAttribute("recentMessagesBlock", buildRecentMessagesBlock(recentMessages));
         context.putAttribute("lastAssistantMessage", findLastAssistantMessage(recentMessages));
         context.putAttribute("promptVariables", variables);
+        bindTsAiLogContext(context);
         return context;
+    }
+
+    /**
+     * 将当前 ts_ai_log 上下文绑定到 AgentContext，供异步 LLM 节点落库使用。
+     */
+    private void bindTsAiLogContext(AgentContext context) {
+        if (context == null) {
+            return;
+        }
+        TsAiLogTraceContext.State state = TsAiLogTraceContext.get();
+        if (state == null) {
+            return;
+        }
+        context.putAttribute("tsAiLogId", state.getLogId());
+        context.putAttribute("tsAiLogTraceId", state.getTraceId());
+        context.putAttribute("tsAiLogStepCounter", new AtomicInteger(10));
     }
 
     /**
@@ -638,6 +657,7 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         return switch (status) {
             case FAILED -> "failed";
             case WAITING_USER -> "success";
+            case HANDOFF -> "success";
             case SUCCESS -> "success";
         };
     }

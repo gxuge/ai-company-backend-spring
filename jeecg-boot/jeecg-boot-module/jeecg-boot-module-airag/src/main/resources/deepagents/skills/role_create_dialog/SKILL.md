@@ -1,10 +1,10 @@
 ---
 code: role_create_dialog
 name: role_create_dialog
-description: 用于创建角色时的信息收集、追问、preset/full 生成决策，以及生成后的确认与后续形象、声音补全引导。
+description: 用于创建角色时的信息收集、追问、preset/full 生成决策，以及生成后的确认判断与后续形象、声音补全引导。
 domain: role
 version: "1.0.0"
-allowed_tools: role_core_fill_preset, role_generate_role, role_flow_gate, role_generate_role_image, role_generate_role_voice
+allowed_tools: role_core_fill_preset, role_generate_role, role_confirmation_decision, role_flow_gate, role_generate_role_image, role_generate_role_voice
 metadata:
   flow: create-role
 ---
@@ -21,6 +21,7 @@ metadata:
 只允许：
 - `role_core_fill_preset`
 - `role_generate_role`
+- `role_confirmation_decision`
 - `role_flow_gate`
 - `role_generate_role_image`
 - `role_generate_role_voice`
@@ -40,9 +41,12 @@ metadata:
 
 ### 信息很少
 如果用户几乎没给有效信息，或只是说“帮我生成一个角色”“随便来一个”：
-- 直接走 `role_core_fill_preset`
-- 先生成一版完整角色
-- 再问用户是否满意、要改哪里
+- 不要立刻调用生成工具
+- 先轻松问一句：想要一个什么样的角色
+- 可以顺带给一个很短的小例子，但不要限定用户必须照着例子来
+- 小例子可以包含：身份/职业（甜品师、侦探、狐妖）、性别（男、女、不限）、性格气质（温柔、腹黑、清冷）、故事氛围（治愈、暧昧、悬疑）
+- 问法要短，不要像表单或问卷
+- 如果用户仍然表示“随便”“你来定”，再走 `role_core_fill_preset`
 
 ### 信息给了一半
 如果用户已经给出部分核心信息，但还缺关键字段：
@@ -58,11 +62,33 @@ metadata:
 - 做补全、润色、增强可读性
 - 不要推翻用户方向
 
-### 角色已确认
-如果用户已经确认角色核心设定：
-- 继续生成角色形象
-- 再继续生成角色声音
-- 不要重新追问核心字段
+### 已有角色结果
+如果上下文中已经存在角色核心设定：
+- 先判断用户当前意图
+- 不要直接进入形象和声音阶段
+- 必须调用 `role_confirmation_decision` 输出确认判断
+- 不要普通文本回答
+- 不要后端关键词硬判
+- 不要调用生成工具
+
+确认工具参数：
+```json
+{
+  "action": "ACCEPT_AND_CONTINUE | REGENERATE | MODIFY | ASK_USER",
+  "reply": "给用户看的简短回复",
+  "options": [
+    "我觉得这个可以，继续生成形象和声音",
+    "帮我重新生成一个"
+  ],
+  "reason": "简短原因"
+}
+```
+
+action 规则：
+- `ACCEPT_AND_CONTINUE`：继续生成角色形象，再生成角色声音
+- `REGENERATE`：重新生成一版角色核心设定；信息少走 preset，信息明确走 full
+- `MODIFY`：根据用户修改意见走 full，保留用户明确要求保留的部分
+- `ASK_USER`：只给用户两个选择，不继续生成
 
 ## 追问规则
 
@@ -79,6 +105,12 @@ metadata:
 - 这版可以吗
 - 要不要改
 - 想先改哪一部分
+
+生成角色核心后，必须给用户两个明确选项：
+- 我觉得这个可以，继续生成形象和声音
+- 帮我重新生成一个
+
+如果用户没有明确表达满意或重生成，也优先展示这两个选项。
 
 如果用户不满意，先问：
 - “你最想改哪一部分？”

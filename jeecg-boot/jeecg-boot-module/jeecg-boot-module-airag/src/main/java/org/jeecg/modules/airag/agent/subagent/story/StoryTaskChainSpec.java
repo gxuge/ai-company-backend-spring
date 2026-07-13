@@ -31,6 +31,7 @@ public final class StoryTaskChainSpec {
     public static final List<String> TOOLS = List.of(
             "story_full_generate_preset",
             "story_full_generate",
+            "story_confirmation_decision",
             "story_flow_gate",
             "story_generate_scene"
     );

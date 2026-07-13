@@ -118,6 +118,11 @@ public class TsAgentDeepAgentsMainNode extends LlmNode {
     }
 
     @Override
+    protected boolean shouldPublishPartialResponse() {
+        return false;
+    }
+
+    @Override
     protected NodeResult parseResult(String finalText, AgentContext context) {
         NodeResult result = NodeResult.success(finalText);
         result.setContent(finalText);

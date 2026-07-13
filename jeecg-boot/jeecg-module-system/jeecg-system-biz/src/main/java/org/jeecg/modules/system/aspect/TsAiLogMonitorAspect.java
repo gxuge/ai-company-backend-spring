@@ -24,6 +24,7 @@ public class TsAiLogMonitorAspect {
     private static final String TS_ROLE_PREFIX = "/sys/ts-roles/";
     private static final String TS_STORY_PREFIX = "/sys/ts-stories/";
     private static final String TS_CHAT_PREFIX = "/sys/ts-chat-sessions/";
+    private static final String TS_AGENT_CHAT_PREFIX = "/sys/ts-agent-chat-sessions/";
 
     private final TsAiLogCollector collector;
 
@@ -31,7 +32,7 @@ public class TsAiLogMonitorAspect {
         this.collector = collector;
     }
 
-    @Around("execution(public * org.jeecg.modules.system.controller.TsRoleController.*(..)) || execution(public * org.jeecg.modules.system.controller.TsStoryController.*(..)) || execution(public * org.jeecg.modules.system.controller.TsChatSessionController.*(..))")
+    @Around("execution(public * org.jeecg.modules.system.controller.TsRoleController.*(..)) || execution(public * org.jeecg.modules.system.controller.TsStoryController.*(..)) || execution(public * org.jeecg.modules.system.controller.TsChatSessionController.*(..)) || execution(public * org.jeecg.modules.system.controller.TsAgentChatSessionController.*(..))")
     public Object aroundTsAiEndpoints(ProceedingJoinPoint joinPoint) throws Throwable {
         HttpServletRequest request = currentRequest();
         String uri = request == null ? null : trimToNull(request.getRequestURI());
@@ -80,7 +81,8 @@ public class TsAiLogMonitorAspect {
         boolean roleAi = uri.contains(TS_ROLE_PREFIX) && (uri.contains("/one-click-") || uri.contains("/generate-"));
         boolean storyAi = uri.contains(TS_STORY_PREFIX) && uri.contains("/story-");
         boolean chatAi = uri.contains(TS_CHAT_PREFIX) && (uri.contains("/ai-reply") || uri.contains("/reply-suggestions"));
-        return roleAi || storyAi || chatAi;
+        boolean agentChatAi = uri.contains(TS_AGENT_CHAT_PREFIX) && uri.contains("/ai-reply");
+        return roleAi || storyAi || chatAi || agentChatAi;
     }
 
     private String resolveBizType(String uri) {
@@ -95,6 +97,9 @@ public class TsAiLogMonitorAspect {
         }
         if (uri.contains(TS_CHAT_PREFIX)) {
             return "chat";
+        }
+        if (uri.contains(TS_AGENT_CHAT_PREFIX)) {
+            return "agent_chat";
         }
         return "unknown";
     }

@@ -3,6 +3,7 @@ package org.jeecg.modules.airag.agent.subagent.role;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.airag.agent.graph.SubAgent;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
+import org.jeecg.modules.airag.agent.runtime.AgentHandoffSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentResult;
 import org.jeecg.modules.airag.agent.runtime.NodeRunner;
 import org.jeecg.modules.airag.agent.subagent.role.node.RoleCreateDialogNode;
@@ -56,13 +57,20 @@ public class RoleTaskSubAgent implements SubAgent {
             context.putAttribute("roleTaskStage", "dialog");
         }
 
-        if (isConfirmationTurn(context) && hasRoleCoreState(context)) {
-            return continueWithImageAndVoice(context, chainData);
-        }
-
         try {
+            if (hasRoleCoreState(context)) {
+                AgentResult decisionResult = handleExistingRoleCore(context, chainData);
+                if (decisionResult != null) {
+                    return decisionResult;
+                }
+            }
+
             var dialogResult = this.nodeRunner.run(context, this.roleCreateDialogNode);
             storeNodeResult(context, "roleDialogNodeResult", dialogResult);
+            AgentResult dialogHandoff = handoffIfNeeded(context, dialogResult, chainData, "dialog");
+            if (dialogHandoff != null) {
+                return dialogHandoff;
+            }
 
             if (!hasRoleCoreState(context)) {
                 return waiting(dialogResult == null ? null : dialogResult.getContent(), chainData, "dialog");
@@ -73,6 +81,10 @@ public class RoleTaskSubAgent implements SubAgent {
             }
             var gateResult = this.nodeRunner.run(context, this.roleFlowGateNode);
             storeNodeResult(context, "roleFlowGateNodeResult", gateResult);
+            AgentResult gateHandoff = handoffIfNeeded(context, gateResult, chainData, "gate");
+            if (gateHandoff != null) {
+                return gateHandoff;
+            }
             Map<String, Object> gateDecision = extractDecision(gateResult);
             if (context != null) {
                 context.putAttribute("roleFlowGateDecision", gateDecision);
@@ -94,18 +106,57 @@ public class RoleTaskSubAgent implements SubAgent {
         }
     }
 
+    private AgentResult handleExistingRoleCore(AgentContext context, Map<String, Object> chainData) {
+        if (context != null) {
+            context.putAttribute("roleTaskStage", "confirmation");
+        }
+        var dialogResult = this.nodeRunner.run(context, this.roleCreateDialogNode);
+        storeNodeResult(context, "roleConfirmationDialogNodeResult", dialogResult);
+        AgentResult handoff = handoffIfNeeded(context, dialogResult, chainData, "confirmation");
+        if (handoff != null) {
+            return handoff;
+        }
+        Map<String, Object> decision = extractDecision(dialogResult);
+        if (context != null) {
+            context.putAttribute("roleConfirmationDecision", decision);
+        }
+        String action = oConvertUtils.getString(decision.get("action"));
+        if ("ACCEPT_AND_CONTINUE".equalsIgnoreCase(action)) {
+            return continueWithImageAndVoice(context, chainData);
+        }
+        if ("ASK_USER".equalsIgnoreCase(action)) {
+            String reply = oConvertUtils.getString(decision.get("reply"));
+            return waiting(reply, chainData, "confirmation", decision);
+        }
+        if ("REGENERATE".equalsIgnoreCase(action) || "MODIFY".equalsIgnoreCase(action)) {
+            if (context != null) {
+                context.putAttribute("roleConfirmationAction", action);
+            }
+            return null;
+        }
+        return waiting(oConvertUtils.getString(decision.get("reply")), chainData, "confirmation", decision);
+    }
+
     private AgentResult continueWithImageAndVoice(AgentContext context, Map<String, Object> chainData) {
         if (context != null) {
             context.putAttribute("roleTaskStage", "image");
         }
         var imageResult = this.nodeRunner.run(context, this.roleCreateImageNode);
         storeNodeResult(context, "roleImageNodeResult", imageResult);
+        AgentResult imageHandoff = handoffIfNeeded(context, imageResult, chainData, "image");
+        if (imageHandoff != null) {
+            return imageHandoff;
+        }
 
         if (context != null) {
             context.putAttribute("roleTaskStage", "voice");
         }
         var voiceResult = this.nodeRunner.run(context, this.roleCreateVoiceNode);
         storeNodeResult(context, "roleVoiceNodeResult", voiceResult);
+        AgentResult voiceHandoff = handoffIfNeeded(context, voiceResult, chainData, "voice");
+        if (voiceHandoff != null) {
+            return voiceHandoff;
+        }
 
         String content = voiceResult == null ? null : voiceResult.getContent();
         if (!oConvertUtils.isNotEmpty(content) && imageResult != null) {
@@ -130,6 +181,10 @@ public class RoleTaskSubAgent implements SubAgent {
     }
 
     private AgentResult waiting(String content, Map<String, Object> chainData, String stage) {
+        return waiting(content, chainData, stage, null);
+    }
+
+    private AgentResult waiting(String content, Map<String, Object> chainData, String stage, Map<String, Object> decision) {
         String text = oConvertUtils.isNotEmpty(content) ? content : "你对这版角色满意吗？想先改哪部分？";
         AgentResult result = AgentResult.waitingUser(text);
         result.setStructuredResult(chainData);
@@ -137,6 +192,13 @@ public class RoleTaskSubAgent implements SubAgent {
         result.getData().put("stage", stage);
         result.getData().put("question", text);
         result.getData().put("status", "WAITING_USER");
+        if (decision != null && !decision.isEmpty()) {
+            result.getData().put("decision", decision);
+            Object options = decision.get("options");
+            if (options != null) {
+                result.getData().put("options", options);
+            }
+        }
         return result;
     }
 
@@ -146,6 +208,21 @@ public class RoleTaskSubAgent implements SubAgent {
         }
         Object action = gateDecision.get("action");
         return action == null || "NEXT".equalsIgnoreCase(String.valueOf(action));
+    }
+
+    private AgentResult handoffIfNeeded(AgentContext context, Object nodeResult, Map<String, Object> chainData, String stage) {
+        boolean shouldHandoff = nodeResult instanceof org.jeecg.modules.airag.agent.graph.NodeResult result
+                && AgentHandoffSupport.isHandoff(result);
+        if (!shouldHandoff && context != null) {
+            shouldHandoff = !AgentHandoffSupport.getHandoffPayload(context).isEmpty();
+        }
+        if (!shouldHandoff) {
+            return null;
+        }
+        AgentResult result = AgentHandoffSupport.buildHandoffResult(context, subAgentName(), stage);
+        result.getData().putAll(chainData);
+        result.getData().put("stage", stage);
+        return result;
     }
 
     private Map<String, Object> buildChainData() {
@@ -179,13 +256,6 @@ public class RoleTaskSubAgent implements SubAgent {
                 || context.getAttribute("roleGenerateRoleResultJson") != null;
     }
 
-    private boolean isConfirmationTurn(AgentContext context) {
-        if (context == null) {
-            return false;
-        }
-        return RoleTaskPromptSupport.isConfirmation(oConvertUtils.getString(context.getUserInput()));
-    }
-
     @SuppressWarnings("unchecked")
     private Map<String, Object> extractDecision(Object nodeResult) {
         if (!(nodeResult instanceof org.jeecg.modules.airag.agent.graph.NodeResult result)) {
@@ -193,15 +263,29 @@ public class RoleTaskSubAgent implements SubAgent {
         }
         Object toolData = result.getData().get("toolData");
         if (toolData instanceof Map<?, ?> rawMap) {
-            Map<String, Object> decision = new LinkedHashMap<>();
-            for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
-                if (entry.getKey() != null) {
-                    decision.put(String.valueOf(entry.getKey()), entry.getValue());
-                }
-            }
-            return decision;
+            return copyStringKeyMap(rawMap);
+        }
+        Object confirmationDecision = result.getData().get("confirmationDecision");
+        if (confirmationDecision instanceof Map<?, ?> rawMap) {
+            return copyStringKeyMap(rawMap);
+        }
+        if (result.getData().get("action") != null) {
+            return copyStringKeyMap(result.getData());
         }
         return new LinkedHashMap<>();
+    }
+
+    private Map<String, Object> copyStringKeyMap(Map<?, ?> rawMap) {
+        Map<String, Object> decision = new LinkedHashMap<>();
+        if (rawMap == null) {
+            return decision;
+        }
+        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+            if (entry.getKey() != null) {
+                decision.put(String.valueOf(entry.getKey()), entry.getValue());
+            }
+        }
+        return decision;
     }
 
     private Map<String, Object> buildStructuredResult(AgentContext context, Object imageResult, Object voiceResult) {

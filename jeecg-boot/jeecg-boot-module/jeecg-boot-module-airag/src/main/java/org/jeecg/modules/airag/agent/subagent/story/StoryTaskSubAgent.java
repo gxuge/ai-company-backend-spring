@@ -4,6 +4,7 @@ import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.airag.agent.graph.NodeResult;
 import org.jeecg.modules.airag.agent.graph.SubAgent;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
+import org.jeecg.modules.airag.agent.runtime.AgentHandoffSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentResult;
 import org.jeecg.modules.airag.agent.runtime.NodeRunner;
 import org.jeecg.modules.airag.agent.subagent.story.node.StoryCreateBackgroundNode;
@@ -53,13 +54,20 @@ public class StoryTaskSubAgent implements SubAgent {
             context.putAttribute("storyTaskStage", "dialog");
         }
 
-        if (isConfirmationTurn(context) && hasStoryCoreState(context)) {
-            return continueWithBackground(context, chainData);
-        }
-
         try {
+            if (hasStoryCoreState(context)) {
+                AgentResult decisionResult = handleExistingStoryCore(context, chainData);
+                if (decisionResult != null) {
+                    return decisionResult;
+                }
+            }
+
             NodeResult dialogResult = this.nodeRunner.run(context, this.storyCreateDialogNode);
             storeNodeResult(context, "storyDialogNodeResult", dialogResult);
+            AgentResult dialogHandoff = handoffIfNeeded(context, dialogResult, chainData, "dialog");
+            if (dialogHandoff != null) {
+                return dialogHandoff;
+            }
 
             if (!hasStoryCoreState(context)) {
                 return waiting(dialogResult == null ? null : dialogResult.getContent(), chainData, "dialog");
@@ -70,6 +78,10 @@ public class StoryTaskSubAgent implements SubAgent {
             }
             NodeResult gateResult = this.nodeRunner.run(context, this.storyFlowGateNode);
             storeNodeResult(context, "storyFlowGateNodeResult", gateResult);
+            AgentResult gateHandoff = handoffIfNeeded(context, gateResult, chainData, "gate");
+            if (gateHandoff != null) {
+                return gateHandoff;
+            }
             Map<String, Object> gateDecision = extractDecision(gateResult);
             if (context != null) {
                 context.putAttribute("storyFlowGateDecision", gateDecision);
@@ -91,12 +103,47 @@ public class StoryTaskSubAgent implements SubAgent {
         }
     }
 
+    private AgentResult handleExistingStoryCore(AgentContext context, Map<String, Object> chainData) {
+        if (context != null) {
+            context.putAttribute("storyTaskStage", "confirmation");
+        }
+        NodeResult dialogResult = this.nodeRunner.run(context, this.storyCreateDialogNode);
+        storeNodeResult(context, "storyConfirmationDialogNodeResult", dialogResult);
+        AgentResult handoff = handoffIfNeeded(context, dialogResult, chainData, "confirmation");
+        if (handoff != null) {
+            return handoff;
+        }
+        Map<String, Object> decision = extractDecision(dialogResult);
+        if (context != null) {
+            context.putAttribute("storyConfirmationDecision", decision);
+        }
+        String action = oConvertUtils.getString(decision.get("action"));
+        if ("ACCEPT_AND_CONTINUE".equalsIgnoreCase(action)) {
+            return continueWithBackground(context, chainData);
+        }
+        if ("ASK_USER".equalsIgnoreCase(action)) {
+            String reply = oConvertUtils.getString(decision.get("reply"));
+            return waiting(reply, chainData, "confirmation", decision);
+        }
+        if ("REGENERATE".equalsIgnoreCase(action) || "MODIFY".equalsIgnoreCase(action)) {
+            if (context != null) {
+                context.putAttribute("storyConfirmationAction", action);
+            }
+            return null;
+        }
+        return waiting(oConvertUtils.getString(decision.get("reply")), chainData, "confirmation", decision);
+    }
+
     private AgentResult continueWithBackground(AgentContext context, Map<String, Object> chainData) {
         if (context != null) {
             context.putAttribute("storyTaskStage", "background");
         }
         NodeResult backgroundResult = this.nodeRunner.run(context, this.storyCreateBackgroundNode);
         storeNodeResult(context, "storyBackgroundNodeResult", backgroundResult);
+        AgentResult backgroundHandoff = handoffIfNeeded(context, backgroundResult, chainData, "background");
+        if (backgroundHandoff != null) {
+            return backgroundHandoff;
+        }
 
         String content = backgroundResult == null ? null : backgroundResult.getContent();
         if (!oConvertUtils.isNotEmpty(content) && context != null) {
@@ -117,6 +164,10 @@ public class StoryTaskSubAgent implements SubAgent {
     }
 
     private AgentResult waiting(String content, Map<String, Object> chainData, String stage) {
+        return waiting(content, chainData, stage, null);
+    }
+
+    private AgentResult waiting(String content, Map<String, Object> chainData, String stage, Map<String, Object> decision) {
         String text = oConvertUtils.isNotEmpty(content) ? content : "你对这版故事满意吗？想先改哪部分？";
         AgentResult result = AgentResult.waitingUser(text);
         result.setStructuredResult(chainData);
@@ -124,6 +175,13 @@ public class StoryTaskSubAgent implements SubAgent {
         result.getData().put("stage", stage);
         result.getData().put("question", text);
         result.getData().put("status", "WAITING_USER");
+        if (decision != null && !decision.isEmpty()) {
+            result.getData().put("decision", decision);
+            Object options = decision.get("options");
+            if (options != null) {
+                result.getData().put("options", options);
+            }
+        }
         return result;
     }
 
@@ -133,6 +191,20 @@ public class StoryTaskSubAgent implements SubAgent {
         }
         Object action = gateDecision.get("action");
         return action == null || "NEXT".equalsIgnoreCase(String.valueOf(action));
+    }
+
+    private AgentResult handoffIfNeeded(AgentContext context, Object nodeResult, Map<String, Object> chainData, String stage) {
+        boolean shouldHandoff = nodeResult instanceof NodeResult result && AgentHandoffSupport.isHandoff(result);
+        if (!shouldHandoff && context != null) {
+            shouldHandoff = !AgentHandoffSupport.getHandoffPayload(context).isEmpty();
+        }
+        if (!shouldHandoff) {
+            return null;
+        }
+        AgentResult result = AgentHandoffSupport.buildHandoffResult(context, subAgentName(), stage);
+        result.getData().putAll(chainData);
+        result.getData().put("stage", stage);
+        return result;
     }
 
     private Map<String, Object> buildChainData() {
@@ -166,13 +238,6 @@ public class StoryTaskSubAgent implements SubAgent {
                 || context.getAttribute("storyFullGenerateResultJson") != null;
     }
 
-    private boolean isConfirmationTurn(AgentContext context) {
-        if (context == null) {
-            return false;
-        }
-        return StoryTaskPromptSupport.isConfirmation(oConvertUtils.getString(context.getUserInput()));
-    }
-
     @SuppressWarnings("unchecked")
     private Map<String, Object> extractDecision(Object nodeResult) {
         if (!(nodeResult instanceof NodeResult result)) {
@@ -180,15 +245,29 @@ public class StoryTaskSubAgent implements SubAgent {
         }
         Object toolData = result.getData().get("toolData");
         if (toolData instanceof Map<?, ?> rawMap) {
-            Map<String, Object> decision = new LinkedHashMap<>();
-            for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
-                if (entry.getKey() != null) {
-                    decision.put(String.valueOf(entry.getKey()), entry.getValue());
-                }
-            }
-            return decision;
+            return copyStringKeyMap(rawMap);
+        }
+        Object confirmationDecision = result.getData().get("confirmationDecision");
+        if (confirmationDecision instanceof Map<?, ?> rawMap) {
+            return copyStringKeyMap(rawMap);
+        }
+        if (result.getData().get("action") != null) {
+            return copyStringKeyMap(result.getData());
         }
         return new LinkedHashMap<>();
+    }
+
+    private Map<String, Object> copyStringKeyMap(Map<?, ?> rawMap) {
+        Map<String, Object> decision = new LinkedHashMap<>();
+        if (rawMap == null) {
+            return decision;
+        }
+        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+            if (entry.getKey() != null) {
+                decision.put(String.valueOf(entry.getKey()), entry.getValue());
+            }
+        }
+        return decision;
     }
 
     private Map<String, Object> buildStructuredResult(AgentContext context, Object backgroundResult) {

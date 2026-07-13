@@ -3,7 +3,6 @@ package org.jeecg.modules.system.service.impl;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import jakarta.annotation.Resource;
-import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.exception.JeecgBootBizTipException;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.airag.app.entity.AiragApp;
@@ -48,7 +47,6 @@ import java.util.stream.Collectors;
  * 故事生成服务实现。
  */
 @Service
-@Slf4j
 public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     private static final String METADATA_STORY_PROMPT_KEY = "storyPromptTemplate";
     private static final String METADATA_STORY_PROMPTS_KEY = "storyPromptTemplates";
@@ -125,8 +123,6 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
             modelJson.put("fallbackReason", fallbackReason);
             generated = false;
         }
-        logStoryLlmJson(ENDPOINT_STORY_SETTING_GENERATE, modelJson, generated, fallbackReason);
-
         String storySetting;
         if (settingOptimizeMode) {
             storySetting = PromptRuntimeUtil.firstNonBlank(
@@ -215,8 +211,6 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
             modelJson.put("fallbackReason", fallbackReason);
             generated = false;
         }
-        logStoryLlmJson(ENDPOINT_STORY_SCENE_GENERATE, modelJson, generated, fallbackReason);
-
         String sceneSummary;
         if (siteSettingOptimizeMode) {
             sceneSummary = PromptRuntimeUtil.firstNonBlank(
@@ -306,13 +300,11 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         JSONObject modelJson;
         try {
             modelJson = callPromptChatWithSchemaRepair(promptSections, "outline");
-            logStoryLlmJson(ENDPOINT_STORY_OUTLINE_GENERATE, modelJson, true, null);
         } catch (Exception ex) {
             JSONObject fallbackJson = new JSONObject();
             String fallbackReason = PromptRuntimeUtil.trimToNull(ex.getMessage());
             fallbackJson.put("fallback", true);
             fallbackJson.put("fallbackReason", fallbackReason);
-            logStoryLlmJson(ENDPOINT_STORY_OUTLINE_GENERATE, fallbackJson, false, fallbackReason);
             throw ex;
         }
 
@@ -365,7 +357,6 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
                 PROMPT_CODE_STORY_FULL, PROMPT_VERSION_V2, buildStoryFullVars(dto));
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, "story-full-generate");
-        logStoryLlmJson(ENDPOINT_STORY_FULL_GENERATE, modelJson, true, null);
 
         String title = PromptRuntimeUtil.firstNonBlank(
                 PromptRuntimeUtil.trimToNull(modelJson.getString("title")),
@@ -417,7 +408,6 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         );
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, "story-full-generate-preset");
-        logStoryLlmJson(ENDPOINT_STORY_FULL_GENERATE_PRESET, modelJson, true, null);
 
         String title = PromptRuntimeUtil.firstNonBlank(
                 PromptRuntimeUtil.trimToNull(modelJson.getString("title")),
@@ -760,16 +750,4 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     private record PromptTemplateRef(String code, String version) {
     }
 
-    /**
-     * 统一打印故事一键生成场景下 MiniMax 的 JSON 输出，便于排查字段格式问题。
-     */
-    private void logStoryLlmJson(String endpoint, JSONObject modelJson, boolean generated, String fallbackReason) {
-        JSONObject logJson = new JSONObject();
-        logJson.put("endpoint", endpoint);
-        logJson.put("generated", generated);
-        logJson.put("fallbackReason", fallbackReason);
-        logJson.put("provider", promptChatService == null ? null : promptChatService.provider());
-        logJson.put("modelJson", PromptRuntimeUtil.sanitizeToolCallLogJson(modelJson));
-        log.info("[STORY_LLM_JSON] {}", logJson.toJSONString());
-    }
 }

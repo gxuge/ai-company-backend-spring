@@ -1,7 +1,6 @@
 package org.jeecg.modules.openapi.service.impl;
 
 import jakarta.annotation.Resource;
-import lombok.extern.slf4j.Slf4j;
 import org.jeecg.modules.airag.prompts.service.IAiragPromptTemplateService;
 import org.jeecg.modules.airag.prompts.vo.AiragPromptTemplateVo;
 import org.jeecg.modules.system.monitor.TsAiLogCollector;
@@ -17,7 +16,6 @@ import java.util.Map;
 /**
  * Prompt template rendering service implementation.
  */
-@Slf4j
 @Service
 public class PromptRenderServiceImpl implements PromptRenderService {
     @Resource
@@ -57,9 +55,6 @@ public class PromptRenderServiceImpl implements PromptRenderService {
         sections.setToolSchema(toolSchema);
         sections.setRenderedPrompt(renderedPrompt);
 
-        String logContent = renderedPrompt.length() > 300 ? renderedPrompt.substring(0, 300) + "...(truncated)" : renderedPrompt;
-        log.info("Prompt template rendered code={} version={} vars={} rendered={}",
-                safeCode, safeVersion, safeVariables, logContent);
         tsAiLogCollector.markPromptTemplateIfAbsent(safeCode, safeVersion);
         tsAiLogCollector.appendStep("prompt_rendered", "提示词渲染", "success", step -> {
             step.setPromptCode(safeCode);

@@ -47,8 +47,6 @@ public class ToolcallJsonRepairService {
 
     public JSONObject chatToolCallWithSchemaRepair(PromptRenderedSectionsVo sections, String scene) {
         List<String> requiredFields = extractRequiredFields(sections.getToolSchema());
-        log.info("[PROMPT_CHAT_JSON_FULL] stage=schema-summary scene={} promptCode={} promptVersion={} requiredFields={}",
-                scene, sections.getCode(), sections.getVersion(), requiredFields);
         tsAiLogCollector.appendStep("schema_summary", "Schema摘要", "success", step -> {
             step.setPromptCode(sections.getCode());
             step.setPromptVersion(sections.getVersion());
@@ -66,8 +64,6 @@ public class ToolcallJsonRepairService {
             JSONObject parsed = PromptRuntimeUtil.parseJsonObject(rawContent);
             List<String> firstPassIssues = validateAgainstToolSchema(parsed, sections.getToolSchema());
             if (firstPassIssues.isEmpty()) {
-                log.info("[PROMPT_CHAT_JSON_FULL] stage=first-pass payload={}",
-                        PromptRuntimeUtil.sanitizeToolCallLogJson(parsed).toJSONString());
                 final String firstPassRawContent = rawContent;
                 final String firstPassJson = PromptRuntimeUtil.sanitizeToolCallLogJson(parsed).toJSONString();
                 tsAiLogCollector.appendStep("first_pass_result", "首轮结果", "success", step -> {
@@ -79,8 +75,6 @@ public class ToolcallJsonRepairService {
                 });
                 return parsed;
             }
-            log.warn("[PROMPT_CHAT_JSON_FULL] stage=first-pass-schema-mismatch scene={} issues={} payload={}",
-                    scene, firstPassIssues, PromptRuntimeUtil.sanitizeToolCallLogJson(parsed).toJSONString());
             final String firstPassRawContent = rawContent;
             final String firstPassJson = PromptRuntimeUtil.sanitizeToolCallLogJson(parsed).toJSONString();
             tsAiLogCollector.appendStep("first_pass_result", "首轮结果", "failed", step -> {
@@ -91,7 +85,6 @@ public class ToolcallJsonRepairService {
                 step.setValidationIssues(String.join("; ", firstPassIssues));
             });
         } catch (Exception firstEx) {
-            log.warn("[PROMPT_CHAT_JSON_FULL] stage=first-pass-parse-fail scene={} reason={}", scene, firstEx.getMessage());
             final String firstPassRawContent = rawContent;
             tsAiLogCollector.appendStep("first_pass_result", "首轮结果", "failed", step -> {
                 step.setPromptCode(sections.getCode());
@@ -103,8 +96,6 @@ public class ToolcallJsonRepairService {
 
         PromptTemplateRef repairTemplateRef = resolveJsonRepairTemplateRef();
         tsAiLogCollector.markRepairTemplate(repairTemplateRef.code(), repairTemplateRef.version());
-        log.info("[PROMPT_CHAT_JSON_FULL] stage=repair-plan scene={} firstPromptCode={} firstPromptVersion={} requiredFields={} repairPromptCode={} repairPromptVersion={}",
-                scene, sections.getCode(), sections.getVersion(), requiredFields, repairTemplateRef.code(), repairTemplateRef.version());
         tsAiLogCollector.appendStep("repair_plan", "修复计划", "success", step -> {
             step.setPromptCode(repairTemplateRef.code());
             step.setPromptVersion(repairTemplateRef.version());
@@ -114,8 +105,6 @@ public class ToolcallJsonRepairService {
         PromptRenderedSectionsVo repairPrompt = promptRenderService.renderPromptSections(
                 repairTemplateRef.code(), repairTemplateRef.version(),
                 buildJsonRepairVars(scene, rawContent, sections.getToolSchema()));
-        log.info("[PROMPT_CHAT_JSON_FULL] stage=repair-template scene={} promptCode={} promptVersion={}",
-                scene, repairPrompt.getCode(), repairPrompt.getVersion());
 
         String repairedContent = promptChatService.chatToolCall(
                 repairPrompt.getDeveloperPrompt(),
@@ -125,10 +114,6 @@ public class ToolcallJsonRepairService {
         try {
             repairedJson = PromptRuntimeUtil.parseJsonObject(repairedContent);
         } catch (Exception ex) {
-            log.error("[PROMPT_CHAT_JSON_FULL] stage=repair-pass-parse-fail scene={} firstLen={} repairedLen={}",
-                    scene,
-                    rawContent == null ? 0 : rawContent.length(),
-                    repairedContent == null ? 0 : repairedContent.length());
             throw new JeecgBootException("AI回复解析失败，非有效JSON");
         }
         List<String> repairIssues = validateAgainstToolSchema(repairedJson, sections.getToolSchema());
@@ -142,8 +127,6 @@ public class ToolcallJsonRepairService {
             });
             throw new JeecgBootException("AI回复不满足tool schema约束: " + String.join("; ", repairIssues));
         }
-        log.info("[PROMPT_CHAT_JSON_FULL] stage=repair-pass payload={}",
-                PromptRuntimeUtil.sanitizeToolCallLogJson(repairedJson).toJSONString());
         tsAiLogCollector.appendStep("repair_result", "修复结果", "success", step -> {
             step.setPromptCode(repairPrompt.getCode());
             step.setPromptVersion(repairPrompt.getVersion());

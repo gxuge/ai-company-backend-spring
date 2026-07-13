@@ -19,6 +19,8 @@ import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneGenerateVo;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -35,6 +37,7 @@ public class StoryTaskToolRegistrar {
 
     private static final String ROUTE_STORY_CORE_FILL = "STORY_CORE_FILL";
     private static final String ROUTE_STORY_FULL_GENERATE = "STORY_FULL_GENERATE";
+    private static final String ROUTE_STORY_CONFIRMATION_DECISION = "STORY_CONFIRMATION_DECISION";
     private static final String ROUTE_STORY_FLOW_GATE = "STORY_FLOW_GATE";
     private static final String ROUTE_STORY_SCENE_GENERATE = "STORY_SCENE_GENERATE";
 
@@ -51,6 +54,7 @@ public class StoryTaskToolRegistrar {
     public void registerTools() {
         this.toolRegistry.register(buildStoryFullGenerateTool());
         this.toolRegistry.register(buildStoryFullGeneratePresetTool());
+        this.toolRegistry.register(buildStoryConfirmationDecisionTool());
         this.toolRegistry.register(buildStoryFlowGateTool());
         this.toolRegistry.register(buildStorySceneGenerateTool());
     }
@@ -74,6 +78,17 @@ public class StoryTaskToolRegistrar {
         definition.setDisplayName("故事核心字段补全");
         definition.setDescription("适合故事信息较少、需要先补全核心设定时使用");
         definition.setExecutor(this::executeStoryFullGeneratePreset);
+        return definition;
+    }
+
+    private ToolDefinition buildStoryConfirmationDecisionTool() {
+        ToolDefinition definition = new ToolDefinition();
+        definition.setName(StoryTaskToolSpec.STORY_CONFIRMATION_DECISION);
+        definition.setRouteKey(ROUTE_STORY_CONFIRMATION_DECISION);
+        definition.setCategory("story_task");
+        definition.setDisplayName("故事确认判断");
+        definition.setDescription("已有故事核心设定后，由LLM判断用户是接受继续、重新生成、修改，还是需要展示选择");
+        definition.setExecutor(this::executeStoryConfirmationDecision);
         return definition;
     }
 
@@ -135,6 +150,25 @@ public class StoryTaskToolRegistrar {
             context.putAttribute("storyFlowStage", "story_confirm");
         }
         ToolCallResult callResult = ToolCallResult.success("已生成故事 preset", result);
+        callResult.setPayload(payload);
+        return callResult;
+    }
+
+    private ToolCallResult executeStoryConfirmationDecision(AgentContext context, ToolCallRequest request) {
+        Map<String, Object> args = request == null ? null : request.getArguments();
+        String action = normalizeConfirmationAction(firstText(args, "action"));
+        Map<String, Object> decision = new LinkedHashMap<>();
+        decision.put("action", action);
+        decision.put("reply", firstTextWithDefault(args, buildConfirmationReply(action), "reply"));
+        decision.put("options", normalizeOptions(args == null ? null : args.get("options")));
+        decision.put("reason", firstTextWithDefault(args, buildConfirmationReason(action), "reason"));
+        if (context != null) {
+            context.putAttribute("storyConfirmationDecision", decision);
+            context.putAttribute("storyConfirmationDecisionJson", JSONObject.toJSONString(decision));
+        }
+        ToolCallResult callResult = ToolCallResult.success("已接收故事确认判断", decision);
+        Map<String, Object> payload = buildStoryPayload(context, request, "confirmation", StoryTaskToolSpec.STORY_CONFIRMATION_DECISION);
+        payload.put("decision", decision);
         callResult.setPayload(payload);
         return callResult;
     }
@@ -231,6 +265,75 @@ public class StoryTaskToolRegistrar {
         return payload;
     }
 
+    private String normalizeConfirmationAction(String action) {
+        if (!StringUtils.hasText(action)) {
+            return "ASK_USER";
+        }
+        String value = action.trim().toUpperCase();
+        if ("ACCEPT_AND_CONTINUE".equals(value)
+                || "REGENERATE".equals(value)
+                || "MODIFY".equals(value)
+                || "ASK_USER".equals(value)) {
+            return value;
+        }
+        return "ASK_USER";
+    }
+
+    private List<String> normalizeOptions(Object rawOptions) {
+        List<String> options = new ArrayList<>();
+        if (rawOptions instanceof Iterable<?> iterable) {
+            for (Object item : iterable) {
+                if (item != null && StringUtils.hasText(String.valueOf(item))) {
+                    options.add(String.valueOf(item).trim());
+                }
+            }
+        } else if (rawOptions instanceof String text && StringUtils.hasText(text)) {
+            try {
+                List<String> parsed = com.alibaba.fastjson.JSON.parseArray(text, String.class);
+                if (parsed != null) {
+                    for (String item : parsed) {
+                        if (StringUtils.hasText(item)) {
+                            options.add(item.trim());
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+                options.add(text.trim());
+            }
+        }
+        if (options.isEmpty()) {
+            options.add("我觉得这个可以，继续生成故事背景");
+            options.add("帮我重新生成一个");
+        }
+        return options;
+    }
+
+    private String buildConfirmationReply(String action) {
+        if ("ACCEPT_AND_CONTINUE".equals(action)) {
+            return "好的，我继续为这个故事生成背景和场景。";
+        }
+        if ("REGENERATE".equals(action)) {
+            return "好的，我帮你重新生成一版故事。";
+        }
+        if ("MODIFY".equals(action)) {
+            return "好的，我会按你的修改意见调整这版故事。";
+        }
+        return "这版故事你想继续完善，还是重新生成一版？";
+    }
+
+    private String buildConfirmationReason(String action) {
+        if ("ACCEPT_AND_CONTINUE".equals(action)) {
+            return "LLM判断用户接受当前故事并希望继续。";
+        }
+        if ("REGENERATE".equals(action)) {
+            return "LLM判断用户希望重新生成故事。";
+        }
+        if ("MODIFY".equals(action)) {
+            return "LLM判断用户希望局部修改当前故事。";
+        }
+        return "LLM判断用户意图不够明确，需要提供选择。";
+    }
+
     private boolean hasStoryCoreState(AgentContext context) {
         if (context == null) {
             return false;
@@ -256,6 +359,14 @@ public class StoryTaskToolRegistrar {
         return null;
     }
 
+    private String firstNonBlank(Map<String, Object> source, String fallback, String... keys) {
+        String value = firstText(source, keys);
+        if (StringUtils.hasText(value)) {
+            return value;
+        }
+        return StringUtils.hasText(fallback) ? fallback.trim() : null;
+    }
+
     private String normalizeText(ToolCallRequest request, String key) {
         if (request == null || request.getArguments() == null || !StringUtils.hasText(key)) {
             return null;
@@ -266,6 +377,14 @@ public class StoryTaskToolRegistrar {
         }
         String text = String.valueOf(value).trim();
         return text.isEmpty() ? null : text;
+    }
+
+    private String firstTextWithDefault(Map<String, Object> source, String defaultValue, String... keys) {
+        String value = firstText(source, keys);
+        if (StringUtils.hasText(value)) {
+            return value;
+        }
+        return defaultValue;
     }
 
     private String firstText(Map<String, Object> firstSource, Map<String, Object> secondSource, String... keys) {

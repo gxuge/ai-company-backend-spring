@@ -9,6 +9,7 @@ import org.jeecg.modules.airag.agent.graph.DeepAgentDefinitionRegistry;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentResult;
 import org.jeecg.modules.airag.agent.runtime.NodeRunner;
+import org.jeecg.modules.airag.agent.tool.DeepAgentTaskToolService;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -41,6 +42,10 @@ public class TsAgentChatAgent implements Agent {
      * Deep Agent 定义注册中心。
      */
     private final DeepAgentDefinitionRegistry deepAgentDefinitionRegistry;
+    /**
+     * DeepAgents task 工具服务。
+     */
+    private final DeepAgentTaskToolService deepAgentTaskToolService;
 
     @Override
     public String agentName() {
@@ -59,16 +64,31 @@ public class TsAgentChatAgent implements Agent {
         if (nodeResult == null) {
             return AgentResult.failed("DeepAgents 主节点未返回结果");
         }
+        AgentResult pendingTaskResult = this.deepAgentTaskToolService.executePendingTask(context);
+        if (pendingTaskResult != null) {
+            enrichResult(pendingTaskResult, nodeResult);
+            return pendingTaskResult;
+        }
         AgentResult result = nodeResult.isSuccess()
                 ? AgentResult.success(nodeResult.getContent())
                 : AgentResult.failed(nodeResult.getErrorMessage() == null ? nodeResult.getContent() : nodeResult.getErrorMessage());
-        result.setStructuredResult(nodeResult.getData());
+        enrichResult(result, nodeResult);
+        return result;
+    }
+
+    private void enrichResult(AgentResult result, NodeResult nodeResult) {
+        if (result == null) {
+            return;
+        }
+        if (result.getStructuredResult() == null) {
+            result.setStructuredResult(nodeResult.getData());
+        }
         if (result.getData() == null) {
             result.setData(new LinkedHashMap<>());
         }
+        result.getData().put("mainNodeResult", nodeResult.getData());
         result.getData().put("dispatchMode", "deep-agents");
         result.getData().put("mainNode", mainNode == null ? null : mainNode.nodeName());
         result.getData().put("deepAgentsPromptMode", Boolean.TRUE);
-        return result;
     }
 }

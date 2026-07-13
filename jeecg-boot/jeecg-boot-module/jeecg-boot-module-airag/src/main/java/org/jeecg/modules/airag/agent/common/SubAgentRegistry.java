@@ -66,10 +66,7 @@ public class SubAgentRegistry {
      * @return 默认名称
      */
     public String defaultSubAgentName() {
-        if (this.registry.containsKey("general_chat")) {
-            return "general_chat";
-        }
-        return this.registry.keySet().stream().findFirst().orElse("general_chat");
+        return this.registry.keySet().stream().findFirst().orElse("");
     }
 
     /**
@@ -89,7 +86,7 @@ public class SubAgentRegistry {
      */
     public String describeAvailableSubAgents() {
         if (this.registry.isEmpty()) {
-            return "general_chat";
+            return "无";
         }
         return this.registry.values().stream()
                 .filter(subAgent -> subAgent != null && !"welcome_intro".equalsIgnoreCase(subAgent.subAgentName()))
@@ -109,7 +106,6 @@ public class SubAgentRegistry {
             return "未命名子 Agent";
         }
         return switch (subAgentName) {
-            case "general_chat" -> "普通聊天、陪伴对话、闲聊回复";
             case "role_task_agent" -> "角色创建对话，支持追问、preset/full 生成、确认后补形象与声音";
             case "story_task_agent" -> "故事创建对话，支持追问、preset/full 生成、确认后补背景与场景";
             case "role_image_task_agent" -> "生成角色形象图";

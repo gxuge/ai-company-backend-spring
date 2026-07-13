@@ -16,6 +16,11 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AgentRuntimeService {
     /**
+     * 子 Agent 发送方类型。
+     */
+    private static final String SENDER_SUB_AGENT = "sub_agent";
+
+    /**
      * 事件发布器。
      */
     private final AgentEventPublisher eventPublisher;
@@ -29,7 +34,12 @@ public class AgentRuntimeService {
      */
     public AgentResult execute(Agent agent, AgentContext context) {
         context.normalize();
-        this.eventPublisher.publishAgentStart(context, agent.agentName());
+        boolean subAgent = isSubAgentContext(context);
+        if (subAgent) {
+            this.eventPublisher.publishSubAgentStart(context, agent.agentName(), null);
+        } else {
+            this.eventPublisher.publishAgentStart(context, agent.agentName());
+        }
         AgentResult result;
         try {
             result = agent.execute(context);
@@ -40,7 +50,15 @@ public class AgentRuntimeService {
             log.error("Agent执行失败，agentName={}", agent.agentName(), ex);
             result = AgentResult.failed(ex.getMessage());
         }
-        this.eventPublisher.publishAgentEnd(context, agent.agentName(), result);
+        if (subAgent) {
+            this.eventPublisher.publishSubAgentEnd(context, agent.agentName(), result, null);
+        } else {
+            this.eventPublisher.publishAgentEnd(context, agent.agentName(), result);
+        }
         return result;
+    }
+
+    private boolean isSubAgentContext(AgentContext context) {
+        return context != null && SENDER_SUB_AGENT.equalsIgnoreCase(context.getSenderType());
     }
 }

@@ -31,7 +31,11 @@ public class AgentResult {
         /**
          * 等待用户继续输入。
          */
-        WAITING_USER
+        WAITING_USER,
+        /**
+         * 子 Agent 主动交还主 Agent 重新派活。
+         */
+        HANDOFF
     }
 
     /**
@@ -90,6 +94,19 @@ public class AgentResult {
     public static AgentResult waitingUser(String content) {
         AgentResult result = new AgentResult();
         result.setStatus(Status.WAITING_USER);
+        result.setContent(content);
+        return result;
+    }
+
+    /**
+     * 创建交还主 Agent 结果。
+     *
+     * @param content 交还说明
+     * @return 结果对象
+     */
+    public static AgentResult handoff(String content) {
+        AgentResult result = new AgentResult();
+        result.setStatus(Status.HANDOFF);
         result.setContent(content);
         return result;
     }

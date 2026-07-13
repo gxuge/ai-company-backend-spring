@@ -23,6 +23,8 @@ import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickVoiceGenerateVo;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -39,6 +41,7 @@ public class RoleTaskToolRegistrar {
 
     private static final String ROUTE_ROLE_CORE_FILL = "ROLE_CORE_FILL";
     private static final String ROUTE_ROLE_FULL_GENERATE = "ROLE_FULL_GENERATE";
+    private static final String ROUTE_ROLE_CONFIRMATION_DECISION = "ROLE_CONFIRMATION_DECISION";
     private static final String ROUTE_ROLE_FLOW_GATE = "ROLE_FLOW_GATE";
     private static final String ROUTE_ROLE_IMAGE_GENERATE = "ROLE_IMAGE_GENERATE";
     private static final String ROUTE_ROLE_VOICE_GENERATE = "ROLE_VOICE_GENERATE";
@@ -56,6 +59,7 @@ public class RoleTaskToolRegistrar {
     public void registerTools() {
         this.toolRegistry.register(buildRoleCoreFillPresetTool());
         this.toolRegistry.register(buildRoleGenerateRoleTool());
+        this.toolRegistry.register(buildRoleConfirmationDecisionTool());
         this.toolRegistry.register(buildRoleFlowGateTool());
         this.toolRegistry.register(buildRoleImageGenerateTool());
         this.toolRegistry.register(buildRoleVoiceGenerateTool());
@@ -80,6 +84,17 @@ public class RoleTaskToolRegistrar {
         definition.setDisplayName("完整角色生成");
         definition.setDescription("适合角色信息较完整、直接生成完整角色设定时使用");
         definition.setExecutor(this::executeRoleGenerateRole);
+        return definition;
+    }
+
+    private ToolDefinition buildRoleConfirmationDecisionTool() {
+        ToolDefinition definition = new ToolDefinition();
+        definition.setName(RoleTaskToolSpec.ROLE_CONFIRMATION_DECISION);
+        definition.setRouteKey(ROUTE_ROLE_CONFIRMATION_DECISION);
+        definition.setCategory("role_task");
+        definition.setDisplayName("角色确认判断");
+        definition.setDescription("已有角色核心设定后，由LLM判断用户是接受继续、重新生成、修改，还是需要展示选择");
+        definition.setExecutor(this::executeRoleConfirmationDecision);
         return definition;
     }
 
@@ -179,6 +194,25 @@ public class RoleTaskToolRegistrar {
         return callResult;
     }
 
+    private ToolCallResult executeRoleConfirmationDecision(AgentContext context, ToolCallRequest request) {
+        Map<String, Object> args = request == null ? null : request.getArguments();
+        String action = normalizeConfirmationAction(firstText(args, "action"));
+        Map<String, Object> decision = new LinkedHashMap<>();
+        decision.put("action", action);
+        decision.put("reply", firstNonBlank(args, buildConfirmationReply(action), "reply"));
+        decision.put("options", normalizeOptions(args == null ? null : args.get("options")));
+        decision.put("reason", firstNonBlank(args, buildConfirmationReason(action), "reason"));
+        if (context != null) {
+            context.putAttribute("roleConfirmationDecision", decision);
+            context.putAttribute("roleConfirmationDecisionJson", JSONObject.toJSONString(decision));
+        }
+        ToolCallResult callResult = ToolCallResult.success("已接收角色确认判断", decision);
+        Map<String, Object> payload = buildCommonPayload(context, request, "confirmation", RoleTaskToolSpec.ROLE_CONFIRMATION_DECISION);
+        payload.put("decision", decision);
+        callResult.setPayload(payload);
+        return callResult;
+    }
+
     private ToolCallResult executeRoleFlowGate(AgentContext context, ToolCallRequest request) {
         String stage = firstNonBlank(context, request, "stage");
         if (!StringUtils.hasText(stage) && context != null) {
@@ -268,6 +302,75 @@ public class RoleTaskToolRegistrar {
         Map<String, Object> payload = buildCommonPayload(context, request, executionMode, toolName);
         payload.put("stage", "role_generate");
         return payload;
+    }
+
+    private String normalizeConfirmationAction(String action) {
+        if (!StringUtils.hasText(action)) {
+            return "ASK_USER";
+        }
+        String value = action.trim().toUpperCase();
+        if ("ACCEPT_AND_CONTINUE".equals(value)
+                || "REGENERATE".equals(value)
+                || "MODIFY".equals(value)
+                || "ASK_USER".equals(value)) {
+            return value;
+        }
+        return "ASK_USER";
+    }
+
+    private List<String> normalizeOptions(Object rawOptions) {
+        List<String> options = new ArrayList<>();
+        if (rawOptions instanceof Iterable<?> iterable) {
+            for (Object item : iterable) {
+                if (item != null && StringUtils.hasText(String.valueOf(item))) {
+                    options.add(String.valueOf(item).trim());
+                }
+            }
+        } else if (rawOptions instanceof String text && StringUtils.hasText(text)) {
+            try {
+                List<String> parsed = com.alibaba.fastjson.JSON.parseArray(text, String.class);
+                if (parsed != null) {
+                    for (String item : parsed) {
+                        if (StringUtils.hasText(item)) {
+                            options.add(item.trim());
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+                options.add(text.trim());
+            }
+        }
+        if (options.isEmpty()) {
+            options.add("我觉得这个可以，继续生成形象和声音");
+            options.add("帮我重新生成一个");
+        }
+        return options;
+    }
+
+    private String buildConfirmationReply(String action) {
+        if ("ACCEPT_AND_CONTINUE".equals(action)) {
+            return "好的，我继续为这个角色生成形象和声音。";
+        }
+        if ("REGENERATE".equals(action)) {
+            return "好的，我帮你重新生成一版角色。";
+        }
+        if ("MODIFY".equals(action)) {
+            return "好的，我会按你的修改意见调整这版角色。";
+        }
+        return "这版角色你想继续完善，还是重新生成一版？";
+    }
+
+    private String buildConfirmationReason(String action) {
+        if ("ACCEPT_AND_CONTINUE".equals(action)) {
+            return "LLM判断用户接受当前角色并希望继续。";
+        }
+        if ("REGENERATE".equals(action)) {
+            return "LLM判断用户希望重新生成角色。";
+        }
+        if ("MODIFY".equals(action)) {
+            return "LLM判断用户希望局部修改当前角色。";
+        }
+        return "LLM判断用户意图不够明确，需要提供选择。";
     }
 
     private Map<String, Object> buildCommonPayload(AgentContext context, ToolCallRequest request, String executionMode, String toolName) {

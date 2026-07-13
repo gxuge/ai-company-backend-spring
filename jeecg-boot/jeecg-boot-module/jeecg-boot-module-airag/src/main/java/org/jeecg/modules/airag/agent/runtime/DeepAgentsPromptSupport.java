@@ -58,6 +58,23 @@ public final class DeepAgentsPromptSupport {
     }
 
     /**
+     * 是否为主 Agent 注入 DeepAgents 基础提示词。
+     *
+     * @param context 上下文
+     * @return true 表示当前是主 Agent 节点
+     */
+    private static boolean isMainAgentPromptEnabled(AgentContext context) {
+        if (!isEnabled(context)) {
+            return false;
+        }
+        Object value = context.getAttribute("deepAgentsMainMode");
+        if (value instanceof Boolean booleanValue) {
+            return booleanValue;
+        }
+        return value != null && Boolean.parseBoolean(String.valueOf(value));
+    }
+
+    /**
      * 构建 deepagents 主链路基础提示词。
      *
      * @param context 运行上下文
@@ -65,7 +82,7 @@ public final class DeepAgentsPromptSupport {
      * @return 提示词
      */
     public static String buildBasePrompt(AgentContext context, SkillLoadResult skillLoadResult) {
-        if (!isEnabled(context)) {
+        if (!isMainAgentPromptEnabled(context)) {
             return "";
         }
         StringBuilder sb = new StringBuilder();

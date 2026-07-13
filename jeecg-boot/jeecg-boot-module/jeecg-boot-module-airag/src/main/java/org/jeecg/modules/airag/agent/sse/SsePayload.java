@@ -34,4 +34,20 @@ public class SsePayload {
      * 扩展数据。
      */
     private Object data;
+    /**
+     * 工具名称。
+     */
+    private String toolName;
+    /**
+     * 内容类型。
+     */
+    private String contentType;
+    /**
+     * 工具结果预览。
+     */
+    private Object result;
+    /**
+     * 错误信息。
+     */
+    private String error;
 }

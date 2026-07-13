@@ -41,6 +41,7 @@ public final class RoleTaskPromptSupport {
             }
         }
         variables.putIfAbsent("user_input", oConvertUtils.getString(context == null ? null : context.getUserInput()));
+        variables.putIfAbsent("task_description", oConvertUtils.getString(context == null ? null : context.getAttribute("taskDescription")));
         variables.putIfAbsent("session_summary", oConvertUtils.getString(context == null ? null : context.getAttribute("sessionSummary")));
         variables.putIfAbsent("recent_messages_block", oConvertUtils.getString(context == null ? null : context.getAttribute("recentMessagesBlock")));
         variables.putIfAbsent("confirmed_fields_json", oConvertUtils.getString(context == null ? null : context.getAttribute("confirmedFieldsJson")));

@@ -14,8 +14,6 @@ import org.springframework.util.StringUtils;
 
 import java.lang.reflect.Field;
 import java.time.Duration;
-import java.util.LinkedHashMap;
-import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -55,7 +53,6 @@ public class ChatProviderAdaptService {
             }
             String chatCacheKey = options.toString();
             String streamCacheKey = "STEAM_" + options;
-            logNativeRequest(options, context.getOpenAiCustomParameters());
             Object chatModel = buildOpenAiChatModel(options, context.getOpenAiCustomParameters());
             Object streamModel = buildOpenAiStreamingModel(options, context.getOpenAiCustomParameters());
             cacheModel(chatCacheKey, chatModel);
@@ -116,64 +113,4 @@ public class ChatProviderAdaptService {
         return (value == null || value <= 0) ? defaultValue : value;
     }
 
-    private void logNativeRequest(AiModelOptions options, Map<String, Object> customParameters) {
-        try {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("provider", "OPENAI");
-            payload.put("modelName", options.getModelName());
-            payload.put("baseUrl", options.getBaseUrl());
-            payload.put("temperature", options.getTemperature());
-            payload.put("topP", options.getTopP());
-            payload.put("presencePenalty", options.getPresencePenalty());
-            payload.put("frequencyPenalty", options.getFrequencyPenalty());
-            payload.put("maxTokens", options.getMaxTokens());
-            payload.put("timeout", options.getTimeout());
-            payload.put("returnThinking", options.getReturnThinking());
-            payload.put("apiKey", maskSecret(options.getApiKey()));
-            payload.put("customParameters", sanitizeSecrets(customParameters));
-            log.info("[LLM_NATIVE_REQUEST] {}", payload);
-        } catch (Exception e) {
-            log.warn("打印底层模型请求参数失败: {}", e.getMessage());
-        }
-    }
-
-    private Object sanitizeSecrets(Object value) {
-        if (value instanceof Map<?, ?> map) {
-            Map<String, Object> sanitized = new LinkedHashMap<>();
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                String key = entry.getKey() == null ? "null" : String.valueOf(entry.getKey());
-                Object val = entry.getValue();
-                if (isSensitiveKey(key)) {
-                    sanitized.put(key, maskSecret(val == null ? null : String.valueOf(val)));
-                } else {
-                    sanitized.put(key, sanitizeSecrets(val));
-                }
-            }
-            return sanitized;
-        }
-        return value;
-    }
-
-    private boolean isSensitiveKey(String key) {
-        if (key == null) {
-            return false;
-        }
-        String lower = key.toLowerCase(Locale.ROOT);
-        return lower.contains("apikey")
-                || lower.contains("api_key")
-                || lower.contains("secret")
-                || lower.contains("token")
-                || lower.contains("authorization")
-                || lower.contains("password");
-    }
-
-    private String maskSecret(String text) {
-        if (!StringUtils.hasText(text)) {
-            return text;
-        }
-        if (text.length() <= 8) {
-            return "****";
-        }
-        return text.substring(0, 4) + "****" + text.substring(text.length() - 4);
-    }
 }

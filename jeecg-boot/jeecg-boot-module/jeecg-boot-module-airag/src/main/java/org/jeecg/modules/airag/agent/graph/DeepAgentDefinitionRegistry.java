@@ -28,7 +28,6 @@ public class DeepAgentDefinitionRegistry {
     @PostConstruct
     public void init() {
         this.registry.clear();
-        register(buildGeneralChatDefinition());
         register(buildRoleDefinition());
         register(buildStoryDefinition());
     }
@@ -71,10 +70,7 @@ public class DeepAgentDefinitionRegistry {
      * @return 默认名称
      */
     public String defaultDeepAgentName() {
-        if (this.registry.containsKey("general_chat")) {
-            return "general_chat";
-        }
-        return this.registry.keySet().stream().findFirst().orElse("general_chat");
+        return this.registry.keySet().stream().findFirst().orElse("");
     }
 
     /**
@@ -99,21 +95,6 @@ public class DeepAgentDefinitionRegistry {
         this.registry.put(definition.getName(), definition);
     }
 
-    private DeepAgentDefinition buildGeneralChatDefinition() {
-        DeepAgentDefinition definition = new DeepAgentDefinition();
-        definition.setName("general_chat");
-        definition.setDescription("普通聊天、陪伴对话、闲聊回复。");
-        definition.setSkillDomain("chat");
-        definition.setSkillTopK(3);
-        definition.setSkills(List.of("general_chat_reply"));
-        definition.setTools(List.of());
-        definition.setPermissions(List.of());
-        definition.setResponseFormat("text");
-        definition.getMetadata().put("flow", "general-chat");
-        definition.getMetadata().put("mode", "deep-agents");
-        return definition;
-    }
-
     private DeepAgentDefinition buildRoleDefinition() {
         DeepAgentDefinition definition = new DeepAgentDefinition();
         definition.setName("role_task_agent");
@@ -125,6 +106,7 @@ public class DeepAgentDefinitionRegistry {
                 "role_flow_gate",
                 "role_core_fill_preset",
                 "role_generate_role",
+                "role_confirmation_decision",
                 "role_generate_role_image",
                 "role_generate_role_voice"
         ));
@@ -132,6 +114,7 @@ public class DeepAgentDefinitionRegistry {
                 "role_flow_gate",
                 "role_core_fill_preset",
                 "role_generate_role",
+                "role_confirmation_decision",
                 "role_generate_role_image",
                 "role_generate_role_voice"
         ));
@@ -153,12 +136,14 @@ public class DeepAgentDefinitionRegistry {
                 "story_flow_gate",
                 "story_full_generate_preset",
                 "story_full_generate",
+                "story_confirmation_decision",
                 "story_generate_scene"
         ));
         definition.setPermissions(List.of(
                 "story_flow_gate",
                 "story_full_generate_preset",
                 "story_full_generate",
+                "story_confirmation_decision",
                 "story_generate_scene"
         ));
         definition.setResponseFormat("text");

@@ -4,7 +4,7 @@ name: 故事创建对话 skill
 description: 用于创建故事时的信息收集、追问、preset/full 生成决策，以及生成后的确认与修改引导。
 domain: story
 version: "1.0.0"
-allowed_tools: story_full_generate_preset, story_full_generate
+allowed_tools: story_full_generate_preset, story_full_generate, story_confirmation_decision
 metadata:
   flow: create-story
 ---
@@ -21,6 +21,7 @@ metadata:
 只允许：
 - `story_full_generate_preset`
 - `story_full_generate`
+- `story_confirmation_decision`
 
 ## 重点字段
 
@@ -55,6 +56,34 @@ metadata:
 - 做补全、润色、增强可读性
 - 不要推翻用户方向
 
+### 已有故事结果
+如果上下文中已经存在故事核心设定：
+- 先判断用户当前意图
+- 不要直接进入故事背景/场景阶段
+- 必须调用 `story_confirmation_decision` 输出确认判断
+- 不要普通文本回答
+- 不要后端关键词硬判
+- 不要调用生成工具
+
+确认工具参数：
+```json
+{
+  "action": "ACCEPT_AND_CONTINUE | REGENERATE | MODIFY | ASK_USER",
+  "reply": "给用户看的简短回复",
+  "options": [
+    "我觉得这个可以，继续生成故事背景",
+    "帮我重新生成一个"
+  ],
+  "reason": "简短原因"
+}
+```
+
+action 规则：
+- `ACCEPT_AND_CONTINUE`：继续生成故事背景/场景
+- `REGENERATE`：重新生成一版故事核心；信息少走 preset，信息明确走 full
+- `MODIFY`：根据用户修改意见走 full，保留用户明确要求保留的部分
+- `ASK_USER`：只给用户两个选择，不继续生成
+
 ## 追问规则
 
 - 一次只问一个问题
@@ -70,6 +99,12 @@ metadata:
 - 这版可以吗
 - 要不要改
 - 想先改哪一部分
+
+生成故事核心后，必须给用户两个明确选项：
+- 我觉得这个可以，继续生成故事背景
+- 帮我重新生成一个
+
+如果用户没有明确表达满意或重生成，也优先展示这两个选项。
 
 如果用户不满意，先问：
 - “你最想改哪一部分？”

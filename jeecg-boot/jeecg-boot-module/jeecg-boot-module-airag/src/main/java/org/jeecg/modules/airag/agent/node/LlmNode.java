@@ -14,17 +14,23 @@ import org.jeecg.modules.airag.agent.graph.NodeKind;
 import org.jeecg.modules.airag.agent.graph.NodeResult;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentEventPublisher;
+import org.jeecg.modules.airag.agent.runtime.AgentHandoffSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentModelResolver;
 import org.jeecg.modules.airag.agent.runtime.DeepAgentsProperties;
 import org.jeecg.modules.airag.agent.skill.runtime.SkillProperties;
 import org.jeecg.modules.airag.agent.skill.model.SkillLoadResult;
 import org.jeecg.modules.airag.agent.skill.runtime.SkillRuntimeService;
 import org.jeecg.modules.airag.agent.skill.tool.SkillTools;
+import org.jeecg.modules.airag.agent.tool.control.AgentControlToolService;
+import org.jeecg.modules.airag.agent.trace.AgentLlmTraceRequest;
+import org.jeecg.modules.airag.agent.trace.AgentLlmTraceResponse;
+import org.jeecg.modules.airag.agent.trace.AgentLlmTraceSink;
 import org.jeecg.modules.airag.common.handler.AIChatParams;
 import org.jeecg.modules.airag.common.handler.IAIChatHandler;
 import org.jeecg.modules.airag.prompts.service.IAiragPromptTemplateService;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -84,6 +90,16 @@ public abstract class LlmNode extends BaseAgentNode {
     @Autowired(required = false)
     private DeepAgentsProperties deepAgentsProperties;
     /**
+     * Agent 公共控制工具。
+     */
+    @Autowired(required = false)
+    private AgentControlToolService agentControlToolService;
+    /**
+     * LLM trace sinks.
+     */
+    @Autowired(required = false)
+    private List<AgentLlmTraceSink> llmTraceSinks;
+    /**
      * 构造函数。
      *
      * @param nodeName 节点名
@@ -115,17 +131,19 @@ public abstract class LlmNode extends BaseAgentNode {
         if (context != null) {
             context.putAttribute("llmNodeDefinition", this.definition == null ? null : this.definition.toMap());
             context.putAttribute("llmNodeSkills", this.definition == null ? null : this.definition.getSkills());
-            context.putAttribute("llmNodeTools", this.definition == null ? null : this.definition.getTools());
-            context.putAttribute("llmNodePermissions", this.definition == null ? null : this.definition.getPermissions());
+            context.putAttribute("llmNodeTools", buildEffectiveNodeTools(context));
+            context.putAttribute("llmNodePermissions", buildEffectiveNodePermissions(context));
             context.putAttribute("llmNodeResponseFormat", this.definition == null ? null : this.definition.getResponseFormat());
         }
         SkillLoadResult skillLoadResult = prepareSkillLoadResult(context);
         List<ChatMessage> messages = buildMessages(promptVariables, skillLoadResult, context);
         String modelId = this.modelResolver.resolveTextModelId(context.getAppId());
         AIChatParams params = buildChatParams(context, skillLoadResult);
+        traceLlmRequest(context, modelId, messages, params);
         CountDownLatch done = new CountDownLatch(1);
         AtomicReference<Throwable> errorRef = new AtomicReference<>();
         AtomicReference<String> textRef = new AtomicReference<>("");
+        AtomicReference<String> finishReasonRef = new AtomicReference<>();
         AtomicBoolean terminalReceived = new AtomicBoolean(false);
         TokenStream tokenStream = this.aiChatHandler.chat(modelId, messages, params);
 
@@ -144,6 +162,7 @@ public abstract class LlmNode extends BaseAgentNode {
             }
             String finalText = response == null || response.aiMessage() == null ? "" : response.aiMessage().text();
             FinishReason finishReason = response == null ? null : response.finishReason();
+            finishReasonRef.set(finishReason == null ? null : finishReason.name());
             if (FinishReason.STOP.equals(finishReason) || finishReason == null) {
                 textRef.set(finalText);
             } else {
@@ -160,14 +179,18 @@ public abstract class LlmNode extends BaseAgentNode {
 
         done.await(300, TimeUnit.SECONDS);
         if (errorRef.get() != null) {
+            traceLlmResponse(context, modelId, null, finishReasonRef.get(), false, errorRef.get());
             throw new RuntimeException(errorRef.get());
         }
         String finalText = textRef.get();
         if (oConvertUtils.isEmpty(finalText)) {
             finalText = this.eventPublisher.readBuffer(this.eventPublisher.buildLlmBufferKey(context, nodeName()));
         }
+        traceLlmResponse(context, modelId, finalText, finishReasonRef.get(), true, null);
         context.setLatestContent(finalText);
-        return parseResult(finalText, context);
+        NodeResult nodeResult = parseResult(finalText, context);
+        AgentHandoffSupport.attachToNodeResult(nodeResult, context);
+        return nodeResult;
     }
 
     /**
@@ -220,7 +243,7 @@ public abstract class LlmNode extends BaseAgentNode {
         if (params == null) {
             params = new AIChatParams();
         }
-        if (this.skillTools != null && skillLoadResult != null && skillLoadResult.getActivation() != null) {
+        if (!hasPreloadedNodeSkills(context) && this.skillTools != null && skillLoadResult != null && skillLoadResult.getActivation() != null) {
             Map<dev.langchain4j.agent.tool.ToolSpecification, dev.langchain4j.service.tool.ToolExecutor> skillToolsMap =
                     this.skillTools.buildToolMap(skillLoadResult.getActivation());
             if (skillToolsMap != null && !skillToolsMap.isEmpty()) {
@@ -235,7 +258,25 @@ public abstract class LlmNode extends BaseAgentNode {
             context.putAttribute("skillActivation", skillLoadResult.getActivation());
             context.putAttribute("skillRootDir", this.skillProperties == null ? null : this.skillProperties.getRootDir());
         }
+        if (this.agentControlToolService != null) {
+            Map<dev.langchain4j.agent.tool.ToolSpecification, dev.langchain4j.service.tool.ToolExecutor> controlToolsMap =
+                    this.agentControlToolService.buildToolMap(context);
+            if (controlToolsMap != null && !controlToolsMap.isEmpty()) {
+                if (params.getTools() == null) {
+                    params.setTools(new LinkedHashMap<>());
+                }
+                params.getTools().putAll(controlToolsMap);
+            }
+        }
         return params;
+    }
+
+    private boolean hasPreloadedNodeSkills(AgentContext context) {
+        Object value = context == null ? null : context.getAttribute("loadedNodeSkillCodes");
+        if (value instanceof List<?> list) {
+            return !list.isEmpty();
+        }
+        return false;
     }
 
     /**
@@ -270,14 +311,22 @@ public abstract class LlmNode extends BaseAgentNode {
     protected List<ChatMessage> buildMessages(Map<String, String> promptVariables,
                                               SkillLoadResult skillLoadResult,
                                               AgentContext context) {
-        String nodeDirectivePrompt = buildNodeDirectivePrompt();
         String developerPrompt = renderDeveloperPrompt(promptVariables);
+        String nodeSkillPrompt = buildNodeSkillPrompt(context);
         String deepAgentsPrompt = org.jeecg.modules.airag.agent.runtime.DeepAgentsPromptSupport.buildBasePrompt(context, skillLoadResult);
-        if (oConvertUtils.isNotEmpty(nodeDirectivePrompt)) {
+        String controlPrompt = this.agentControlToolService == null ? "" : this.agentControlToolService.buildControlPrompt(context);
+        if (oConvertUtils.isNotEmpty(controlPrompt)) {
             if (oConvertUtils.isNotEmpty(developerPrompt)) {
-                developerPrompt = nodeDirectivePrompt + "\n\n" + developerPrompt;
+                developerPrompt = controlPrompt + "\n\n" + developerPrompt;
             } else {
-                developerPrompt = nodeDirectivePrompt;
+                developerPrompt = controlPrompt;
+            }
+        }
+        if (oConvertUtils.isNotEmpty(nodeSkillPrompt)) {
+            if (oConvertUtils.isNotEmpty(developerPrompt)) {
+                developerPrompt = developerPrompt + "\n\n" + nodeSkillPrompt;
+            } else {
+                developerPrompt = nodeSkillPrompt;
             }
         }
         if (oConvertUtils.isNotEmpty(deepAgentsPrompt)) {
@@ -288,7 +337,7 @@ public abstract class LlmNode extends BaseAgentNode {
             }
         } else {
             String skillIndexPrompt = skillLoadResult == null ? "" : skillLoadResult.getSkillIndexPrompt();
-            if (oConvertUtils.isNotEmpty(skillIndexPrompt)) {
+            if (oConvertUtils.isEmpty(nodeSkillPrompt) && oConvertUtils.isNotEmpty(skillIndexPrompt)) {
                 if (oConvertUtils.isNotEmpty(developerPrompt)) {
                     developerPrompt = developerPrompt + "\n\n" + skillIndexPrompt;
                 } else {
@@ -303,6 +352,195 @@ public abstract class LlmNode extends BaseAgentNode {
         }
         messages.add(new UserMessage(userPrompt));
         return messages;
+    }
+
+    /**
+     * Trace LLM request.
+     */
+    private void traceLlmRequest(AgentContext context, String modelId, List<ChatMessage> messages, AIChatParams params) {
+        if (this.llmTraceSinks == null || this.llmTraceSinks.isEmpty()) {
+            return;
+        }
+        AgentLlmTraceRequest request = new AgentLlmTraceRequest();
+        request.setContext(context);
+        request.setNodeName(nodeName());
+        request.setPromptCode(getPromptCode());
+        request.setPromptVersion(getPromptVersion());
+        request.setModelId(modelId);
+        request.setDeveloperPrompt(extractMessageText(messages, "SYSTEM"));
+        request.setUserPrompt(extractMessageText(messages, "USER"));
+        request.setRenderedPrompt(buildRenderedPromptForTrace(request.getDeveloperPrompt(), request.getUserPrompt()));
+        request.setToolSchema(buildToolSchemaForTrace(params));
+        request.setRequestPayload(buildRequestPayloadForTrace(modelId, messages, params));
+        for (AgentLlmTraceSink sink : this.llmTraceSinks) {
+            try {
+                sink.onRequest(request);
+            } catch (Exception ex) {
+                log.debug("Agent LLM request trace failed, nodeName={}", nodeName(), ex);
+            }
+        }
+    }
+
+    /**
+     * Trace LLM response.
+     */
+    private void traceLlmResponse(AgentContext context,
+                                  String modelId,
+                                  String responseRaw,
+                                  String finishReason,
+                                  boolean success,
+                                  Throwable error) {
+        if (this.llmTraceSinks == null || this.llmTraceSinks.isEmpty()) {
+            return;
+        }
+        AgentLlmTraceResponse response = new AgentLlmTraceResponse();
+        response.setContext(context);
+        response.setNodeName(nodeName());
+        response.setPromptCode(getPromptCode());
+        response.setPromptVersion(getPromptVersion());
+        response.setModelId(modelId);
+        response.setResponseRaw(responseRaw);
+        response.setFinishReason(finishReason);
+        response.setSuccess(success);
+        response.setErrorMessage(error == null ? null : error.getMessage());
+        Map<String, Object> extraInfo = new LinkedHashMap<>();
+        extraInfo.put("finishReason", finishReason);
+        extraInfo.put("nodeName", nodeName());
+        response.setExtraInfo(extraInfo);
+        for (AgentLlmTraceSink sink : this.llmTraceSinks) {
+            try {
+                sink.onResponse(response);
+            } catch (Exception ex) {
+                log.debug("Agent LLM response trace failed, nodeName={}", nodeName(), ex);
+            }
+        }
+    }
+
+    private String extractMessageText(List<ChatMessage> messages, String role) {
+        if (messages == null || messages.isEmpty()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (ChatMessage message : messages) {
+            if (message == null || !role.equalsIgnoreCase(String.valueOf(message.type()))) {
+                continue;
+            }
+            String text = invokeMessageText(message);
+            if (oConvertUtils.isEmpty(text)) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append("\n\n");
+            }
+            sb.append(text);
+        }
+        return sb.length() == 0 ? null : sb.toString();
+    }
+
+    private String invokeMessageText(ChatMessage message) {
+        Object value = invokeGetterMethod(message, "text");
+        if (value == null) {
+            value = invokeGetterMethod(message, "singleText");
+        }
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private String buildRenderedPromptForTrace(String developerPrompt, String userPrompt) {
+        StringBuilder sb = new StringBuilder();
+        if (oConvertUtils.isNotEmpty(developerPrompt)) {
+            sb.append(developerPrompt);
+        }
+        if (oConvertUtils.isNotEmpty(userPrompt)) {
+            if (sb.length() > 0) {
+                sb.append("\n\n");
+            }
+            sb.append(userPrompt);
+        }
+        return sb.length() == 0 ? null : sb.toString();
+    }
+
+    private Map<String, Object> buildRequestPayloadForTrace(String modelId, List<ChatMessage> messages, AIChatParams params) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("modelId", modelId);
+        payload.put("nodeName", nodeName());
+        payload.put("messageCount", messages == null ? 0 : messages.size());
+        payload.put("messageRoles", buildMessageRoles(messages));
+        payload.put("params", snapshotParams(params));
+        return payload;
+    }
+
+    private List<String> buildMessageRoles(List<ChatMessage> messages) {
+        List<String> roles = new ArrayList<>();
+        if (messages == null) {
+            return roles;
+        }
+        for (ChatMessage message : messages) {
+            roles.add(message == null ? null : String.valueOf(message.type()));
+        }
+        return roles;
+    }
+
+    private Map<String, Object> snapshotParams(AIChatParams params) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        if (params == null) {
+            return snapshot;
+        }
+        String[] fields = new String[]{
+                "provider", "modelName", "baseUrl",
+                "temperature", "topP", "presencePenalty", "frequencyPenalty",
+                "maxTokens", "timeout", "enableSearch",
+                "noThinking", "returnThinking", "reasoningEffort",
+                "pluginIds", "knowIds"
+        };
+        for (String field : fields) {
+            snapshot.put(field, invokeGetter(params, field));
+        }
+        snapshot.put("tools", buildToolNames(params));
+        return snapshot;
+    }
+
+    private List<String> buildToolNames(AIChatParams params) {
+        Object tools = invokeGetter(params, "tools");
+        List<String> names = new ArrayList<>();
+        if (tools instanceof Map<?, ?> map) {
+            for (Object key : map.keySet()) {
+                Object name = invokeGetterMethod(key, "name");
+                names.add(name == null ? String.valueOf(key) : String.valueOf(name));
+            }
+        }
+        return names;
+    }
+
+    private String buildToolSchemaForTrace(AIChatParams params) {
+        Object tools = invokeGetter(params, "tools");
+        if (tools == null) {
+            return null;
+        }
+        try {
+            return JSON.toJSONString(buildToolNames(params));
+        } catch (Exception ex) {
+            return String.valueOf(tools);
+        }
+    }
+
+    private Object invokeGetter(Object target, String field) {
+        if (target == null || oConvertUtils.isEmpty(field)) {
+            return null;
+        }
+        String methodName = "get" + Character.toUpperCase(field.charAt(0)) + field.substring(1);
+        return invokeGetterMethod(target, methodName);
+    }
+
+    private Object invokeGetterMethod(Object target, String methodName) {
+        if (target == null || oConvertUtils.isEmpty(methodName)) {
+            return null;
+        }
+        try {
+            Method method = target.getClass().getMethod(methodName);
+            return method.invoke(target);
+        } catch (Exception ignore) {
+            return null;
+        }
     }
 
     /**
@@ -377,6 +615,9 @@ public abstract class LlmNode extends BaseAgentNode {
         if (this.skillRuntimeService == null || context == null) {
             return null;
         }
+        if (hasPreloadedNodeSkills(context)) {
+            return null;
+        }
         boolean deepAgentsMode = org.jeecg.modules.airag.agent.runtime.DeepAgentsPromptSupport.isEnabled(context);
         String skillDomain = oConvertUtils.getString(context.getAttribute("skillDomain"));
         if (!org.springframework.util.StringUtils.hasText(skillDomain) && this.definition != null) {
@@ -400,30 +641,59 @@ public abstract class LlmNode extends BaseAgentNode {
     }
 
     /**
-     * 渲染节点级约束说明。
+     * 构建当前节点显式绑定的完整 Skill 提示词。
      *
-     * @return 节点级约束说明
+     * @param context 运行上下文
+     * @return Skill 正文提示词
      */
-    protected String buildNodeDirectivePrompt() {
-        if (this.definition == null) {
-            return "";
+    protected String buildNodeSkillPrompt(AgentContext context) {
+        return oConvertUtils.getString(context == null ? null : context.getAttribute("nodeSkillPrompt"));
+    }
+
+    /**
+     * 构建当前上下文下的有效工具列表。
+     *
+     * @param context 运行上下文
+     * @return 工具列表
+     */
+    protected List<String> buildEffectiveNodeTools(AgentContext context) {
+        List<String> tools = new ArrayList<>();
+        appendUnique(tools, this.definition == null ? null : this.definition.getTools());
+        if (this.agentControlToolService != null && this.agentControlToolService.isEnabled(context)) {
+            appendUnique(tools, AgentControlToolService.TOOL_HANDOFF_TO_MAIN);
         }
-        StringBuilder sb = new StringBuilder();
-        appendDirectiveLine(sb, "node_name", this.definition.getName());
-        appendDirectiveLine(sb, "node_description", this.definition.getDescription());
-        appendDirectiveLine(sb, "skill_domain", this.definition.getSkillDomain());
-        appendDirectiveLine(sb, "skill_top_k", this.definition.getSkillTopK() == null ? null : String.valueOf(this.definition.getSkillTopK()));
-        appendDirectiveLine(sb, "node_skills", joinList(this.definition.getSkills()));
-        appendDirectiveLine(sb, "node_tools", joinList(this.definition.getTools()));
-        appendDirectiveLine(sb, "node_permissions", joinList(this.definition.getPermissions()));
-        appendDirectiveLine(sb, "response_format", this.definition.getResponseFormat());
-        appendDirectiveLine(sb, "input_constraints", this.definition.getInputConstraints());
-        appendDirectiveLine(sb, "output_constraints", this.definition.getOutputConstraints());
-        appendDirectiveLine(sb, "next_step_condition", this.definition.getNextStepCondition());
-        if (this.definition.getMetadata() != null && !this.definition.getMetadata().isEmpty()) {
-            appendDirectiveLine(sb, "metadata", JSON.toJSONString(this.definition.getMetadata()));
+        return tools;
+    }
+
+    /**
+     * 构建当前上下文下的有效权限列表。
+     *
+     * @param context 运行上下文
+     * @return 权限列表
+     */
+    protected List<String> buildEffectiveNodePermissions(AgentContext context) {
+        List<String> permissions = new ArrayList<>();
+        appendUnique(permissions, this.definition == null ? null : this.definition.getPermissions());
+        if (this.agentControlToolService != null && this.agentControlToolService.isEnabled(context)) {
+            appendUnique(permissions, AgentControlToolService.TOOL_HANDOFF_TO_MAIN);
         }
-        return sb.toString().trim();
+        return permissions;
+    }
+
+    private void appendUnique(List<String> target, List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return;
+        }
+        for (String value : values) {
+            appendUnique(target, value);
+        }
+    }
+
+    private void appendUnique(List<String> target, String value) {
+        if (!org.springframework.util.StringUtils.hasText(value) || target.contains(value)) {
+            return;
+        }
+        target.add(value);
     }
 
     /**
@@ -469,36 +739,6 @@ public abstract class LlmNode extends BaseAgentNode {
      */
     public String getUserPromptTemplate() {
         return this.definition == null ? null : this.definition.getUserPromptTemplate();
-    }
-
-    /**
-     * 将列表合并为文本。
-     *
-     * @param values 列表
-     * @return 文本
-     */
-    private String joinList(List<String> values) {
-        if (values == null || values.isEmpty()) {
-            return "";
-        }
-        return String.join(", ", values);
-    }
-
-    /**
-     * 追加节点约束行。
-     *
-     * @param sb 字符串构造器
-     * @param key 键
-     * @param value 值
-     */
-    private void appendDirectiveLine(StringBuilder sb, String key, String value) {
-        if (!org.springframework.util.StringUtils.hasText(value)) {
-            return;
-        }
-        if (sb.length() > 0) {
-            sb.append('\n');
-        }
-        sb.append("- ").append(key).append(": ").append(value);
     }
 
     private Integer resolveSkillTopK(Object value) {

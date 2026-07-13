@@ -2,7 +2,6 @@ package org.jeecg.modules.system.util;
 
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.JSONArray;
-import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.modules.airag.prompts.service.IAiragPromptTemplateService;
 import org.jeecg.modules.airag.prompts.vo.AiragPromptTemplateVo;
@@ -17,7 +16,6 @@ import java.util.Map;
 /**
  * Runtime helpers for prompt rendering and model JSON parsing.
  */
-@Slf4j
 public class PromptRuntimeUtil {
 
     private PromptRuntimeUtil() {
@@ -49,21 +47,14 @@ public class PromptRuntimeUtil {
                                                  boolean toolCallLogMode) {
         try {
             JSONObject parsed = parseJsonObject(rawContent);
-            log.info("[PROMPT_CHAT_JSON_FULL] stage=first-pass payload={}",
-                    sanitizeToolCallLogJson(parsed, toolCallLogMode).toJSONString());
             return parsed;
         } catch (JeecgBootException firstEx) {
             String repairPrompt = buildJsonRepairPrompt(rawContent);
             String repairedContent = callChatContent(promptChatService, repairPrompt);
             try {
                 JSONObject repairedParsed = parseJsonObject(repairedContent);
-                log.info("[PROMPT_CHAT_JSON_FULL] stage=repair-pass payload={}",
-                        sanitizeToolCallLogJson(repairedParsed, toolCallLogMode).toJSONString());
                 return repairedParsed;
             } catch (JeecgBootException ignored) {
-                log.error("[PROMPT_CHAT_JSON_FULL] stage=repair-pass-parse-fail firstLen={} repairedLen={}",
-                        rawContent == null ? 0 : rawContent.length(),
-                        repairedContent == null ? 0 : repairedContent.length());
                 throw new JeecgBootException("AI回复解析失败，非有效JSON");
             }
         }

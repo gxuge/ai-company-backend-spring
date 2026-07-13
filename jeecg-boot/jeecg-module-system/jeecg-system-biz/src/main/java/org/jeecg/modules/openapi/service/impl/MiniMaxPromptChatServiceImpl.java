@@ -79,7 +79,6 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
         }
         AiragModel model = resolvePromptModel();
         PromptProviderBranch branch = resolveProviderBranch(model);
-        logPromptRoute(model, branch, false);
         AIChatParams params = buildBaseParams(model, branch);
         List<ChatMessage> messages = List.of(new UserMessage(prompt));
         logLlmRequest(model, branch, null, prompt, null, null, params, false);
@@ -107,7 +106,6 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
         AIChatParams params = buildBaseParams(model, branch);
 
         if (!StringUtils.hasText(toolSchema)) {
-            logPromptRoute(model, branch, false);
             logLlmRequest(model, branch, developerPrompt, userPrompt, null, null, params, false);
             String content = aiChatHandler.completions(model.getId(), messages, params);
             logLlmResponse(model, content);
@@ -127,7 +125,6 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
             if (Boolean.FALSE.equals(promptChatConfigBean.getToolCallAutoDowngrade())) {
                 throw new JeecgBootBizTipException("Current model does not support tool call, model=" + model.getModelName());
             }
-            logPromptRoute(model, branch, false);
             logLlmRequest(model, branch, developerPrompt, userPrompt, toolSchema, toolChoiceName, params, false);
             String content = aiChatHandler.completions(model.getId(), messages, params);
             logLlmResponse(model, content);
@@ -137,7 +134,6 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
             return content.trim();
         }
 
-        logPromptRoute(model, branch, true);
         logLlmRequest(model, branch, developerPrompt, userPrompt, toolSchema, toolChoiceName, params, true);
         String content = chatToolCallSingleRound(model, branch, messages, toolSpecification);
         logLlmResponse(model, content);
@@ -599,15 +595,6 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
             }
         }
         return true;
-    }
-
-    private void logPromptRoute(AiragModel model, PromptProviderBranch branch, boolean withTools) {
-        log.info("[PROMPT_CHAT_ROUTE] provider={} modelName={} modelType={} branch={} tools={}",
-                trimToNull(model.getProvider()),
-                trimToNull(model.getModelName()),
-                trimToNull(model.getModelType()),
-                branch.name(),
-                withTools);
     }
 
     private void logLlmRequest(AiragModel model,

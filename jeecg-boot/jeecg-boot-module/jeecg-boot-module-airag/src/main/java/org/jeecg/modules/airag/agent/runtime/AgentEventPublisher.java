@@ -26,6 +26,11 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class AgentEventPublisher {
     /**
+     * DeepAgents 内部委托工具名。
+     */
+    private static final String INTERNAL_TASK_TOOL = "task";
+
+    /**
      * Redis 缓存过期时间，单位分钟。
      */
     private static final long BUFFER_EXPIRE_MINUTES = 30L;
@@ -100,7 +105,7 @@ public class AgentEventPublisher {
                 result
         );
         recordEventTrail(context, dbData);
-        sendOnlyCompact(context, "agent.end", null, agentName, buildAgentEndContent(result), result == null || result.getStatus() == null ? null : (result.getStatus() == AgentResult.Status.FAILED ? 0 : 1), sseData);
+        sendOnlyCompact(context, "agent.end", null, agentName, buildAgentEndContent(result), result == null || result.getStatus() == null ? null : eventStatus(result), sseData);
     }
 
     /**
@@ -149,7 +154,7 @@ public class AgentEventPublisher {
                 "subagent",
                 subAgentName,
                 result == null ? null : result.getContent(),
-                result == null || result.getStatus() == null ? 0 : (result.getStatus() == AgentResult.Status.FAILED ? 0 : 1),
+                result == null || result.getStatus() == null ? 0 : eventStatus(result),
                 mergedPayload
         );
         Map<String, Object> sseData = buildCompactSubAgentEventData(
@@ -162,7 +167,7 @@ public class AgentEventPublisher {
         recordEventTrail(context, dbData);
         persistAndSendCustomCompact(context, "subagent.end", "subagent", subAgentName,
                 buildSubAgentEndContent(result),
-                result == null || result.getStatus() == null ? 0 : (result.getStatus() == AgentResult.Status.FAILED ? 0 : 1),
+                result == null || result.getStatus() == null ? 0 : eventStatus(result),
                 dbData,
                 sseData);
     }
@@ -224,9 +229,8 @@ public class AgentEventPublisher {
                 2,
                 null
         );
-        Map<String, Object> sseData = buildCompactLlmEventData(nodeName, promptCode, null, null);
         recordEventTrail(context, dbData);
-        persistAndSendCompact(context, "llm.start", NodeKind.LLM, nodeName, "开始生成", 2, dbData, sseData);
+        persistAndSendCompact(context, "llm.start", NodeKind.LLM, nodeName, "开始生成", 2, dbData, null);
     }
 
     /**
@@ -281,7 +285,7 @@ public class AgentEventPublisher {
                 payload
         );
         recordEventTrail(context, dbData);
-        persistAndSendCompact(context, "llm.error", NodeKind.LLM, nodeName, errorText, 0, dbData, errorText);
+        persistAndSendCompact(context, "llm.error", NodeKind.LLM, nodeName, errorText, 0, dbData, null);
     }
 
     /**
@@ -318,9 +322,8 @@ public class AgentEventPublisher {
                 success ? 1 : 0,
                 payload
         );
-        Map<String, Object> sseData = buildCompactLlmEventData(nodeName, promptCode, content, success ? 1 : 0);
         recordEventTrail(context, dbData);
-        persistAndSendCompact(context, "llm.end", NodeKind.LLM, nodeName, content, success ? 1 : 0, dbData, sseData);
+        persistAndSendCompact(context, "llm.end", NodeKind.LLM, nodeName, content, success ? 1 : 0, dbData, null);
     }
 
     /**
@@ -582,7 +585,6 @@ public class AgentEventPublisher {
         payload.setName(nodeName);
         payload.setContent(content);
         payload.setStatus(status);
-        payload.setData(data);
         this.sseConnectionManager.send(context.getSseConnectionKey(), eventName, payload);
     }
 
@@ -696,7 +698,6 @@ public class AgentEventPublisher {
         payload.setName(nodeName);
         payload.setContent(content);
         payload.setStatus(status);
-        payload.setData(sseData);
         this.sseConnectionManager.send(context.getSseConnectionKey(), eventName, payload);
         log.debug("[AGENT_EVENT] {}", JSONObject.toJSONString(payload));
     }
@@ -724,6 +725,7 @@ public class AgentEventPublisher {
         if (dbData != null) {
             fillContextFields(dbData, context);
         }
+        boolean suppressSse = isInternalTaskToolEvent(nodeKind, dbData);
         this.eventService.saveEvent(
                 context.getMessageId(),
                 context.getSessionId(),
@@ -734,15 +736,46 @@ public class AgentEventPublisher {
                 status,
                 dbData
         );
+        if (suppressSse) {
+            return;
+        }
         SsePayload payload = new SsePayload();
         payload.setEvent(eventName);
         payload.setType(nodeKind.name().toLowerCase());
         payload.setName(nodeName);
         payload.setContent(content);
         payload.setStatus(status);
-        payload.setData(sseData);
+        applyCompactSseData(payload, nodeKind, sseData);
         this.sseConnectionManager.send(context.getSseConnectionKey(), eventName, payload);
         log.debug("[AGENT_EVENT] {}", JSONObject.toJSONString(payload));
+    }
+
+    @SuppressWarnings("unchecked")
+    private void applyCompactSseData(SsePayload payload, NodeKind nodeKind, Object sseData) {
+        if (payload == null) {
+            return;
+        }
+        if (nodeKind == NodeKind.TOOL && sseData instanceof Map<?, ?> rawMap) {
+            Map<String, Object> data = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+                if (entry.getKey() != null) {
+                    data.put(String.valueOf(entry.getKey()), entry.getValue());
+                }
+            }
+            payload.setToolName(stringValue(data.get("toolName")));
+            payload.setContentType(stringValue(data.get("contentType")));
+            payload.setResult(data.get("result"));
+            payload.setError(stringValue(data.get("error")));
+            return;
+        }
+        payload.setData(sseData);
+    }
+
+    private boolean isInternalTaskToolEvent(NodeKind nodeKind, Map<String, Object> dbData) {
+        if (nodeKind != NodeKind.TOOL || dbData == null) {
+            return false;
+        }
+        return INTERNAL_TASK_TOOL.equalsIgnoreCase(oConvertUtils.getString(dbData.get("toolName")));
     }
 
     /**
@@ -765,17 +798,21 @@ public class AgentEventPublisher {
                                                           String rawContent) {
         Map<String, Object> data = new LinkedHashMap<>();
         putString(data, "toolName", toolName);
-        putString(data, "summary", summarize(content));
         if ("tool.start".equals(eventName)) {
             putString(data, "contentType", "progress");
         } else if ("tool.error".equals(eventName)) {
             putString(data, "contentType", "error");
-            putString(data, "error", buildToolResultPreview(payload, rawContent));
+            String error = buildToolResultPreview(payload, rawContent);
+            if (!sameText(error, content)) {
+                putString(data, "error", error);
+            }
         } else if (status != null) {
             data.put("status", status);
             putString(data, "contentType", resolveToolContentType(payload, rawContent));
             String preview = buildToolResultPreview(payload, rawContent);
-            putString(data, "result", preview);
+            if (!sameText(preview, content)) {
+                putString(data, "result", preview);
+            }
         }
         return data;
     }
@@ -821,9 +858,9 @@ public class AgentEventPublisher {
      * 构建 LLM 起止事件的精简数据。
      */
     private Map<String, Object> buildCompactLlmEventData(String nodeName,
-                                                         String promptCode,
-                                                         String content,
-                                                         Integer status) {
+                                                          String promptCode,
+                                                          String content,
+                                                          Integer status) {
         Map<String, Object> data = new LinkedHashMap<>();
         putString(data, "nodeName", nodeName);
         putString(data, "promptCode", promptCode);
@@ -911,6 +948,7 @@ public class AgentEventPublisher {
             case SUCCESS -> "执行完成";
             case FAILED -> "执行失败";
             case WAITING_USER -> "等待用户继续输入";
+            case HANDOFF -> "已交还主Agent重新派活";
         };
     }
 
@@ -925,8 +963,19 @@ public class AgentEventPublisher {
             case SUCCESS -> "子Agent执行完成";
             case FAILED -> "子Agent执行失败";
             case WAITING_USER -> "子Agent等待用户继续输入";
+            case HANDOFF -> "子Agent已交还主Agent";
         };
         return base;
+    }
+
+    /**
+     * 转换 AgentResult 为事件状态码。
+     */
+    private int eventStatus(AgentResult result) {
+        if (result == null || result.getStatus() == null) {
+            return 0;
+        }
+        return result.getStatus() == AgentResult.Status.FAILED ? 0 : 1;
     }
 
     /**
@@ -1063,6 +1112,22 @@ public class AgentEventPublisher {
         }
         String text = String.valueOf(value).trim();
         return text.isEmpty() ? null : text;
+    }
+
+    /**
+     * 判断两段文本规范化后是否一致。
+     *
+     * @param left 左文本
+     * @param right 右文本
+     * @return 是否一致
+     */
+    private boolean sameText(String left, String right) {
+        String safeLeft = stringValue(left);
+        String safeRight = stringValue(right);
+        if (safeLeft == null) {
+            return safeRight == null;
+        }
+        return safeLeft.equals(safeRight);
     }
 
     /**
