@@ -52,13 +52,19 @@ public abstract class ToolNode extends BaseAgentNode {
         request.setToolName(this.toolName);
         ToolCallResult toolCallResult = this.toolRegistry.execute(context, request);
         if (!toolCallResult.isSuccess()) {
-            return NodeResult.failure(toolCallResult.getErrorMessage());
+            NodeResult result = NodeResult.failure(toolCallResult.getErrorMessage());
+            result.put("toolName", this.toolName);
+            result.put("toolArguments", request.getArguments());
+            result.put("toolData", toolCallResult.getData());
+            result.put("toolPayload", toolCallResult.getPayload());
+            return result;
         }
         NodeResult result = NodeResult.success(toolCallResult.getSummary());
         result.setContent(toolCallResult.getSummary());
         result.setAction(this.toolName);
         result.setSuccess(true);
         result.put("toolName", this.toolName);
+        result.put("toolArguments", request.getArguments());
         result.put("toolData", toolCallResult.getData());
         result.put("toolPayload", toolCallResult.getPayload());
         return result;

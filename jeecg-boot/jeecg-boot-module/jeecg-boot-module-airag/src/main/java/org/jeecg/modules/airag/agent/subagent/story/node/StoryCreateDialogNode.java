@@ -189,6 +189,7 @@ public class StoryCreateDialogNode extends LlmNode {
                 .addStringProperty("storySetting", "故事设定，可为空")
                 .addStringProperty("siteSetting", "场景设定，可为空")
                 .addStringProperty("plotOutline", "剧情大纲，可为空")
+                .addStringProperty("extraInfo", "补充故事信息，可为空")
                 .build();
         return ToolSpecification.builder()
                 .name(StoryTaskToolSpec.STORY_FULL_GENERATE)

@@ -75,6 +75,9 @@ public class TsAgentDeepAgentsMainNode extends LlmNode {
 
                 缺失信息：
                 {{missing_fields_json}}
+
+                子 Agent 交还报告：
+                {{handoff_report_json}}
                 """);
         return definition;
     }
@@ -95,6 +98,7 @@ public class TsAgentDeepAgentsMainNode extends LlmNode {
         variables.putIfAbsent("recent_messages_block", oConvertUtils.getString(context == null ? null : context.getAttribute("recentMessagesBlock")));
         variables.putIfAbsent("confirmed_fields_json", JSON.toJSONString(context == null ? null : context.getAttribute("confirmedFieldsJson")));
         variables.putIfAbsent("missing_fields_json", JSON.toJSONString(context == null ? null : context.getAttribute("missingFieldsJson")));
+        variables.putIfAbsent("handoff_report_json", JSON.toJSONString(context == null ? null : context.getAttribute("handoffReport")));
         return variables;
     }
 

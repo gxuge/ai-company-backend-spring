@@ -52,6 +52,38 @@ public class TsAgentChatSession implements Serializable {
     private String agentCode;
 
     /**
+     * 当前接管会话的 Agent 编码。
+     */
+    @TableField("active_agent_code")
+    private String activeAgentCode;
+
+    /**
+     * 当前 Agent 最后切换时间。
+     */
+    @TableField("active_agent_updated_at")
+    @JsonFormat(timezone = "GMT+8", pattern = "yyyy-MM-dd HH:mm:ss")
+    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date activeAgentUpdatedAt;
+
+    /**
+     * 下一轮恢复执行的节点名称。
+     */
+    @TableField("active_node_name")
+    private String activeNodeName;
+
+    /**
+     * 当前子 Agent 流程阶段。
+     */
+    @TableField("active_stage")
+    private String activeStage;
+
+    /**
+     * 当前子 Agent 可恢复流程状态。
+     */
+    @TableField("agent_flow_state_json")
+    private String agentFlowStateJson;
+
+    /**
      * 用户ID。
      */
     @TableField("user_id")

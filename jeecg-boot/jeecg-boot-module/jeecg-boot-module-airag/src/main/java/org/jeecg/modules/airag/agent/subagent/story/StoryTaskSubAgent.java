@@ -4,6 +4,7 @@ import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.airag.agent.graph.NodeResult;
 import org.jeecg.modules.airag.agent.graph.SubAgent;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
+import org.jeecg.modules.airag.agent.runtime.AgentFlowStateSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentHandoffSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentResult;
 import org.jeecg.modules.airag.agent.runtime.NodeRunner;
@@ -25,6 +26,10 @@ import java.util.Map;
  */
 @Component
 public class StoryTaskSubAgent implements SubAgent {
+    private static final String STAGE_DIALOG = "dialog";
+    private static final String STAGE_GATE = "gate";
+    private static final String STAGE_CONFIRMATION = "confirmation";
+    private static final String STAGE_BACKGROUND = "background";
 
     private final NodeRunner nodeRunner;
     private final StoryCreateDialogNode storyCreateDialogNode;
@@ -51,17 +56,22 @@ public class StoryTaskSubAgent implements SubAgent {
         Map<String, Object> chainData = buildChainData();
         if (context != null) {
             context.putAttribute("storyTaskChainSpec", chainData);
-            context.putAttribute("storyTaskStage", "dialog");
         }
 
         try {
-            if (hasStoryCoreState(context)) {
+            String stage = resolveStage(context);
+            if (STAGE_BACKGROUND.equals(stage)) {
+                return continueWithBackground(context, chainData);
+            }
+            if ((STAGE_CONFIRMATION.equals(stage) || STAGE_GATE.equals(stage) || hasStoryCoreState(context))
+                    && hasStoryCoreState(context)) {
                 AgentResult decisionResult = handleExistingStoryCore(context, chainData);
                 if (decisionResult != null) {
                     return decisionResult;
                 }
             }
 
+            markStage(context, STAGE_DIALOG, this.storyCreateDialogNode.nodeName());
             NodeResult dialogResult = this.nodeRunner.run(context, this.storyCreateDialogNode);
             storeNodeResult(context, "storyDialogNodeResult", dialogResult);
             AgentResult dialogHandoff = handoffIfNeeded(context, dialogResult, chainData, "dialog");
@@ -70,11 +80,11 @@ public class StoryTaskSubAgent implements SubAgent {
             }
 
             if (!hasStoryCoreState(context)) {
-                return waiting(dialogResult == null ? null : dialogResult.getContent(), chainData, "dialog");
+                return waiting(context, dialogResult == null ? null : dialogResult.getContent(), chainData, STAGE_DIALOG);
             }
 
             if (context != null) {
-                context.putAttribute("storyTaskStage", "gate");
+                markStage(context, STAGE_GATE, this.storyFlowGateNode.nodeName());
             }
             NodeResult gateResult = this.nodeRunner.run(context, this.storyFlowGateNode);
             storeNodeResult(context, "storyFlowGateNodeResult", gateResult);
@@ -91,7 +101,7 @@ public class StoryTaskSubAgent implements SubAgent {
                 if (!oConvertUtils.isNotEmpty(question)) {
                     question = gateResult == null ? null : gateResult.getContent();
                 }
-                return waiting(question, chainData, "gate");
+                return waiting(context, question, chainData, STAGE_GATE, gateDecision);
             }
 
             return continueWithBackground(context, chainData);
@@ -99,14 +109,13 @@ public class StoryTaskSubAgent implements SubAgent {
             AgentResult result = AgentResult.failed(ex.getMessage());
             result.getData().putAll(chainData);
             result.getData().put("stage", "failed");
+            AgentFlowStateSupport.attachResumeData(result, context);
             return result;
         }
     }
 
     private AgentResult handleExistingStoryCore(AgentContext context, Map<String, Object> chainData) {
-        if (context != null) {
-            context.putAttribute("storyTaskStage", "confirmation");
-        }
+        markStage(context, STAGE_CONFIRMATION, this.storyCreateDialogNode.nodeName());
         NodeResult dialogResult = this.nodeRunner.run(context, this.storyCreateDialogNode);
         storeNodeResult(context, "storyConfirmationDialogNodeResult", dialogResult);
         AgentResult handoff = handoffIfNeeded(context, dialogResult, chainData, "confirmation");
@@ -123,7 +132,7 @@ public class StoryTaskSubAgent implements SubAgent {
         }
         if ("ASK_USER".equalsIgnoreCase(action)) {
             String reply = oConvertUtils.getString(decision.get("reply"));
-            return waiting(reply, chainData, "confirmation", decision);
+            return waiting(context, reply, chainData, STAGE_CONFIRMATION, decision);
         }
         if ("REGENERATE".equalsIgnoreCase(action) || "MODIFY".equalsIgnoreCase(action)) {
             if (context != null) {
@@ -131,13 +140,11 @@ public class StoryTaskSubAgent implements SubAgent {
             }
             return null;
         }
-        return waiting(oConvertUtils.getString(decision.get("reply")), chainData, "confirmation", decision);
+        return waiting(context, oConvertUtils.getString(decision.get("reply")), chainData, STAGE_CONFIRMATION, decision);
     }
 
     private AgentResult continueWithBackground(AgentContext context, Map<String, Object> chainData) {
-        if (context != null) {
-            context.putAttribute("storyTaskStage", "background");
-        }
+        markStage(context, STAGE_BACKGROUND, this.storyCreateBackgroundNode.nodeName());
         NodeResult backgroundResult = this.nodeRunner.run(context, this.storyCreateBackgroundNode);
         storeNodeResult(context, "storyBackgroundNodeResult", backgroundResult);
         AgentResult backgroundHandoff = handoffIfNeeded(context, backgroundResult, chainData, "background");
@@ -155,20 +162,30 @@ public class StoryTaskSubAgent implements SubAgent {
         if (context != null) {
             context.putAttribute("storyTaskStage", "done");
         }
-        AgentResult result = AgentResult.success(content);
-        result.setStructuredResult(buildStructuredResult(context, backgroundResult));
+        Object structuredResult = buildStructuredResult(context, backgroundResult);
+        AgentResult result = AgentHandoffSupport.buildCompletedHandoffResult(
+                context,
+                subAgentName(),
+                content,
+                structuredResult
+        );
         result.getData().putAll(chainData);
         result.getData().put("stage", "done");
         result.getData().put("background", backgroundResult == null ? null : backgroundResult.getData());
         return result;
     }
 
-    private AgentResult waiting(String content, Map<String, Object> chainData, String stage) {
-        return waiting(content, chainData, stage, null);
+    private AgentResult waiting(AgentContext context, String content, Map<String, Object> chainData, String stage) {
+        return waiting(context, content, chainData, stage, null);
     }
 
-    private AgentResult waiting(String content, Map<String, Object> chainData, String stage, Map<String, Object> decision) {
+    private AgentResult waiting(AgentContext context,
+                                String content,
+                                Map<String, Object> chainData,
+                                String stage,
+                                Map<String, Object> decision) {
         String text = oConvertUtils.isNotEmpty(content) ? content : "你对这版故事满意吗？想先改哪部分？";
+        markStage(context, stage, this.storyCreateDialogNode.nodeName());
         AgentResult result = AgentResult.waitingUser(text);
         result.setStructuredResult(chainData);
         result.getData().putAll(chainData);
@@ -182,7 +199,35 @@ public class StoryTaskSubAgent implements SubAgent {
                 result.getData().put("options", options);
             }
         }
+        AgentFlowStateSupport.attachResumeData(result, context);
         return result;
+    }
+
+    private String resolveStage(AgentContext context) {
+        if (context == null) {
+            return STAGE_DIALOG;
+        }
+        String stage = oConvertUtils.getString(context.getActiveStage());
+        if (!oConvertUtils.isNotEmpty(stage)) {
+            stage = oConvertUtils.getString(context.getAttribute("storyTaskStage"));
+        }
+        if (!oConvertUtils.isNotEmpty(stage)
+                && this.storyCreateBackgroundNode.nodeName().equalsIgnoreCase(
+                oConvertUtils.getString(context.getResumeNodeName()))) {
+            return STAGE_BACKGROUND;
+        }
+        if (!oConvertUtils.isNotEmpty(stage)) {
+            return hasStoryCoreState(context) ? STAGE_CONFIRMATION : STAGE_DIALOG;
+        }
+        return stage.trim().toLowerCase();
+    }
+
+    private void markStage(AgentContext context, String stage, String resumeNodeName) {
+        if (context == null) {
+            return;
+        }
+        context.putAttribute("storyTaskStage", stage);
+        AgentFlowStateSupport.markResume(context, resumeNodeName, stage);
     }
 
     private boolean shouldContinue(Map<String, Object> gateDecision) {

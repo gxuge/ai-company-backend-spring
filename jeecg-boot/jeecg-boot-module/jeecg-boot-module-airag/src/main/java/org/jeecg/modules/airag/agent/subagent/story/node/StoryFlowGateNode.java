@@ -38,7 +38,6 @@ public class StoryFlowGateNode extends ToolNode {
                     : "preset";
         }
         arguments.put("stage", stage);
-        arguments.put("userInput", oConvertUtils.getString(context == null ? null : context.getUserInput()));
         request.setArguments(arguments);
         if (context != null) {
             context.putAttribute("storyFlowStage", stage);

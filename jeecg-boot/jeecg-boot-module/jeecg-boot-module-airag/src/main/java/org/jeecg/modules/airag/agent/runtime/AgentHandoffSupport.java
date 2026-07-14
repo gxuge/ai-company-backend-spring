@@ -18,6 +18,10 @@ public final class AgentHandoffSupport {
      */
     public static final String ACTION_HANDOFF_TO_MAIN = "HANDOFF_TO_MAIN";
     /**
+     * 主 Agent 编码。
+     */
+    public static final String MAIN_AGENT_CODE = AgentRegistry.MAIN_AGENT_CODE;
+    /**
      * 上下文中的交还报告字段。
      */
     public static final String ATTR_HANDOFF_TO_MAIN = "agentHandoffToMain";
@@ -107,15 +111,53 @@ public final class AgentHandoffSupport {
         Map<String, Object> payload = getHandoffPayload(context);
         payload.putIfAbsent("action", ACTION_HANDOFF_TO_MAIN);
         payload.putIfAbsent("status", "HANDOFF");
+        payload.putIfAbsent("targetAgentCode", MAIN_AGENT_CODE);
         payload.putIfAbsent("subAgentName", subAgentName);
         payload.putIfAbsent("stage", fallbackStage);
         payload.putIfAbsent("userRequest", context == null ? null : context.getUserInput());
         payload.putIfAbsent("reason", "用户请求已超出当前子Agent职责，需要交还主Agent重新派活");
         payload.putIfAbsent("progressSummary", "当前子Agent已停止继续处理，并交还主Agent重新判断。");
         String content = "已交还主Agent重新派活：" + oConvertUtils.getString(payload.get("userRequest"));
-        AgentResult result = AgentResult.handoff(content);
+        String handoffInput = oConvertUtils.getString(payload.get("userRequest"));
+        AgentResult result = AgentResult.handoffTo(MAIN_AGENT_CODE, handoffInput);
+        result.setContent(content);
         result.setStructuredResult(payload);
         result.getData().putAll(payload);
+        result.getHandoffContext().put("handoffReport", payload);
+        return result;
+    }
+
+    /**
+     * 子 Agent 完成职责后生成交还主 Agent 的结果。
+     *
+     * @param context 运行上下文
+     * @param subAgentName 子 Agent 名称
+     * @param content 完成摘要
+     * @param structuredResult 完整结构化结果
+     * @return Handoff 结果
+     */
+    public static AgentResult buildCompletedHandoffResult(AgentContext context,
+                                                          String subAgentName,
+                                                          String content,
+                                                          Object structuredResult) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("action", ACTION_HANDOFF_TO_MAIN);
+        payload.put("status", "HANDOFF");
+        payload.put("targetAgentCode", MAIN_AGENT_CODE);
+        payload.put("subAgentName", subAgentName);
+        payload.put("stage", "done");
+        payload.put("completed", Boolean.TRUE);
+        payload.put("userRequest", context == null ? null : context.getUserInput());
+        payload.put("reason", "子Agent职责内任务已完成，交还主Agent统一回复用户");
+        payload.put("progressSummary", content);
+        payload.put("result", structuredResult);
+
+        String handoffInput = "子Agent任务已经完成。请根据交还报告直接向用户确认结果，不要再次委托同一个子Agent。";
+        AgentResult result = AgentResult.handoffTo(MAIN_AGENT_CODE, handoffInput);
+        result.setContent(content);
+        result.setStructuredResult(payload);
+        result.getData().putAll(payload);
+        result.getHandoffContext().put("handoffReport", payload);
         return result;
     }
 

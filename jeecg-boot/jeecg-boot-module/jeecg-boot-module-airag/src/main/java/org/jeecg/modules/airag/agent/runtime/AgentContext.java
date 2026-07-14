@@ -75,6 +75,34 @@ public class AgentContext {
      */
     private String latestContent;
     /**
+     * 当前执行节点名称。
+     */
+    private String currentNodeName;
+    /**
+     * 当前执行节点类型。
+     */
+    private String currentNodeType;
+    /**
+     * 最后一个成功且正文非空的结果节点名称。
+     */
+    private String resultNodeName;
+    /**
+     * 最后一个成功且正文非空的结果节点类型。
+     */
+    private String resultNodeType;
+    /**
+     * 最近完成的 SubAgent 完整事件ID。
+     */
+    private String lastCompletedSubAgentEventId;
+    /**
+     * 跨消息恢复时下一步执行的节点名称。
+     */
+    private String resumeNodeName;
+    /**
+     * 跨消息恢复时当前子 Agent 流程阶段。
+     */
+    private String activeStage;
+    /**
      * 共享扩展数据。
      */
     private final Map<String, Object> attributes = new ConcurrentHashMap<>();
@@ -116,6 +144,18 @@ public class AgentContext {
      */
     public Object getAttribute(String key) {
         return this.attributes.get(key);
+    }
+
+    /**
+     * 删除上下文字段。
+     *
+     * @param key 键
+     */
+    public void removeAttribute(String key) {
+        if (key == null || key.isBlank()) {
+            return;
+        }
+        this.attributes.remove(key);
     }
 
     /**
@@ -168,6 +208,44 @@ public class AgentContext {
     }
 
     /**
+     * 标记当前正在执行的节点。
+     *
+     * @param nodeName 节点名称
+     * @param nodeType 节点类型
+     */
+    public void markCurrentNode(String nodeName, String nodeType) {
+        this.currentNodeName = normalizeText(nodeName);
+        this.currentNodeType = normalizeText(nodeType);
+    }
+
+    /**
+     * 在节点成功且返回正文时更新最终结果节点。
+     *
+     * @param nodeName 节点名称
+     * @param nodeType 节点类型
+     * @param content 节点正文
+     * @param success 是否执行成功
+     */
+    public void markResultNode(String nodeName, String nodeType, String content, boolean success) {
+        if (!success || content == null || content.isBlank()) {
+            return;
+        }
+        this.resultNodeName = normalizeText(nodeName);
+        this.resultNodeType = normalizeText(nodeType);
+    }
+
+    /**
+     * 切换活动 Agent 前清空上一 Agent 的节点来源。
+     */
+    public void resetNodeSource() {
+        this.currentNodeName = null;
+        this.currentNodeType = null;
+        this.resultNodeName = null;
+        this.resultNodeType = null;
+        this.lastCompletedSubAgentEventId = null;
+    }
+
+    /**
      * 复制出一个子上下文，用于 subagent 独立执行。
      *
      * @param userInput 子上下文用户输入
@@ -189,7 +267,28 @@ public class AgentContext {
         child.setUserInput(userInput);
         child.setSseConnectionKey(this.sseConnectionKey);
         child.setLatestContent(this.latestContent);
+        child.setCurrentNodeName(this.currentNodeName);
+        child.setCurrentNodeType(this.currentNodeType);
+        child.setResultNodeName(this.resultNodeName);
+        child.setResultNodeType(this.resultNodeType);
+        child.setLastCompletedSubAgentEventId(this.lastCompletedSubAgentEventId);
+        child.setResumeNodeName(this.resumeNodeName);
+        child.setActiveStage(this.activeStage);
         child.attributes.putAll(this.attributes);
         return child;
+    }
+
+    /**
+     * 规范化可空文本。
+     *
+     * @param value 原始文本
+     * @return 去除首尾空白后的文本
+     */
+    private String normalizeText(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 }

@@ -64,6 +64,18 @@ public class TsAgentChatMessage implements Serializable {
     private String agentCode;
 
     /**
+     * 生成该消息的节点名称。
+     */
+    @TableField("source_node_name")
+    private String sourceNodeName;
+
+    /**
+     * 关联的 SubAgent 完整事件ID。
+     */
+    @TableField("source_event_id")
+    private String sourceEventId;
+
+    /**
      * 消息正文。
      */
     @TableField("content")

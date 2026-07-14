@@ -4,20 +4,22 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
+import org.springframework.format.annotation.DateTimeFormat;
 
 import java.io.Serializable;
 import java.util.Date;
 
 /**
- * 聊天消息事件表实体。
+ * Agent 聊天消息事件表实体。
  *
  * @author codex
- * @date 2026/6/16
+ * @date 2026/7/14
  */
 @Data
-@TableName("ts_chat_message_events")
-public class TsChatMessageEventEntity implements Serializable {
+@TableName("ts_agent_chat_message_event")
+public class TsAgentChatMessageEventEntity implements Serializable {
     private static final long serialVersionUID = 1L;
 
     /**
@@ -26,10 +28,10 @@ public class TsChatMessageEventEntity implements Serializable {
     @TableId(type = IdType.INPUT)
     private String id;
     /**
-     * 消息ID。
+     * 触发当前 Run 的用户消息ID。
      */
     @TableField("message_id")
-    private String messageId;
+    private Long messageId;
     /**
      * 会话ID。
      */
@@ -76,6 +78,16 @@ public class TsChatMessageEventEntity implements Serializable {
     @TableField("agent_code")
     private String agentCode;
     /**
+     * 实际执行节点名称。
+     */
+    @TableField("node_name")
+    private String nodeName;
+    /**
+     * 节点类型：llm/tool。
+     */
+    @TableField("node_type")
+    private String nodeType;
+    /**
      * 事件块类型。
      */
     private String type;
@@ -88,7 +100,7 @@ public class TsChatMessageEventEntity implements Serializable {
      */
     private String content;
     /**
-     * 状态值。
+     * 状态值：1成功、0失败、2运行中或未知。
      */
     private Integer status;
     /**
@@ -96,7 +108,7 @@ public class TsChatMessageEventEntity implements Serializable {
      */
     private String json;
     /**
-     * 是否删除。
+     * 是否删除：0否、1是。
      */
     private Integer isDeleted;
     /**
@@ -106,9 +118,13 @@ public class TsChatMessageEventEntity implements Serializable {
     /**
      * 创建时间。
      */
+    @JsonFormat(timezone = "GMT+8", pattern = "yyyy-MM-dd HH:mm:ss")
+    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date createdAt;
     /**
      * 更新时间。
      */
+    @JsonFormat(timezone = "GMT+8", pattern = "yyyy-MM-dd HH:mm:ss")
+    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private Date updatedAt;
 }

@@ -4,7 +4,6 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import org.springframework.util.StringUtils;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -123,24 +122,6 @@ public final class SubAgentHistorySupport {
     }
 
     /**
-     * 构建历史块。
-     */
-    public static String buildHistoryBlock(String historyJson) {
-        JSONArray array = parseFirstArray(historyJson);
-        if (array.isEmpty()) {
-            return "无";
-        }
-        List<String> lines = new ArrayList<>();
-        for (Object item : array) {
-            if (item == null) {
-                continue;
-            }
-            lines.add(String.valueOf(item));
-        }
-        return lines.isEmpty() ? "无" : String.join("\n", lines);
-    }
-
-    /**
      * 获取最新一条历史。
      */
     public static JSONObject latestRecord(String historyJson) {
@@ -172,6 +153,14 @@ public final class SubAgentHistorySupport {
     }
 
     private static JSONArray parseFirstArray(String historyJson) {
+        if (StringUtils.hasText(historyJson) && historyJson.trim().startsWith("[")) {
+            try {
+                JSONArray array = JSONArray.parseArray(historyJson);
+                return array == null ? new JSONArray() : array;
+            } catch (Exception ignore) {
+                return new JSONArray();
+            }
+        }
         JSONObject root = parseRoot(historyJson);
         if (root.isEmpty()) {
             return new JSONArray();

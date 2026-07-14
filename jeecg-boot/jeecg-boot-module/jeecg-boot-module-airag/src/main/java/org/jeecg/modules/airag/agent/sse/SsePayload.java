@@ -2,6 +2,9 @@ package org.jeecg.modules.airag.agent.sse;
 
 import lombok.Data;
 
+import java.util.List;
+import java.util.Map;
+
 /**
  * SSE 事件载荷。
  *
@@ -50,4 +53,12 @@ public class SsePayload {
      * 错误信息。
      */
     private String error;
+    /**
+     * 交互问题。
+     */
+    private String question;
+    /**
+     * 交互选项。
+     */
+    private List<Map<String, String>> options;
 }

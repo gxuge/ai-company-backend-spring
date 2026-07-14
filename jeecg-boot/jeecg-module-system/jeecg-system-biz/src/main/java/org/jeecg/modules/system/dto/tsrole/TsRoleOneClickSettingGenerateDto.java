@@ -1,5 +1,6 @@
 package org.jeecg.modules.system.dto.tsrole;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import lombok.Data;
 import org.springframework.util.StringUtils;
 
@@ -24,6 +25,9 @@ public class TsRoleOneClickSettingGenerateDto {
     private String styleHint;
     /** 关键词（可选） */
     private String keywords;
+    /** 额外信息（可选，用于补充角色信息） */
+    @JsonAlias("extra_info")
+    private String extraInfo;
     /** 模板模式：core（默认）/background_optimize */
     private String templateMode;
 
@@ -35,6 +39,7 @@ public class TsRoleOneClickSettingGenerateDto {
         this.greeting = trimToNull(this.greeting);
         this.styleHint = trimToNull(this.styleHint);
         this.keywords = trimToNull(this.keywords);
+        this.extraInfo = trimToNull(this.extraInfo);
         this.templateMode = normalizeTemplateMode(this.templateMode);
     }
 

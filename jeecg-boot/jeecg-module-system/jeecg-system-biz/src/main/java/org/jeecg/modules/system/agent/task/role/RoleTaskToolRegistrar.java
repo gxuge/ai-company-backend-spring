@@ -23,7 +23,6 @@ import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickVoiceGenerateVo;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -41,8 +40,7 @@ public class RoleTaskToolRegistrar {
 
     private static final String ROUTE_ROLE_CORE_FILL = "ROLE_CORE_FILL";
     private static final String ROUTE_ROLE_FULL_GENERATE = "ROLE_FULL_GENERATE";
-    private static final String ROUTE_ROLE_CONFIRMATION_DECISION = "ROLE_CONFIRMATION_DECISION";
-    private static final String ROUTE_ROLE_FLOW_GATE = "ROLE_FLOW_GATE";
+    private static final String ROUTE_ROLE_CONFIRMATION = "ROLE_CONFIRMATION";
     private static final String ROUTE_ROLE_IMAGE_GENERATE = "ROLE_IMAGE_GENERATE";
     private static final String ROUTE_ROLE_VOICE_GENERATE = "ROLE_VOICE_GENERATE";
 
@@ -59,8 +57,7 @@ public class RoleTaskToolRegistrar {
     public void registerTools() {
         this.toolRegistry.register(buildRoleCoreFillPresetTool());
         this.toolRegistry.register(buildRoleGenerateRoleTool());
-        this.toolRegistry.register(buildRoleConfirmationDecisionTool());
-        this.toolRegistry.register(buildRoleFlowGateTool());
+        this.toolRegistry.register(buildRoleConfirmationTool());
         this.toolRegistry.register(buildRoleImageGenerateTool());
         this.toolRegistry.register(buildRoleVoiceGenerateTool());
     }
@@ -87,25 +84,14 @@ public class RoleTaskToolRegistrar {
         return definition;
     }
 
-    private ToolDefinition buildRoleConfirmationDecisionTool() {
+    private ToolDefinition buildRoleConfirmationTool() {
         ToolDefinition definition = new ToolDefinition();
-        definition.setName(RoleTaskToolSpec.ROLE_CONFIRMATION_DECISION);
-        definition.setRouteKey(ROUTE_ROLE_CONFIRMATION_DECISION);
+        definition.setName(RoleTaskToolSpec.ROLE_CONFIRMATION);
+        definition.setRouteKey(ROUTE_ROLE_CONFIRMATION);
         definition.setCategory("role_task");
-        definition.setDisplayName("角色确认判断");
-        definition.setDescription("已有角色核心设定后，由LLM判断用户是接受继续、重新生成、修改，还是需要展示选择");
-        definition.setExecutor(this::executeRoleConfirmationDecision);
-        return definition;
-    }
-
-    private ToolDefinition buildRoleFlowGateTool() {
-        ToolDefinition definition = new ToolDefinition();
-        definition.setName(RoleTaskToolSpec.ROLE_FLOW_GATE);
-        definition.setRouteKey(ROUTE_ROLE_FLOW_GATE);
-        definition.setCategory("role_task");
-        definition.setDisplayName("角色流程门禁");
-        definition.setDescription("判断角色核心结果是否可以进入下一阶段");
-        definition.setExecutor(this::executeRoleFlowGate);
+        definition.setDisplayName("角色确认");
+        definition.setDescription("展示角色确认选项，并根据前端回传的optionValue决定继续、重生成或修改");
+        definition.setExecutor(this::executeRoleConfirmation);
         return definition;
     }
 
@@ -154,7 +140,6 @@ public class RoleTaskToolRegistrar {
             context.putAttribute("roleCorePresetResultJson", resultJson);
             context.putAttribute("roleCoreResult", result);
             context.putAttribute("roleCoreResultJson", resultJson);
-            context.putAttribute("roleFlowStage", "core_confirm");
         }
         ToolCallResult callResult = ToolCallResult.success("已生成角色核心设定", result);
         callResult.setPayload(payload);
@@ -187,55 +172,38 @@ public class RoleTaskToolRegistrar {
                 context.putAttribute("roleCoreResult", result.getSettingResult());
                 context.putAttribute("roleCoreResultJson", coreJson);
             }
-            context.putAttribute("roleFlowStage", "core_confirm");
         }
         ToolCallResult callResult = ToolCallResult.success("已生成完整角色", result);
         callResult.setPayload(payload);
         return callResult;
     }
 
-    private ToolCallResult executeRoleConfirmationDecision(AgentContext context, ToolCallRequest request) {
+    private ToolCallResult executeRoleConfirmation(AgentContext context, ToolCallRequest request) {
         Map<String, Object> args = request == null ? null : request.getArguments();
-        String action = normalizeConfirmationAction(firstText(args, "action"));
+        String rawOptionValue = firstText(args, "optionValue", "option_value");
+        if (!StringUtils.hasText(rawOptionValue) && context != null) {
+            rawOptionValue = oConvertUtils.getString(context.getAttribute("optionValue"));
+        }
+        String optionValue = normalizeOptionValue(rawOptionValue);
+        String action = StringUtils.hasText(optionValue) ? optionValue : "WAIT_CONFIRM";
+        boolean waiting = "WAIT_CONFIRM".equals(action) || "ASK_USER".equals(action);
         Map<String, Object> decision = new LinkedHashMap<>();
         decision.put("action", action);
-        decision.put("reply", firstNonBlank(args, buildConfirmationReply(action), "reply"));
-        decision.put("options", normalizeOptions(args == null ? null : args.get("options")));
-        decision.put("reason", firstNonBlank(args, buildConfirmationReason(action), "reason"));
+        decision.put("question", waiting ? "你对这版角色满意吗？" : null);
+        decision.put("reply", buildConfirmationReply(action));
+        decision.put("options", waiting ? buildConfirmationOptions() : List.of());
+        decision.put("reason", buildConfirmationReason(action));
         if (context != null) {
             context.putAttribute("roleConfirmationDecision", decision);
             context.putAttribute("roleConfirmationDecisionJson", JSONObject.toJSONString(decision));
         }
-        ToolCallResult callResult = ToolCallResult.success("已接收角色确认判断", decision);
-        Map<String, Object> payload = buildCommonPayload(context, request, "confirmation", RoleTaskToolSpec.ROLE_CONFIRMATION_DECISION);
-        payload.put("decision", decision);
-        callResult.setPayload(payload);
-        return callResult;
-    }
-
-    private ToolCallResult executeRoleFlowGate(AgentContext context, ToolCallRequest request) {
-        String stage = firstNonBlank(context, request, "stage");
-        if (!StringUtils.hasText(stage) && context != null) {
-            stage = oConvertUtils.getString(context.getAttribute("roleFlowStage"));
-        }
-        if (!StringUtils.hasText(stage) && hasRoleCoreState(context)) {
-            stage = "core_confirm";
-        }
-        boolean shouldWait = "core_confirm".equalsIgnoreCase(stage)
-                || "core".equalsIgnoreCase(stage)
-                || "preset".equalsIgnoreCase(stage);
-        Map<String, Object> decision = new LinkedHashMap<>();
-        decision.put("action", shouldWait ? "WAIT_CONFIRM" : "NEXT");
-        decision.put("nextStage", shouldWait ? "image" : "done");
-        decision.put("question", shouldWait ? "你对这版角色满意吗？想先改哪部分？" : null);
-        decision.put("reason", shouldWait ? "核心设定已生成，先确认再继续补形象与声音" : "当前阶段可继续");
-        if (context != null) {
-            context.putAttribute("roleFlowGateDecision", decision);
-            context.putAttribute("roleFlowGateDecisionJson", JSONObject.toJSONString(decision));
-            context.putAttribute("roleFlowStage", shouldWait ? "core_confirm" : "done");
-        }
-        ToolCallResult callResult = ToolCallResult.success(shouldWait ? "需要用户确认" : "可以继续下一步", decision);
-        Map<String, Object> payload = buildCommonPayload(context, request, "gate", RoleTaskToolSpec.ROLE_FLOW_GATE);
+        ToolCallResult callResult = ToolCallResult.success(waiting ? "需要用户确认" : "已接收用户选择", decision);
+        Map<String, Object> payload = buildCommonPayload(
+                context,
+                request,
+                "confirmation_option",
+                RoleTaskToolSpec.ROLE_CONFIRMATION
+        );
         payload.put("decision", decision);
         callResult.setPayload(payload);
         return callResult;
@@ -304,47 +272,31 @@ public class RoleTaskToolRegistrar {
         return payload;
     }
 
-    private String normalizeConfirmationAction(String action) {
-        if (!StringUtils.hasText(action)) {
-            return "ASK_USER";
+    private String normalizeOptionValue(String optionValue) {
+        if (!StringUtils.hasText(optionValue)) {
+            return null;
         }
-        String value = action.trim().toUpperCase();
+        String value = optionValue.trim().toUpperCase();
         if ("ACCEPT_AND_CONTINUE".equals(value)
                 || "REGENERATE".equals(value)
-                || "MODIFY".equals(value)
-                || "ASK_USER".equals(value)) {
+                || "MODIFY".equals(value)) {
             return value;
         }
         return "ASK_USER";
     }
 
-    private List<String> normalizeOptions(Object rawOptions) {
-        List<String> options = new ArrayList<>();
-        if (rawOptions instanceof Iterable<?> iterable) {
-            for (Object item : iterable) {
-                if (item != null && StringUtils.hasText(String.valueOf(item))) {
-                    options.add(String.valueOf(item).trim());
-                }
-            }
-        } else if (rawOptions instanceof String text && StringUtils.hasText(text)) {
-            try {
-                List<String> parsed = com.alibaba.fastjson.JSON.parseArray(text, String.class);
-                if (parsed != null) {
-                    for (String item : parsed) {
-                        if (StringUtils.hasText(item)) {
-                            options.add(item.trim());
-                        }
-                    }
-                }
-            } catch (Exception ignored) {
-                options.add(text.trim());
-            }
-        }
-        if (options.isEmpty()) {
-            options.add("我觉得这个可以，继续生成形象和声音");
-            options.add("帮我重新生成一个");
-        }
-        return options;
+    private List<Map<String, String>> buildConfirmationOptions() {
+        return List.of(
+                buildConfirmationOption("满意，继续生成", "ACCEPT_AND_CONTINUE"),
+                buildConfirmationOption("不满意，重新生成", "REGENERATE")
+        );
+    }
+
+    private Map<String, String> buildConfirmationOption(String label, String value) {
+        Map<String, String> option = new LinkedHashMap<>();
+        option.put("label", label);
+        option.put("value", value);
+        return option;
     }
 
     private String buildConfirmationReply(String action) {
@@ -357,18 +309,24 @@ public class RoleTaskToolRegistrar {
         if ("MODIFY".equals(action)) {
             return "好的，我会按你的修改意见调整这版角色。";
         }
+        if ("WAIT_CONFIRM".equals(action)) {
+            return "你对这版角色满意吗？";
+        }
         return "这版角色你想继续完善，还是重新生成一版？";
     }
 
     private String buildConfirmationReason(String action) {
         if ("ACCEPT_AND_CONTINUE".equals(action)) {
-            return "LLM判断用户接受当前角色并希望继续。";
+            return "用户选择接受当前角色并继续。";
         }
         if ("REGENERATE".equals(action)) {
-            return "LLM判断用户希望重新生成角色。";
+            return "用户选择重新生成角色。";
         }
         if ("MODIFY".equals(action)) {
-            return "LLM判断用户希望局部修改当前角色。";
+            return "用户选择修改当前角色。";
+        }
+        if ("WAIT_CONFIRM".equals(action)) {
+            return "角色设定已生成，等待用户选择是否继续。";
         }
         return "LLM判断用户意图不够明确，需要提供选择。";
     }
@@ -382,17 +340,7 @@ public class RoleTaskToolRegistrar {
         }
         String historyJson = TaskAgentSupport.readStringAttribute(context, "subAgentHistoryJson");
         payload.put("historyCount", SubAgentHistorySupport.countHistory(historyJson));
-        payload.put("historyBlock", context == null ? null : context.getAttribute("subAgentHistoryBlock"));
         return payload;
-    }
-
-    private boolean hasRoleCoreState(AgentContext context) {
-        if (context == null) {
-            return false;
-        }
-        return context.getAttribute("roleCoreResultJson") != null
-                || context.getAttribute("roleCorePresetResultJson") != null
-                || context.getAttribute("roleGenerateRoleResultJson") != null;
     }
 
     private String firstNonBlank(AgentContext context, ToolCallRequest request, String... keys) {

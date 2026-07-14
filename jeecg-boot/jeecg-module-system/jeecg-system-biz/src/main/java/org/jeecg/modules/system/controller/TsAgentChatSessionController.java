@@ -9,13 +9,10 @@ import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.system.dto.tsagentchatsession.TsAgentChatSessionUpdateDto;
-import org.jeecg.modules.system.dto.tsagentchatsession.TsAgentChatMessageQueryDto;
 import org.jeecg.modules.system.dto.tsagentchatsession.TsAgentChatReplyDto;
 import org.jeecg.modules.system.dto.tsagentchatsession.TsAgentChatSessionQueryDto;
 import org.jeecg.modules.system.dto.tsagentchatsession.TsAgentChatSessionSaveDto;
-import org.jeecg.modules.system.entity.TsAgentChatMessage;
 import org.jeecg.modules.system.entity.TsAgentChatSession;
-import org.jeecg.modules.system.service.ITsAgentChatMessageService;
 import org.jeecg.modules.system.service.ITsAgentChatReplyService;
 import org.jeecg.modules.system.service.ITsAgentChatSessionService;
 import org.springframework.validation.annotation.Validated;
@@ -43,14 +40,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class TsAgentChatSessionController {
 
     private final ITsAgentChatSessionService tsAgentChatSessionService;
-    private final ITsAgentChatMessageService tsAgentChatMessageService;
     private final ITsAgentChatReplyService tsAgentChatReplyService;
 
     public TsAgentChatSessionController(ITsAgentChatSessionService tsAgentChatSessionService,
-                                        ITsAgentChatMessageService tsAgentChatMessageService,
                                         ITsAgentChatReplyService tsAgentChatReplyService) {
         this.tsAgentChatSessionService = tsAgentChatSessionService;
-        this.tsAgentChatMessageService = tsAgentChatMessageService;
         this.tsAgentChatReplyService = tsAgentChatReplyService;
     }
 
@@ -116,32 +110,6 @@ public class TsAgentChatSessionController {
     public Result<?> deleteSession(@RequestParam("id") Long id) {
         tsAgentChatSessionService.deleteSession(currentUser().getId(), id);
         return Result.OK("删除成功");
-    }
-
-    @Operation(summary = "Agent会话消息分页查询")
-    @GetMapping("/ts-agent-chat-messages")
-    public Result<Page<TsAgentChatMessage>> listMessages(TsAgentChatMessageQueryDto request) {
-        request.applyDefaults();
-        LoginUser user = currentUser();
-        return Result.OK(tsAgentChatMessageService.pageMessages(
-                user.getId(),
-                request.getSessionId(),
-                request.getRoleType(),
-                request.getMessageStatus(),
-                request.getKeyword(),
-                request.getPageNo(),
-                request.getPageSize()
-        ));
-    }
-
-    @Operation(summary = "Agent会话消息详情")
-    @GetMapping("/ts-agent-chat-messages/detail")
-    public Result<TsAgentChatMessage> getMessage(@RequestParam("id") Long id) {
-        TsAgentChatMessage message = tsAgentChatMessageService.getOwnedMessage(currentUser().getId(), id);
-        if (message == null) {
-            return Result.error("消息不存在或无权限访问");
-        }
-        return Result.OK(message);
     }
 
     @Operation(summary = "Agent会话内生成回复")

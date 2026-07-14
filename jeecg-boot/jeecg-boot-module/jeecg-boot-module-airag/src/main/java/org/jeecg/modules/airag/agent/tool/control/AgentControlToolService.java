@@ -98,6 +98,7 @@ public class AgentControlToolService {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("action", AgentHandoffSupport.ACTION_HANDOFF_TO_MAIN);
             payload.put("status", "HANDOFF");
+            payload.put("targetAgentCode", AgentHandoffSupport.MAIN_AGENT_CODE);
             payload.put("subAgentName", oConvertUtils.getString(context == null ? null : context.getAgentCode()));
             payload.put("stage", firstText(args.getString("stage"), currentStage(context)));
             payload.put("reason", args.getString("reason"));

@@ -33,6 +33,7 @@ public class TsAgentChatMessageServiceImpl extends ServiceImpl<TsAgentChatMessag
     private static final String ROLE_SYSTEM = "system";
     private static final String SENDER_USER = "user";
     private static final String SENDER_MAIN_AGENT = "main_agent";
+    private static final String SENDER_SUB_AGENT = "sub_agent";
     private static final String SENDER_SYSTEM = "system";
     private static final String DEFAULT_AGENT_CODE = "main";
 
@@ -57,13 +58,18 @@ public class TsAgentChatMessageServiceImpl extends ServiceImpl<TsAgentChatMessag
                                               Long parentMessageId,
                                               String runId,
                                               String extJson) {
-        return saveMessage(userId, sessionId, ROLE_USER, content, contentFormat, STATUS_SUCCESS, parentMessageId, runId, null, null, null, extJson);
+        return saveMessage(userId, sessionId, ROLE_USER, SENDER_USER, null, content, contentFormat, STATUS_SUCCESS,
+                null, null, parentMessageId, runId, null, null, null, extJson);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public TsAgentChatMessage saveAssistantMessage(String userId,
                                                    Long sessionId,
+                                                   String senderType,
+                                                   String agentCode,
+                                                   String sourceNodeName,
+                                                   String sourceEventId,
                                                    String content,
                                                    String contentFormat,
                                                    String messageStatus,
@@ -74,7 +80,9 @@ public class TsAgentChatMessageServiceImpl extends ServiceImpl<TsAgentChatMessag
                                                    String tokenUsageJson,
                                                    String extJson) {
         String normalizedStatus = oConvertUtils.isEmpty(messageStatus) ? STATUS_SUCCESS : messageStatus.trim();
-        return saveMessage(userId, sessionId, ROLE_ASSISTANT, content, contentFormat, normalizedStatus, parentMessageId, runId, promptCode, modelId, tokenUsageJson, extJson);
+        return saveMessage(userId, sessionId, ROLE_ASSISTANT, senderType, agentCode, content, contentFormat,
+                normalizedStatus, sourceNodeName, sourceEventId, parentMessageId, runId, promptCode, modelId,
+                tokenUsageJson, extJson);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -90,7 +98,8 @@ public class TsAgentChatMessageServiceImpl extends ServiceImpl<TsAgentChatMessag
                                                String tokenUsageJson,
                                                String extJson) {
         String normalizedStatus = oConvertUtils.isEmpty(messageStatus) ? STATUS_SUCCESS : messageStatus.trim();
-        return saveMessage(userId, sessionId, ROLE_SYSTEM, content, contentFormat, normalizedStatus, parentMessageId, runId, promptCode, modelId, tokenUsageJson, extJson);
+        return saveMessage(userId, sessionId, ROLE_SYSTEM, SENDER_SYSTEM, null, content, contentFormat,
+                normalizedStatus, null, null, parentMessageId, runId, promptCode, modelId, tokenUsageJson, extJson);
     }
 
     @Override
@@ -154,9 +163,13 @@ public class TsAgentChatMessageServiceImpl extends ServiceImpl<TsAgentChatMessag
     protected TsAgentChatMessage saveMessage(String userId,
                                              Long sessionId,
                                              String roleType,
+                                             String senderType,
+                                             String agentCode,
                                              String content,
                                              String contentFormat,
                                              String messageStatus,
+                                             String sourceNodeName,
+                                             String sourceEventId,
                                              Long parentMessageId,
                                              String runId,
                                              String promptCode,
@@ -169,8 +182,10 @@ public class TsAgentChatMessageServiceImpl extends ServiceImpl<TsAgentChatMessag
         entity.setSessionId(session.getId());
         entity.setMessageNo(nextMessageNo(session.getId()));
         entity.setRoleType(roleType);
-        entity.setSenderType(resolveSenderType(roleType));
-        entity.setAgentCode(resolveAgentCode(session));
+        entity.setSenderType(resolveSenderType(roleType, senderType));
+        entity.setAgentCode(resolveAgentCode(session, agentCode));
+        entity.setSourceNodeName(sourceNodeName);
+        entity.setSourceEventId(sourceEventId);
         entity.setContent(content);
         entity.setContentRaw(content);
         entity.setVisibleToUser(1);
@@ -204,7 +219,13 @@ public class TsAgentChatMessageServiceImpl extends ServiceImpl<TsAgentChatMessag
         return entity;
     }
 
-    private String resolveSenderType(String roleType) {
+    private String resolveSenderType(String roleType, String senderType) {
+        if (oConvertUtils.isNotEmpty(senderType)) {
+            String normalized = senderType.trim();
+            if (SENDER_MAIN_AGENT.equalsIgnoreCase(normalized) || SENDER_SUB_AGENT.equalsIgnoreCase(normalized)) {
+                return normalized.toLowerCase();
+            }
+        }
         if (ROLE_USER.equalsIgnoreCase(roleType)) {
             return SENDER_USER;
         }
@@ -214,7 +235,13 @@ public class TsAgentChatMessageServiceImpl extends ServiceImpl<TsAgentChatMessag
         return SENDER_MAIN_AGENT;
     }
 
-    private String resolveAgentCode(TsAgentChatSession session) {
+    private String resolveAgentCode(TsAgentChatSession session, String agentCode) {
+        if (oConvertUtils.isNotEmpty(agentCode)) {
+            String normalizedAgentCode = agentCode.trim();
+            if (!normalizedAgentCode.isEmpty()) {
+                return normalizedAgentCode;
+            }
+        }
         if (session == null || oConvertUtils.isEmpty(session.getAgentCode())) {
             return DEFAULT_AGENT_CODE;
         }

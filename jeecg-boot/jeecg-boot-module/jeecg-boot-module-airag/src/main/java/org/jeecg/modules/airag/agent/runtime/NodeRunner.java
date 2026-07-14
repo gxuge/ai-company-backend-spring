@@ -69,11 +69,13 @@ public class NodeRunner {
     private NodeResult runLlmNode(AgentContext context, LlmNode node) {
         boolean success = false;
         NodeResult result = null;
+        markCurrentNode(context, node);
         prepareNodeSkillContext(context, node);
         this.eventPublisher.publishLlmStart(context, node.nodeName(), node.getPromptCode());
         try {
             result = node.execute(context);
             success = result != null && result.isSuccess();
+            markResultNode(context, node, result, success);
             return result;
         } catch (Exception ex) {
             this.eventPublisher.publishLlmError(context, node.nodeName(), node.getPromptCode(), ex);
@@ -163,12 +165,14 @@ public class NodeRunner {
     private NodeResult runToolNode(AgentContext context, ToolNode node) {
         boolean success = false;
         NodeResult result = null;
+        markCurrentNode(context, node);
         Map<String, Object> startPayload = new LinkedHashMap<>();
         startPayload.put("toolName", node.getToolName());
         this.eventPublisher.publishToolStart(context, node.nodeName(), node.getToolName(), startPayload);
         try {
             result = node.execute(context);
             success = result != null && result.isSuccess();
+            markResultNode(context, node, result, success);
             return result;
         } catch (Exception ex) {
             Map<String, Object> errorPayload = new LinkedHashMap<>();
@@ -186,5 +190,46 @@ public class NodeRunner {
                     payload
             );
         }
+    }
+
+    /**
+     * 标记当前执行节点。
+     *
+     * @param context 运行上下文
+     * @param node 节点
+     */
+    private void markCurrentNode(AgentContext context, AgentNode node) {
+        if (context == null || node == null) {
+            return;
+        }
+        context.markCurrentNode(node.nodeName(), nodeType(node.kind()));
+    }
+
+    /**
+     * 成功节点返回正文后，记录为当前最终结果节点。
+     *
+     * @param context 运行上下文
+     * @param node 节点
+     * @param result 节点结果
+     * @param success 是否成功
+     */
+    private void markResultNode(AgentContext context,
+                                AgentNode node,
+                                NodeResult result,
+                                boolean success) {
+        if (context == null || node == null || result == null) {
+            return;
+        }
+        context.markResultNode(node.nodeName(), nodeType(node.kind()), result.getContent(), success);
+    }
+
+    /**
+     * 转换节点类型为存储值。
+     *
+     * @param kind 节点枚举
+     * @return 小写节点类型
+     */
+    private String nodeType(NodeKind kind) {
+        return kind == null ? null : kind.name().toLowerCase();
     }
 }

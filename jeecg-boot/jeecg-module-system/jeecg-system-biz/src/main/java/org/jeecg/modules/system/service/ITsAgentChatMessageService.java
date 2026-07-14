@@ -19,6 +19,8 @@ public interface ITsAgentChatMessageService extends IService<TsAgentChatMessage>
      *
      * @param userId 用户ID
      * @param sessionId 会话ID
+     * @param senderType 发送方类型
+     * @param agentCode 实际回复 Agent 编码
      * @param content 消息内容
      * @param contentFormat 内容格式
      * @param parentMessageId 父消息ID
@@ -39,6 +41,10 @@ public interface ITsAgentChatMessageService extends IService<TsAgentChatMessage>
      *
      * @param userId 用户ID
      * @param sessionId 会话ID
+     * @param senderType 发送方类型
+     * @param agentCode 实际回复 Agent 编码
+     * @param sourceNodeName 生成消息的节点名称
+     * @param sourceEventId 关联的 SubAgent 完整事件ID
      * @param content 消息内容
      * @param contentFormat 内容格式
      * @param messageStatus 消息状态
@@ -52,6 +58,10 @@ public interface ITsAgentChatMessageService extends IService<TsAgentChatMessage>
      */
     TsAgentChatMessage saveAssistantMessage(String userId,
                                             Long sessionId,
+                                            String senderType,
+                                            String agentCode,
+                                            String sourceNodeName,
+                                            String sourceEventId,
                                             String content,
                                             String contentFormat,
                                             String messageStatus,

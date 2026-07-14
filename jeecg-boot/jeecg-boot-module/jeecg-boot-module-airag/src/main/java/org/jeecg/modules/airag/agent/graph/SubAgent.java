@@ -9,7 +9,7 @@ import org.jeecg.modules.airag.agent.runtime.AgentResult;
  * @author codex
  * @date 2026/6/16
  */
-public interface SubAgent {
+public interface SubAgent extends Agent {
 
     /**
      * 返回子 Agent 名称。
@@ -17,6 +17,16 @@ public interface SubAgent {
      * @return 子 Agent 名称
      */
     String subAgentName();
+
+    /**
+     * 返回统一 Agent 名称。
+     *
+     * @return Agent 名称
+     */
+    @Override
+    default String agentName() {
+        return subAgentName();
+    }
 
     /**
      * 执行子流程。

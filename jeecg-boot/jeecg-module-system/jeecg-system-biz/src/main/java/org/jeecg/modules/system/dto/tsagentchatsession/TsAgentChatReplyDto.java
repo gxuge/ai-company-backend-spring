@@ -26,6 +26,11 @@ public class TsAgentChatReplyDto {
     private String userInput;
 
     /**
+     * 用户点击的交互选项值。
+     */
+    private String optionValue;
+
+    /**
      * 历史消息条数。
      */
     private Integer historyCount;

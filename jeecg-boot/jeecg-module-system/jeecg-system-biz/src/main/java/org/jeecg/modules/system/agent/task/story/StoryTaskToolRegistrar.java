@@ -65,7 +65,23 @@ public class StoryTaskToolRegistrar {
         definition.setRouteKey(ROUTE_STORY_FULL_GENERATE);
         definition.setCategory("story_task");
         definition.setDisplayName("完整故事生成");
-        definition.setDescription("适合故事信息较完整、直接生成完整故事时使用");
+        definition.setDescription("适合故事信息较完整、直接生成完整故事时使用；可通过extraInfo补充不属于核心字段的故事信息");
+        definition.setInputSchema("""
+                {
+                  "type":"object",
+                  "properties":{
+                    "userInput":{"type":"string","description":"用户原始输入或本次任务描述；未显式传extraInfo时可作为额外信息"},
+                    "title":{"type":"string","description":"故事标题，可为空"},
+                    "storyMode":{"type":"string","description":"故事模式，可为空","enum":["normal","chapter"]},
+                    "storyIntro":{"type":"string","description":"故事简介，可为空"},
+                    "storySetting":{"type":"string","description":"故事设定，可为空"},
+                    "siteSetting":{"type":"string","description":"场景设定，可为空"},
+                    "plotOutline":{"type":"string","description":"剧情大纲，可为空"},
+                    "extraInfo":{"type":"string","description":"额外信息；用于补充故事信息；可选，null或空白时忽略；执行器同时兼容extra_info"}
+                  },
+                  "additionalProperties":true
+                }
+                """);
         definition.setExecutor(this::executeStoryFullGenerate);
         return definition;
     }
@@ -186,9 +202,11 @@ public class StoryTaskToolRegistrar {
                 || "preset".equalsIgnoreCase(stage);
         Map<String, Object> decision = new LinkedHashMap<>();
         decision.put("action", shouldWait ? "WAIT_CONFIRM" : "NEXT");
-        decision.put("nextStage", shouldWait ? "background" : "done");
-        decision.put("question", shouldWait ? "你对这版故事满意吗？想先改哪部分？" : null);
-        decision.put("reason", shouldWait ? "故事核心已生成，先确认再继续补背景" : "当前阶段可继续");
+        decision.put("question", shouldWait ? "你对这版故事满意吗？" : null);
+        decision.put("options", shouldWait
+                ? List.of("满意，继续生成", "不满意，重新生成")
+                : List.of());
+        decision.put("reason", shouldWait ? "故事设定已生成，等待用户选择是否继续" : "当前阶段可继续");
         if (context != null) {
             context.putAttribute("storyFlowGateDecision", decision);
             context.putAttribute("storyFlowGateDecisionJson", JSONObject.toJSONString(decision));
@@ -231,6 +249,7 @@ public class StoryTaskToolRegistrar {
         dto.setStorySetting(firstText(args, promptVariables, "storySetting", "story_setting"));
         dto.setSiteSetting(firstText(args, promptVariables, "siteSetting", "site_setting"));
         dto.setPlotOutline(firstText(args, promptVariables, "plotOutline", "plot_outline"));
+        dto.setExtraInfo(firstText(args, promptVariables, "extraInfo", "extra_info", "userInput", "user_input"));
         dto.normalize();
         return dto;
     }
@@ -261,7 +280,6 @@ public class StoryTaskToolRegistrar {
         }
         String historyJson = TaskAgentSupport.readStringAttribute(context, "subAgentHistoryJson");
         payload.put("historyCount", SubAgentHistorySupport.countHistory(historyJson));
-        payload.put("historyBlock", context == null ? null : context.getAttribute("subAgentHistoryBlock"));
         return payload;
     }
 

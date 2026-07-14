@@ -33,7 +33,7 @@ public class AgentResult {
          */
         WAITING_USER,
         /**
-         * 子 Agent 主动交还主 Agent 重新派活。
+         * 当前 Agent 将控制权切换给目标 Agent。
          */
         HANDOFF
     }
@@ -58,6 +58,18 @@ public class AgentResult {
      * 扩展数据。
      */
     private Map<String, Object> data = new LinkedHashMap<>();
+    /**
+     * Handoff 目标 Agent 编码。
+     */
+    private String handoffTargetAgentCode;
+    /**
+     * Handoff 后交给目标 Agent 的输入。
+     */
+    private String handoffInput;
+    /**
+     * Handoff 时需要合并到运行上下文的数据。
+     */
+    private Map<String, Object> handoffContext = new LinkedHashMap<>();
 
     /**
      * 创建成功结果。
@@ -105,9 +117,22 @@ public class AgentResult {
      * @return 结果对象
      */
     public static AgentResult handoff(String content) {
+        return handoffTo(AgentRegistry.MAIN_AGENT_CODE, content);
+    }
+
+    /**
+     * 创建切换目标 Agent 的结果。
+     *
+     * @param targetAgentCode 目标 Agent 编码
+     * @param input 目标 Agent 输入
+     * @return 结果对象
+     */
+    public static AgentResult handoffTo(String targetAgentCode, String input) {
         AgentResult result = new AgentResult();
         result.setStatus(Status.HANDOFF);
-        result.setContent(content);
+        result.setContent(input);
+        result.setHandoffTargetAgentCode(targetAgentCode);
+        result.setHandoffInput(input);
         return result;
     }
 }

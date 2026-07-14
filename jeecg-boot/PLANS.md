@@ -65,6 +65,122 @@
 ## 当前任务记录
 
 ### 任务 ID
+`20260714-core-fill-extra-info`
+
+### 背景
+- `role_core_fill` 与 `story_core_fill` Prompt 已增加 `{{extra_info}}`。
+- 现有角色、故事普通核心生成接口尚未接收和传递该变量。
+
+### 目标
+- 两个普通核心生成接口增加可选 `extraInfo`，并兼容 `extra_info`。
+- 未传或空白时向模板传字面量 `null`。
+- 故事 Agent 普通生成工具同步声明并透传用户补充信息。
+
+### 范围
+- 范围内：角色/故事 DTO、Prompt 变量构建、故事 Agent 工具、测试与 API 文档。
+- 范围外：响应 VO、数据库、`role_core_fill_preset`、`story_core_fill_preset`。
+
+### 执行步骤
+1. 增加请求字段、别名与归一化。
+2. 接入两个普通模板变量。
+3. 同步故事 Agent 工具与文档。
+4. 执行定向测试和模块编译。
+
+### 进度
+- [x] 步骤 1：请求字段、别名与归一化
+- [x] 步骤 2：普通模板变量映射
+- [x] 步骤 3：故事 Agent 工具 inputSchema、透传与文档
+- [x] 步骤 4：主代码编译完成；定向测试阻塞原因已记录
+
+### 风险与回滚
+- 风险：共享 DTO 使 preset 接口也可接收字段，但 preset 模板不会消费。
+- 回滚步骤：移除两个 DTO 字段、变量映射、Agent 参数和对应文档。
+
+### 验证记录
+- 编译命令：`mvn -pl jeecg-module-system/jeecg-system-biz -am -DskipTests compile`。
+- 编译结果：8 个 Reactor 模块 `BUILD SUCCESS`。
+- 测试命令：`mvn -pl jeecg-module-system/jeecg-system-biz -am "-DskipTests=false" "-Dtest=CoreFillExtraInfoTest" test`。
+- 测试结果：未进入本次测试；被仓库既有 `AiragPromptTemplateServiceTest` 类型不匹配阻塞。单模块隔离执行又受并行 Agent Event 源码与本地 AIRAG 依赖状态不一致影响。
+
+### 结果
+- 两个普通核心生成接口已支持可选额外信息并映射到 `extra_info`。
+- 新增测试覆盖别名、空值和两个模板变量映射，待仓库既有测试/并行源码状态恢复后执行。
+
+### 任务 ID
+`20260714-agent-handoff-active-agent`
+
+### 背景
+- 当前 Agent 链路已支持主 Agent 通过 `task` 调用子 Agent，以及子 Agent 通过 `handoff_to_main` 返回控制信息。
+- 每次用户消息仍固定从主 Agent 启动，子 Agent 的 `WAITING_USER` 状态无法跨消息保持当前控制者。
+- 当前 `task` 在工具服务内部嵌套执行子 Agent，不具备同一顶层 Run 内持续切换 active Agent 的运行循环。
+
+### 目标
+- 新增顶层 Agent Run 循环，在同一 Run 内处理 `Main -> SubAgent -> Main` 控制权切换。
+- 在 `ts_agent_chat_session` 持久化 `active_agent_code`，下一条用户消息从最后运行的 Agent 继续。
+- 保持现有消息、事件、Skill、Tool 和 SSE 对外契约兼容。
+
+### 范围
+- 范围内：
+  - `jeecg-boot-module-airag/agent` 运行时、task 工具、handoff 控制协议。
+  - `jeecg-system-biz` Agent 会话、消息和回复编排。
+  - 数据库迁移、ADR、架构说明、变更记录和自动化测试。
+- 范围外：
+  - 前端 UI 与接口路径调整。
+  - OpenAI Agents SDK 的直接依赖引入。
+  - 与 Agent 会话无关的业务模块重构。
+
+### 执行步骤
+1. 新增 Agent 注册表、上下文准备器、Run step/outcome 和顶层循环。
+2. 将主 Agent `task` 从嵌套执行改为通用 Handoff 结果。
+3. 将子 Agent `handoff_to_main` 接入同一 Run 循环。
+4. 新增并持久化 `active_agent_code`，消息记录最后实际回复 Agent。
+5. 补充迁移脚本、ADR、架构文档、测试和编译验证。
+
+### 进度
+- [x] 步骤 1 前置：完成现状、约束、编码和数据库迁移规范检查。
+- [x] 步骤 1：实现顶层 Run 循环。
+- [x] 步骤 2：改造主 Agent task。
+- [x] 步骤 3：改造反向 Handoff。
+- [x] 步骤 4：接入跨消息 active Agent。
+- [x] 步骤 5：完成文档、测试和验证。
+
+### 决策记录
+- 决策：保留 `AgentRuntimeService.execute` 作为单 Agent step 执行器，新增 `AgentRunLoopService` 负责顶层控制权切换。
+- 决策：新增 `active_agent_code`，不复用表示会话主 Agent 配置的 `agent_code`。
+- 决策：`WAITING_USER` 和 `SUCCESS` 均保留最后运行 Agent，只有显式 Handoff 才切换控制者。
+- 决策：单次顶层 Run 最多执行 8 个 Agent step，达到上限时保留最后实际执行的 Agent。
+- 决策：子 Agent 筛选后的历史 JSON 数组可直接恢复为提示词历史块。
+- 备选方案：
+  - 仅在业务 Service 中按状态直调子 Agent，无法覆盖同一 Run 内反向 Handoff。
+  - 复用 `state_json` 保存 active Agent，查询和约束能力较弱且语义不清晰。
+
+### 风险与回滚
+- 风险：同一会话并发发送消息时，active Agent 采用最后完成写入策略。
+- 风险：历史会话的 active Agent 为空或对应 Agent 已下线。
+- 监控/告警信号：
+  - Handoff 超过最大次数。
+  - active Agent 编码无法从注册表解析。
+  - 子 Agent 恢复后缺少定义、Skill 或历史上下文。
+- 回滚步骤：
+  - 回复编排恢复固定调用 `TsAgentChatAgent`。
+  - 回退运行循环和 Handoff 目标字段。
+  - 数据库字段可保留不使用；如需删除，执行 `ALTER TABLE ts_agent_chat_session DROP COLUMN active_agent_updated_at, DROP COLUMN active_agent_code;`。
+
+### 验证记录
+- 构建命令：`mvn -f pom.xml -pl jeecg-module-system/jeecg-system-biz -am -DskipTests compile`，执行成功。
+- 测试命令：定向执行 `AgentRunLoopServiceTest`、`AgentContextPreparerTest`、`DeepAgentTaskToolServiceTest`，共 8 条测试全部通过；测试后已恢复父 POM 默认跳过测试配置。
+- 手工验证：
+  - 主 Agent Handoff 到子 Agent 后，`WAITING_USER` 保留子 Agent。
+  - 下一轮可直接从持久化子 Agent 启动。
+  - 子 Agent 可在同一 Run 内 Handoff 回主 Agent。
+  - 非法目标和 8 step 循环上限返回失败，并记录最后实际执行 Agent。
+  - 子 Agent 历史 JSON 数组可恢复为提示词历史块。
+
+### 结果
+- 已完成顶层 Handoff 运行循环、active Agent 跨消息持久化、实际回复 Agent 消息标记、数据库迁移、ADR、架构文档和自动化测试。
+- 部署前需执行 `db/V3.9.1_26__add_agent_active_handoff_state.sql`。
+
+### 任务 ID
 `20260330-doc-context-v1`
 
 ### 背景
@@ -250,6 +366,182 @@
 - 已在 `llm.adapter` 目录落地 provider 参数适配骨架，包含 capability/normalizer/adapter/registry/service。
 - 已接入 `AIChatHandler` 的 `completions/chat` 主链路，实现调用前统一适配与 warning 留痕。
 - 已优先实现 `deepseek/minimax/gemini` 三类 provider 规则，后续新增 provider 仅需新增 adapter。
+
+### 任务 ID
+`20260714-agent-message-event-controller-split`
+
+### 背景
+- Agent Runtime 当前把 Task/Tool 事件写入通用表 `ts_chat_message_events`，与 `ts_agent_chat_message` 的业务边界不一致。
+- `TsAgentChatSessionController` 同时承载会话、消息与回复接口，职责需要拆分。
+- 前端需要按当前登录用户查询 Agent 消息对应的完整 Task/Tool 事件。
+
+### 目标
+- 新增 `ts_agent_chat_message_event` 表及 AIRAG Entity/Mapper/Service，Agent Runtime 只写入新表。
+- 新增独立 `TsAgentChatMessageEventController`，提供事件分页与详情接口，并强制用户归属过滤。
+- 将 `TsAgentChatSessionController` 拆为 Session 与 Message Controller，保持已有路由不变。
+
+### 范围
+- 范围内：Agent 事件实体、Mapper/XML、Service、Publisher、数据库迁移、三个 Controller、查询 DTO、测试与 API 文档。
+- 范围外：旧 `ts_chat_message_events` 历史数据迁移、前端改造、SSE 事件格式和正式消息落库时序。
+
+### 执行步骤
+1. 新增 Agent 消息事件表、持久化模型和带用户归属过滤的查询能力。
+2. 将 AIRAG 事件发布器切换到新事件 Service，并更新定向测试。
+3. 拆分 Session/Message Controller，新增 Event Controller，保持旧消息接口路径兼容。
+4. 更新 API、ADR、变更记录并执行跨模块编译与定向测试。
+
+### 进度
+- [x] 步骤 1：依赖方向、现有表结构与 Controller 边界分析
+- [x] 步骤 2：事件表与 AIRAG 持久化实现
+- [x] 步骤 3：Controller 拆分与事件查询接口
+- [x] 步骤 4：测试、编译与文档证据回写
+
+### 决策记录
+- 决策：事件 Entity/Mapper/Service 放在 AIRAG，system-biz Controller 依赖 AIRAG 查询服务。
+- 决策：`message_id` 关联触发当前 Run 的用户消息；助手消息在 Run 结束后才落库，不作为事件归属主键。
+- 决策：旧表保留历史数据，不自动复制到新表，避免重复事件和迁移锁表风险。
+
+### 风险与回滚
+- 风险：部署代码早于迁移脚本时，新事件写入会失败。
+- 风险：调用方若按助手消息 ID 查询事件将得到空结果，需要遵循“触发消息 ID”语义。
+- 监控信号：`ts_agent_chat_message_event` 插入异常、事件分页接口空结果比例异常。
+- 回滚步骤：回退 Publisher/Controller/Service 改动，恢复旧 `TsChatMessageEventService`；新表可保留或执行 `DROP TABLE ts_agent_chat_message_event`。
+
+### 验证记录
+- AIRAG 编译：`mvn -pl jeecg-boot-module/jeecg-boot-module-airag -am -DskipTests compile`，结果 `BUILD SUCCESS`。
+- system-biz 编译：`mvn -pl jeecg-module-system/jeecg-system-biz -am -DskipTests compile`，结果 `BUILD SUCCESS`。
+- 定向测试：通过 JUnit Platform Launcher 执行 `AgentEventPublisherTest` 与 `TsAgentChatMessageEventServiceTest`，共 6 条测试，失败数 0。
+- 测试限制：AIRAG 标准 Maven `test` 仍被仓库既有 `AiragPromptTemplateServiceTest.java:77` 类型错误阻塞，与本次改动无关。
+
+### 结果
+- Agent Runtime 的 SubAgent/Tool 完整事件已切换到 `ts_agent_chat_message_event`。
+- Session、Message、Event Controller 已拆分，原 Session/Message 路由保持兼容。
+- 新事件分页与详情接口按当前登录用户、会话和消息归属过滤。
+
+### 节点来源扩展（2026-07-14）
+- 目标：事件表增加 `node_name/node_type`，正式助手消息增加 `source_node_name/source_event_id`。
+- 规则：最后一个成功且返回非空正文的节点作为助手消息来源；Gate 返回追问时 Gate 即为来源节点。
+- 规则：SubAgent 完整事件记录最终产出节点，Tool 完整事件记录实际调用节点。
+- 规则：SubAgent 事件落库后将事件 ID 回写运行上下文，助手消息通过 `source_event_id` 关联该完整 Task。
+- 范围外：不恢复 LLM start/delta/end 分段落库，不增加额外过程事件记录。
+
+### 节点来源扩展步骤
+1. 新增 `V3.9.1_28`，扩展消息表和事件表字段及索引。
+2. 在 `NodeRunner/AgentContext` 维护当前节点和最终结果节点。
+3. 扩展事件 Service/Mapper/API 查询条件，并将 SubAgent 事件 ID 回写上下文。
+4. 扩展助手消息落库字段，补充测试、API 文档与编译证据。
+
+### 节点来源扩展进度
+- [x] 步骤 1：节点执行入口、结果汇聚点和消息落库链路分析
+- [x] 步骤 2：数据库与持久化模型改造
+- [x] 步骤 3：运行时节点来源传播
+- [x] 步骤 4：测试、编译与文档回写
+
+### 节点来源扩展验证
+- 数据库迁移：新增 `db/V3.9.1_28__add_agent_node_source_fields.sql`，需在 `V3.9.1_27` 后执行。
+- 跨模块编译：`mvn -pl jeecg-module-system/jeecg-system-biz -am -DskipTests compile`，结果 `BUILD SUCCESS`。
+- AIRAG 定向测试：JUnit Platform Launcher 执行 `AgentEventPublisherTest`、`TsAgentChatMessageEventServiceTest`、`AgentContextNodeSourceTest`、`AgentContextPreparerTest`，11 条成功、0 条失败。
+- system-biz 定向测试：独立编译并执行 `TsAgentChatMessageServiceImplTest`，1 条成功、0 条失败。
+- 测试限制：AIRAG 标准 Maven `test` 仍被仓库既有 `AiragPromptTemplateServiceTest.java:77` 类型错误阻塞，与本次改动无关。
+
+### 节点来源扩展结果
+- SubAgent/Tool 完整事件均可记录实际执行节点。
+- 子 Agent 助手消息可通过 `source_event_id` 关联本轮完整 SubAgent 事件。
+- 主 Agent 助手消息保留 `source_node_name`，`source_event_id` 为空。
+- 失败结果优先记录当前失败节点，避免关联到前一个成功节点。
+- Handoff 切换活动 Agent 时清空上一 Agent 的节点来源和事件关联，避免跨 Agent 串联。
+
+### 任务 ID
+`20260714-agent-complete-task-tool-events`
+
+### 背景
+- `ts_chat_message_events` 当前按 `start/error/end` 保存 LLM、SubAgent 和 Tool 过程事件，记录碎片较多。
+- 业务只需要回放完整的 SubAgent Task 和 Tool 调用，不需要持久化 LLM 与 Agent 控制流事件。
+
+### 目标
+- 每次 SubAgent Task 只在 `subagent.end` 保存一条完整记录。
+- 每次 Tool 调用只在 `tool.end` 保存一条完整记录。
+- 保持现有 SSE 事件兼容，不改变前端消费顺序。
+
+### 范围
+- 范围内：`AgentEventPublisher`、`TsChatMessageEventService`、`ToolNode`、相关单元测试和事件存储文档。
+- 范围外：数据库表结构、正式聊天消息落库、前端 SSE 处理。
+
+### 执行步骤
+1. 将 SubAgent/Tool 的 start 与 error 改为只收集执行信息并发送 SSE。
+2. 在 end 节点组装固定的 `input/output/error/metrics` JSON，并只落一条记录。
+3. 停止持久化 LLM 与 Agent 控制流事件，排除内部 `task` Handoff Tool 的重复记录。
+4. 补充单元测试、编译验证、ADR 与变更记录。
+
+### 进度
+- [x] 步骤 1：调用链与异常路径确认
+- [x] 步骤 2：完整事件聚合实现
+- [x] 步骤 3：新增定向测试并完成模块编译验证
+- [x] 步骤 4：文档与证据回写
+
+### 风险与回滚
+- 风险：进程在 end 节点前异常退出时，本次未完成执行不会生成事件记录。
+- 监控信号：Task/Tool 执行日志存在但对应完整事件缺失。
+- 回滚步骤：回退事件发布器与事件写入服务改动，恢复 start/error/end 分段落库。
+
+### 验证记录
+- 编译命令：`mvn -pl jeecg-boot-module/jeecg-boot-module-airag -am -DskipTests compile`
+- 编译结果：`BUILD SUCCESS`
+- 定向测试：隔离编译并执行 `AgentEventPublisherTest`、`TsChatMessageEventServiceTest`，共 5 条测试全部通过。
+- 测试覆盖：SubAgent 成功、Tool 失败、LLM 不落库、内部 task Tool 不落库、固定 JSON 字段与显式空值。
+- 测试限制：仓库既有 `AiragPromptTemplateServiceTest` 存在与本次无关的测试编译错误，导致 AIRAG 全量 `test` 生命周期无法完成。
+
+### 结果
+- `ts_chat_message_events` 新增记录仅来自 `subagent.end` 与非内部 `tool.end`。
+- 每次执行只保存一条完整记录，JSON 固定为 `input/output/error/metrics`。
+- Tool 通过 `parent_event_id` 关联所属 SubAgent Task。
+
+### 任务 ID
+`20260714-agent-node-resume-state`
+
+### 背景
+- 会话当前只保存 `active_agent_code`，下一轮能够直接进入子 Agent，但无法恢复到角色/故事流程的具体阶段。
+- 每次请求都会新建 `AgentContext`，角色和故事子 Agent 又固定从 `dialog` 开始，导致已有核心数据、确认阶段和后续生成节点无法稳定续跑。
+
+### 目标
+- 会话新增恢复节点、恢复阶段和白名单流程状态，下一条用户消息可从具体子 Agent 节点继续。
+- 角色与故事子 Agent 按恢复阶段显式路由，不再无条件重置为 `dialog`。
+- 子 Agent 完成后显式 Handoff 回主 Agent，并清空会话恢复状态。
+
+### 范围
+- 范围内：`ts_agent_chat_session`、`AgentContext`、会话回复服务、角色/故事子 Agent、运行时测试与文档。
+- 范围外：前端协议、SSE 事件格式、通用工作流引擎、任意上下文字段的全量序列化。
+
+### 执行步骤
+1. 新增 `V3.9.1_29` 与 Session 恢复字段，建立流程状态白名单快照/恢复能力。
+2. 在创建 `AgentContext` 时恢复节点、阶段和业务字段，在 Run 结束后按结果状态更新或清空。
+3. 改造角色/故事子 Agent，根据恢复阶段进入对话、确认、图片、声音或背景节点，完成后显式交还主 Agent。
+4. 补充定向测试、跨模块编译、ADR、架构与变更记录。
+
+### 进度
+- [x] 步骤 1：现有阶段、工具字段、Handoff 和测试边界分析
+- [x] 步骤 2：数据库与流程状态模型改造
+- [x] 步骤 3：角色/故事节点恢复路由与完成 Handoff
+- [x] 步骤 4：测试、编译与文档证据回写
+
+### 风险与回滚
+- 风险：状态 JSON 损坏或包含旧字段时恢复失败。
+- 缓解：仅恢复当前 Agent 的白名单字段，解析异常时回退到阶段默认节点。
+- 风险：完成 Handoff 后主 Agent 再次委托相同任务。
+- 缓解：交还报告明确标记 `completed=true` 和完成摘要，主 Agent直接总结，不再次派活。
+- 回滚步骤：回退运行时与 Session Entity 改动；新增字段均可空，旧代码可继续运行，必要时执行 `ALTER TABLE ts_agent_chat_session DROP COLUMN ...`。
+
+### 验证记录
+- AIRAG 编译：`mvn -pl jeecg-boot-module/jeecg-boot-module-airag -am -DskipTests compile`，结果 `BUILD SUCCESS`。
+- system-biz 跨模块编译：`mvn -pl jeecg-module-system/jeecg-system-biz -am -DskipTests compile`，结果 `BUILD SUCCESS`。
+- AIRAG 定向测试：流程状态、上下文准备、运行循环、角色恢复、故事恢复共 13 条成功，0 条失败。
+- system-biz 定向测试：会话流程状态保存/清理 1 条成功，0 条失败。
+- 测试限制：标准 AIRAG `test-compile` 仍被既有 `AiragPromptTemplateServiceTest.java:77` 类型错误阻塞，与本次改动无关。
+
+### 结果
+- 子 Agent 跨消息续接从 Agent 级提升为节点和阶段级。
+- 角色恢复到 `voice` 时不会重复执行对话、门禁和图片节点；故事恢复到 `background` 时不会重复执行前置节点。
+- 等待用户或可重试失败时保存白名单状态，完成 Handoff 回主 Agent 后清空。
 
 ### 任务 ID
 `20260601-ts-story-full-generate-v1`

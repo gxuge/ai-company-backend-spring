@@ -181,7 +181,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
 
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(promptCode, PROMPT_VERSION,
                 PromptRuntimeUtil.buildSettingVars(dto.getRoleName(), dto.getGender(), dto.getOccupation(), dto.getBackgroundStory(),
-                        dto.getGreeting(), dto.getStyleHint(), dto.getKeywords()));
+                        dto.getGreeting(), dto.getStyleHint(), dto.getKeywords(), dto.getExtraInfo()));
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, scene);
 

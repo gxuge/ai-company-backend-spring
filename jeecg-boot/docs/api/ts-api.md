@@ -12,6 +12,9 @@
 | 控制器 | 基础路径 | 主要能力 |
 |---|---|---|
 | `TsAiLogController` | `/sys/tsAiLog` | AI 调用监控、分页/详情查询 |
+| `TsAgentChatSessionController` | `/sys` | Agent 会话 CRUD + AI 回复 |
+| `TsAgentChatMessageController` | `/sys` | Agent 会话消息分页/详情 |
+| `TsAgentChatMessageEventController` | `/sys` | Agent 消息 Task/Tool 事件分页/详情 |
 | `TsBrowsePublicController` | `/sys` | 公开故事/角色/形象浏览 |
 | `TsChatMessageAttachmentController` | `/sys/ts-chat-message-attachments` | 聊天附件 CRUD |
 | `TsChatMessageController` | `/sys/ts-chat-messages` | 聊天消息 CRUD |
@@ -70,7 +73,42 @@
 - `message-tts` 只负责按消息重新获取语音，不做服务端语音缓存落库。
 - `audioCacheKey` 仅作为 Web 本地缓存键使用。
 
-### 3.2 角色与故事核心
+### 3.2 Agent 会话链路
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/ts-agent-chat-sessions` | Agent 会话分页查询 |
+| GET | `/ts-agent-chat-sessions/detail` | Agent 会话详情 |
+| POST | `/ts-agent-chat-sessions` | 新增 Agent 会话 |
+| PUT | `/ts-agent-chat-sessions` | 编辑 Agent 会话 |
+| DELETE | `/ts-agent-chat-sessions` | 删除 Agent 会话 |
+| POST | `/ts-agent-chat-sessions/ai-reply` | Agent 会话内生成回复，支持 SSE |
+| GET | `/ts-agent-chat-messages` | Agent 消息分页查询 |
+| GET | `/ts-agent-chat-messages/detail` | Agent 消息详情 |
+| GET | `/ts-agent-chat-message-events` | Agent 消息事件分页查询 |
+| GET | `/ts-agent-chat-message-events/detail` | Agent 消息事件详情 |
+
+事件查询参数：
+- `sessionId`：可选，Agent 会话 ID。
+- `messageId`：可选，触发当前 Run 的用户消息 ID，不是 Run 结束后生成的助手消息 ID。
+- `type`：可选，当前为 `subagent` 或 `tool`。
+- `name`：可选，SubAgent 编码或 Tool 名称。
+- `nodeName`：可选，实际执行节点名称。
+- `status`：可选，`1` 成功、`0` 失败、`2` 运行中或未知。
+- `pageNo/pageSize`：默认 `1/20`，`pageSize` 最大为 `100`。
+
+补充说明：
+- Agent 会话响应新增 `activeNodeName/activeStage/agentFlowStateJson`：分别表示下一轮恢复节点、当前子 Agent 阶段和白名单业务状态快照。
+- `activeAgentCode` 决定下一轮由哪个 Agent 处理；`activeNodeName` 决定该子 Agent 从哪个节点继续；两者均不等同于消息审计字段 `sourceNodeName`。
+- `WAITING_USER` 或子 Agent 可重试失败时保存恢复状态；任务显式 Handoff 回主 Agent 后清空恢复节点、阶段和流程快照。
+- 事件表为 `ts_agent_chat_message_event`，只保存完整的 SubAgent Task 与非内部 Tool 调用。
+- 每条事件的 `json` 固定包含 `input/output/error/metrics`。
+- 事件响应包含 `nodeName/nodeType`；`name` 仍表示 SubAgent 编码或 Tool 名称，`nodeName` 表示实际执行节点。
+- Agent 消息响应包含 `sourceNodeName/sourceEventId`；子 Agent 助手消息通过 `sourceEventId` 关联对应的完整 SubAgent 事件。
+- 分页与详情均通过 Agent 会话归属过滤当前登录用户。
+- Session、Message、Event 分属三个 Controller，原 Session/Message 路由保持不变。
+
+### 3.3 角色与故事核心
 角色与故事主表也遵循标准 CRUD。生成型接口如下：
 
 | 方法 | 路径 | 说明 |
@@ -117,7 +155,7 @@
 | PUT | `/ts-story-chapters` | 编辑章节 |
 | DELETE | `/ts-story-chapters` | 删除章节 |
 
-### 3.3 公开浏览与公开管理
+### 3.4 公开浏览与公开管理
 公开浏览接口默认用于前台访问；公开管理接口用于上架、审核、下架流程。
 
 | 方法 | 路径 | 说明 |
@@ -157,7 +195,7 @@
 | POST | `/ts-story-publics/offline` | 下架故事公开记录 |
 | GET | `/ts-story-publics/story-options` | 故事公开目标下拉 |
 
-### 3.4 预设与标签资源
+### 3.5 预设与标签资源
 以下资源型控制器均遵循统一的标准 CRUD 形态：`list / add / edit / queryById / delete / deleteBatch`。
 
 | 控制器 | 基础路径 | 说明 |
@@ -168,7 +206,7 @@
 | `TsTagTypeController` | `/sys/tsTagType` | 标签类型字典 |
 | `TsTagRelationController` | `/sys/tsTagRelation` | 标签关系规则 |
 
-### 3.5 音色与资产
+### 3.6 音色与资产
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/ts-voice-profiles` | 音色档案分页查询 |
@@ -190,7 +228,7 @@
 | POST | `/ts-voice-tags` | 新增音色标签 |
 | DELETE | `/ts-voice-tags` | 删除音色标签 |
 
-### 3.6 AI 日志与 MCP
+### 3.7 AI 日志与 MCP
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/tsAiLog/list` | AI 调用日志分页查询 |
@@ -213,6 +251,8 @@
 - `POST /ts-roles/generate-text-by-template`
 - `POST /ts-roles/generate-role`
 
+`POST /sys/ts-roles/one-click-setting` 支持可选请求字段 `extraInfo`，并兼容 `extra_info`。该字段映射到 `role_core_fill` 的 `{{extra_info}}`；未传、`null` 或空白字符串时按 `null` 处理。preset 接口因复用 DTO 可以接收该字段，但不会传入 `role_core_fill_preset`。
+
 ### 4.2 故事生成
 - `POST /ts-stories/story-full-generate`
 - `POST /ts-stories/story-setting-generate`
@@ -220,10 +260,13 @@
 - `POST /ts-stories/story--outline-generate`
 - `POST /ts-stories/story-full-generate-preset`
 
+`POST /sys/ts-stories/story-full-generate` 支持可选请求字段 `extraInfo`，并兼容 `extra_info`。该字段映射到 `story_core_fill` 的 `{{extra_info}}`；未传、`null` 或空白字符串时按 `null` 处理。preset 接口因复用 DTO 可以接收该字段，但不会传入 `story_core_fill_preset`。
+
 ### 4.3 聊天生成
 - `POST /ts-chat-sessions/ai-reply`
 - `POST /ts-chat-sessions/ai-reply-template`
 - `POST /ts-chat-sessions/reply-suggestions`
+- `POST /ts-agent-chat-sessions/ai-reply`
 
 ### 4.4 当前语音链路说明
 - `POST /ts-chat-sessions/ai-reply` 会在后端直接产出语音元信息。

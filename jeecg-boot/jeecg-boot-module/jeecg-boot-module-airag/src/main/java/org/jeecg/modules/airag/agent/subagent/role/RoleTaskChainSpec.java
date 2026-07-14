@@ -32,8 +32,7 @@ public final class RoleTaskChainSpec {
     public static final List<String> TOOLS = List.of(
             "role_core_fill_preset",
             "role_generate_role",
-            "role_confirmation_decision",
-            "role_flow_gate",
+            "role_confirmation",
             "role_generate_role_image",
             "role_generate_role_voice"
     );
@@ -43,7 +42,7 @@ public final class RoleTaskChainSpec {
      */
     public static final List<String> CHAIN = List.of(
             "role_create_dialog",
-            "role_flow_gate",
+            "role_confirmation",
             "role_create_image",
             "role_create_voice"
     );

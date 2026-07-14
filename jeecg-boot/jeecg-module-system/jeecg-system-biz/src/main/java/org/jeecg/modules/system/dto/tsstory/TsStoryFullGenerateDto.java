@@ -1,5 +1,6 @@
 package org.jeecg.modules.system.dto.tsstory;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Data;
 import org.jeecg.modules.system.util.StoryPromptGenerateUtil;
@@ -19,6 +20,9 @@ public class TsStoryFullGenerateDto {
     private String siteSetting;
     /** 剧情大纲。 */
     private String plotOutline;
+    /** 额外信息（可选，用于补充故事信息）。 */
+    @JsonAlias("extra_info")
+    private String extraInfo;
 
     public void normalize() {
         this.title = trimToNull(this.title);
@@ -27,6 +31,7 @@ public class TsStoryFullGenerateDto {
         this.storySetting = trimToNull(this.storySetting);
         this.siteSetting = trimToNull(this.siteSetting);
         this.plotOutline = trimToNull(this.plotOutline);
+        this.extraInfo = trimToNull(this.extraInfo);
     }
 
     private static String trimToNull(String value) {

@@ -614,6 +614,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         vars.put("story_setting", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getStorySetting()));
         vars.put("site_setting", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getSiteSetting()));
         vars.put("plot_outline", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getPlotOutline()));
+        vars.put("extra_info", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getExtraInfo()));
         return vars;
     }
 

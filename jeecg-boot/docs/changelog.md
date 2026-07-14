@@ -6,6 +6,12 @@
 `type` 推荐值：`feat`、`fix`、`refactor`、`breaking`、`security`、`docs`
 
 ## 记录
+- [2026-07-14] [feat] [agent-runtime] Agent 会话新增活动节点、阶段和白名单流程快照；角色/故事子 Agent 可跨消息从具体节点续跑，完成后显式 Handoff 回主 Agent
+- [2026-07-14] [feat] [agent-chat] Agent 事件新增 `node_name/node_type`，正式助手消息新增 `source_node_name/source_event_id`，可定位子 Agent 最终产出节点并关联完整 Task 事件
+- [2026-07-14] [refactor] [agent-chat] 新增 `ts_agent_chat_message_event` 独立保存 Agent SubAgent/Tool 完整事件，新增事件分页/详情接口，并将 Agent Session 与 Message Controller 拆分且保持原路由兼容
+- [2026-07-14] [feat] [ts-role/ts-story] `role_core_fill` 与 `story_core_fill` 普通生成接口新增可选 `extraInfo`（兼容 `extra_info`），空值按 `null` 注入 Prompt；故事 Agent 普通生成工具同步声明 inputSchema 并透传
+- [2026-07-14] [refactor] [agent-runtime] `ts_chat_message_events` 收敛为 SubAgent Task 与 Tool 完整事件：仅在结束节点各保存一条包含输入、结果、错误和耗时的记录，停止持久化 LLM 与 Agent 控制事件
+- [2026-07-14] [refactor] [agent-runtime] 新增顶层 Agent Handoff 运行循环与会话 `active_agent_code` 持久化；主 Agent `task` 改为控制权切换，子 Agent 可跨消息持续接管并显式交还主 Agent
 - [2026-07-10] [feat] [ts-role] 新增 `POST /sys/ts-roles/optimize-image-prompt` 角色形象提示词优化接口，读取数据库模板 `role_image_prompt_optimize::v1`，输出中文优化提示词与负面提示词，便于前端直接回填
 - [2026-04-08] [docs] [api] 将 `docs/api/hardness-api-inventory.md` 拆分并并入 `docs/api/Index.md` + 业务明细文档，移除重复资产清单文件并清理引用
 - [2026-03-30] [docs] [governance] 初始化文档骨架（AGENTS/PLANS/API/ADR）

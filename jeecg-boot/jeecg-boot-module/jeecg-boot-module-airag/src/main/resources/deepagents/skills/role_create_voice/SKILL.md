@@ -4,7 +4,7 @@ name: 角色声音生成 skill
 description: 用于在角色核心设定与形象确认后，生成适合角色的声音建议与音色表达。
 domain: role
 version: "1.0.0"
-allowed_tools: role_generate_role_voice, role_flow_gate
+allowed_tools: role_generate_role_voice
 metadata:
   flow: create-role-voice
 ---
@@ -19,7 +19,6 @@ metadata:
 
 只允许：
 - `role_generate_role_voice`
-- `role_flow_gate`
 
 ## 输出要求
 
@@ -27,4 +26,3 @@ metadata:
 - 简短清晰
 - 便于最终回填角色资料
 - 不要写成大段说明
-

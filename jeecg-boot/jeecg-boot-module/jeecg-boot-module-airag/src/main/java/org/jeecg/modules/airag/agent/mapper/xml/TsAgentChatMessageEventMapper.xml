@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.airag.agent.mapper.TsAgentChatMessageEventMapper">
+
+    <!-- 分页查询当前用户拥有的 Agent 消息事件 -->
+    <select id="selectOwnedEventPage"
+            resultType="org.jeecg.modules.airag.agent.entity.TsAgentChatMessageEventEntity">
+        SELECT e.*
+        FROM ts_agent_chat_message_event e
+        INNER JOIN ts_agent_chat_session s ON s.id = e.session_id
+        INNER JOIN ts_agent_chat_message m ON m.id = e.message_id
+          AND m.session_id = e.session_id
+        WHERE s.user_id = #{userId}
+          AND s.is_deleted = 0
+          AND s.session_status != 'deleted'
+          AND m.is_deleted = 0
+          AND e.is_deleted = 0
+        <if test="sessionId != null">
+            AND e.session_id = #{sessionId}
+        </if>
+        <if test="messageId != null">
+            AND e.message_id = #{messageId}
+        </if>
+        <if test="type != null and type != ''">
+            AND e.type = #{type}
+        </if>
+        <if test="name != null and name != ''">
+            AND e.name = #{name}
+        </if>
+        <if test="nodeName != null and nodeName != ''">
+            AND e.node_name = #{nodeName}
+        </if>
+        <if test="status != null">
+            AND e.status = #{status}
+        </if>
+        ORDER BY e.created_at DESC, e.id DESC
+    </select>
+
+    <!-- 查询当前用户拥有的单条 Agent 消息事件 -->
+    <select id="selectOwnedById"
+            resultType="org.jeecg.modules.airag.agent.entity.TsAgentChatMessageEventEntity">
+        SELECT e.*
+        FROM ts_agent_chat_message_event e
+        INNER JOIN ts_agent_chat_session s ON s.id = e.session_id
+        INNER JOIN ts_agent_chat_message m ON m.id = e.message_id
+          AND m.session_id = e.session_id
+        WHERE e.id = #{id}
+          AND s.user_id = #{userId}
+          AND s.is_deleted = 0
+          AND s.session_status != 'deleted'
+          AND m.is_deleted = 0
+          AND e.is_deleted = 0
+        LIMIT 1
+    </select>
+
+</mapper>

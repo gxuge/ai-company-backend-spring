@@ -101,30 +101,6 @@ public final class RoleTaskPromptSupport {
         appendRoleImageVariables(variables, context);
     }
 
-    /**
-     * 判断是否是确认类输入。
-     *
-     * @param value 用户输入
-     * @return 是否确认
-     */
-    public static boolean isConfirmation(String value) {
-        String text = TaskAgentSupport.normalizeText(value);
-        if (!oConvertUtils.isNotEmpty(text)) {
-            return false;
-        }
-        return text.contains("确认")
-                || text.contains("可以")
-                || text.contains("就这样")
-                || text.contains("没问题")
-                || text.contains("继续")
-                || text.contains("好的")
-                || "好".equals(text)
-                || "行".equals(text)
-                || "对".equals(text)
-                || text.equalsIgnoreCase("yes")
-                || text.equalsIgnoreCase("ok");
-    }
-
     private static JSONObject resolveRoleCoreJson(AgentContext context) {
         JSONObject core = readJson(context, ATTR_ROLE_CORE_RESULT_JSON);
         if (core != null && !core.isEmpty()) {

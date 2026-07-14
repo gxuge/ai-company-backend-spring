@@ -64,7 +64,7 @@ public class TsAgentChatAgent implements Agent {
         if (nodeResult == null) {
             return AgentResult.failed("DeepAgents 主节点未返回结果");
         }
-        AgentResult pendingTaskResult = this.deepAgentTaskToolService.executePendingTask(context);
+        AgentResult pendingTaskResult = this.deepAgentTaskToolService.consumePendingHandoff(context);
         if (pendingTaskResult != null) {
             enrichResult(pendingTaskResult, nodeResult);
             return pendingTaskResult;

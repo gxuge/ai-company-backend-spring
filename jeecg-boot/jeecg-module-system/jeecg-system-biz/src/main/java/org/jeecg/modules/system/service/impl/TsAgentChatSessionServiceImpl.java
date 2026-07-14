@@ -58,6 +58,8 @@ public class TsAgentChatSessionServiceImpl extends ServiceImpl<TsAgentChatSessio
         entity.setSessionNo(UUIDGenerator.generate());
         entity.setAppId(appId);
         entity.setAgentCode(normalizeAgentCode(agentCode));
+        entity.setActiveAgentCode(DEFAULT_AGENT_CODE);
+        entity.setActiveAgentUpdatedAt(now);
         entity.setUserId(userId);
         entity.setSessionTitle(normalizedTitle);
         entity.setSessionSummary(sessionSummary);

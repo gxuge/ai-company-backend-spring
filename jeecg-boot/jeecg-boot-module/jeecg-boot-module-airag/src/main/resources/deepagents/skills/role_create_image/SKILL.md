@@ -4,7 +4,7 @@ name: 角色形象生成 skill
 description: 用于在角色核心设定确认后，生成可用于出图的角色形象描述与视觉提示。
 domain: role
 version: "1.0.0"
-allowed_tools: role_generate_role_image, role_flow_gate
+allowed_tools: role_generate_role_image
 metadata:
   flow: create-role-image
 ---
@@ -19,7 +19,6 @@ metadata:
 
 只允许：
 - `role_generate_role_image`
-- `role_flow_gate`
 
 ## 输出要求
 
@@ -27,4 +26,3 @@ metadata:
 - 简短清晰
 - 便于继续进入声音生成
 - 不要写成大段说明
-

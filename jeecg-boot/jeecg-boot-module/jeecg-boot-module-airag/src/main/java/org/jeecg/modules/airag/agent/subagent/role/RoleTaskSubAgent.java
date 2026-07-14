@@ -1,15 +1,17 @@
 package org.jeecg.modules.airag.agent.subagent.role;
 
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.airag.agent.graph.NodeResult;
 import org.jeecg.modules.airag.agent.graph.SubAgent;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
+import org.jeecg.modules.airag.agent.runtime.AgentFlowStateSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentHandoffSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentResult;
 import org.jeecg.modules.airag.agent.runtime.NodeRunner;
+import org.jeecg.modules.airag.agent.subagent.role.node.RoleConfirmationNode;
 import org.jeecg.modules.airag.agent.subagent.role.node.RoleCreateDialogNode;
 import org.jeecg.modules.airag.agent.subagent.role.node.RoleCreateImageNode;
 import org.jeecg.modules.airag.agent.subagent.role.node.RoleCreateVoiceNode;
-import org.jeecg.modules.airag.agent.subagent.role.node.RoleFlowGateNode;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -18,28 +20,32 @@ import java.util.Map;
 /**
  * 角色子 Agent。
  *
- * <p>执行顺序：角色对话 -> 流程门禁 -> 形象 -> 声音。</p>
+ * <p>执行顺序：角色对话 -> 用户确认 -> 形象 -> 声音。</p>
  *
  * @author codex
  * @date 2026/7/10
  */
 @Component
 public class RoleTaskSubAgent implements SubAgent {
+    private static final String STAGE_DIALOG = "dialog";
+    private static final String STAGE_CONFIRMATION = "confirmation";
+    private static final String STAGE_IMAGE = "image";
+    private static final String STAGE_VOICE = "voice";
 
     private final NodeRunner nodeRunner;
     private final RoleCreateDialogNode roleCreateDialogNode;
-    private final RoleFlowGateNode roleFlowGateNode;
+    private final RoleConfirmationNode roleConfirmationNode;
     private final RoleCreateImageNode roleCreateImageNode;
     private final RoleCreateVoiceNode roleCreateVoiceNode;
 
     public RoleTaskSubAgent(NodeRunner nodeRunner,
                             RoleCreateDialogNode roleCreateDialogNode,
-                            RoleFlowGateNode roleFlowGateNode,
+                            RoleConfirmationNode roleConfirmationNode,
                             RoleCreateImageNode roleCreateImageNode,
                             RoleCreateVoiceNode roleCreateVoiceNode) {
         this.nodeRunner = nodeRunner;
         this.roleCreateDialogNode = roleCreateDialogNode;
-        this.roleFlowGateNode = roleFlowGateNode;
+        this.roleConfirmationNode = roleConfirmationNode;
         this.roleCreateImageNode = roleCreateImageNode;
         this.roleCreateVoiceNode = roleCreateVoiceNode;
     }
@@ -54,17 +60,24 @@ public class RoleTaskSubAgent implements SubAgent {
         Map<String, Object> chainData = buildChainData();
         if (context != null) {
             context.putAttribute("roleTaskChainSpec", chainData);
-            context.putAttribute("roleTaskStage", "dialog");
         }
 
         try {
-            if (hasRoleCoreState(context)) {
-                AgentResult decisionResult = handleExistingRoleCore(context, chainData);
+            String stage = resolveStage(context);
+            if (STAGE_VOICE.equals(stage)) {
+                return continueWithVoice(context, chainData, null);
+            }
+            if (STAGE_IMAGE.equals(stage)) {
+                return continueWithImageAndVoice(context, chainData);
+            }
+            if ((STAGE_CONFIRMATION.equals(stage) || hasRoleCoreState(context)) && hasRoleCoreState(context)) {
+                AgentResult decisionResult = handleConfirmationOption(context, chainData);
                 if (decisionResult != null) {
                     return decisionResult;
                 }
             }
 
+            markStage(context, STAGE_DIALOG, this.roleCreateDialogNode.nodeName());
             var dialogResult = this.nodeRunner.run(context, this.roleCreateDialogNode);
             storeNodeResult(context, "roleDialogNodeResult", dialogResult);
             AgentResult dialogHandoff = handoffIfNeeded(context, dialogResult, chainData, "dialog");
@@ -73,74 +86,63 @@ public class RoleTaskSubAgent implements SubAgent {
             }
 
             if (!hasRoleCoreState(context)) {
-                return waiting(dialogResult == null ? null : dialogResult.getContent(), chainData, "dialog");
+                return waiting(context, dialogResult == null ? null : dialogResult.getContent(), chainData, STAGE_DIALOG);
             }
 
-            if (context != null) {
-                context.putAttribute("roleTaskStage", "gate");
-            }
-            var gateResult = this.nodeRunner.run(context, this.roleFlowGateNode);
-            storeNodeResult(context, "roleFlowGateNodeResult", gateResult);
-            AgentResult gateHandoff = handoffIfNeeded(context, gateResult, chainData, "gate");
-            if (gateHandoff != null) {
-                return gateHandoff;
-            }
-            Map<String, Object> gateDecision = extractDecision(gateResult);
-            if (context != null) {
-                context.putAttribute("roleFlowGateDecision", gateDecision);
-            }
-            if (!shouldContinue(gateDecision)) {
-                String question = oConvertUtils.getString(gateDecision == null ? null : gateDecision.get("question"));
-                if (!oConvertUtils.isNotEmpty(question)) {
-                    question = gateResult == null ? null : gateResult.getContent();
-                }
-                return waiting(question, chainData, "gate");
-            }
-
-            return continueWithImageAndVoice(context, chainData);
+            return handleConfirmationOption(context, chainData);
         } catch (Exception ex) {
             AgentResult result = AgentResult.failed(ex.getMessage());
             result.getData().putAll(chainData);
             result.getData().put("stage", "failed");
+            AgentFlowStateSupport.attachResumeData(result, context);
             return result;
         }
     }
 
-    private AgentResult handleExistingRoleCore(AgentContext context, Map<String, Object> chainData) {
-        if (context != null) {
-            context.putAttribute("roleTaskStage", "confirmation");
-        }
-        var dialogResult = this.nodeRunner.run(context, this.roleCreateDialogNode);
-        storeNodeResult(context, "roleConfirmationDialogNodeResult", dialogResult);
-        AgentResult handoff = handoffIfNeeded(context, dialogResult, chainData, "confirmation");
+    private AgentResult handleConfirmationOption(AgentContext context, Map<String, Object> chainData) {
+        markStage(context, STAGE_CONFIRMATION, this.roleConfirmationNode.nodeName());
+        var confirmationResult = this.nodeRunner.run(context, this.roleConfirmationNode);
+        storeNodeResult(context, "roleConfirmationNodeResult", confirmationResult);
+        AgentResult handoff = handoffIfNeeded(context, confirmationResult, chainData, STAGE_CONFIRMATION);
         if (handoff != null) {
             return handoff;
         }
-        Map<String, Object> decision = extractDecision(dialogResult);
+        Map<String, Object> decision = extractDecision(confirmationResult);
         if (context != null) {
+            this.roleConfirmationNode.consumeOptionValue(context);
             context.putAttribute("roleConfirmationDecision", decision);
         }
-        String action = oConvertUtils.getString(decision.get("action"));
+        return applyConfirmationDecision(
+                context,
+                chainData,
+                decision,
+                confirmationResult == null ? null : confirmationResult.getContent()
+        );
+    }
+
+    private AgentResult applyConfirmationDecision(AgentContext context,
+                                                  Map<String, Object> chainData,
+                                                  Map<String, Object> decision,
+                                                  String fallbackContent) {
+        String action = oConvertUtils.getString(decision == null ? null : decision.get("action"));
         if ("ACCEPT_AND_CONTINUE".equalsIgnoreCase(action)) {
             return continueWithImageAndVoice(context, chainData);
         }
-        if ("ASK_USER".equalsIgnoreCase(action)) {
-            String reply = oConvertUtils.getString(decision.get("reply"));
-            return waiting(reply, chainData, "confirmation", decision);
-        }
         if ("REGENERATE".equalsIgnoreCase(action) || "MODIFY".equalsIgnoreCase(action)) {
-            if (context != null) {
-                context.putAttribute("roleConfirmationAction", action);
-            }
             return null;
         }
-        return waiting(oConvertUtils.getString(decision.get("reply")), chainData, "confirmation", decision);
+        String content = oConvertUtils.getString(decision == null ? null : decision.get("question"));
+        if (!oConvertUtils.isNotEmpty(content)) {
+            content = oConvertUtils.getString(decision == null ? null : decision.get("reply"));
+        }
+        if (!oConvertUtils.isNotEmpty(content)) {
+            content = fallbackContent;
+        }
+        return waiting(context, content, chainData, STAGE_CONFIRMATION, decision);
     }
 
     private AgentResult continueWithImageAndVoice(AgentContext context, Map<String, Object> chainData) {
-        if (context != null) {
-            context.putAttribute("roleTaskStage", "image");
-        }
+        markStage(context, STAGE_IMAGE, this.roleCreateImageNode.nodeName());
         var imageResult = this.nodeRunner.run(context, this.roleCreateImageNode);
         storeNodeResult(context, "roleImageNodeResult", imageResult);
         AgentResult imageHandoff = handoffIfNeeded(context, imageResult, chainData, "image");
@@ -148,9 +150,13 @@ public class RoleTaskSubAgent implements SubAgent {
             return imageHandoff;
         }
 
-        if (context != null) {
-            context.putAttribute("roleTaskStage", "voice");
-        }
+        return continueWithVoice(context, chainData, imageResult);
+    }
+
+    private AgentResult continueWithVoice(AgentContext context,
+                                          Map<String, Object> chainData,
+                                          NodeResult imageResult) {
+        markStage(context, STAGE_VOICE, this.roleCreateVoiceNode.nodeName());
         var voiceResult = this.nodeRunner.run(context, this.roleCreateVoiceNode);
         storeNodeResult(context, "roleVoiceNodeResult", voiceResult);
         AgentResult voiceHandoff = handoffIfNeeded(context, voiceResult, chainData, "voice");
@@ -171,8 +177,13 @@ public class RoleTaskSubAgent implements SubAgent {
         if (context != null) {
             context.putAttribute("roleTaskStage", "done");
         }
-        AgentResult result = AgentResult.success(content);
-        result.setStructuredResult(buildStructuredResult(context, imageResult, voiceResult));
+        Object structuredResult = buildStructuredResult(context, imageResult, voiceResult);
+        AgentResult result = AgentHandoffSupport.buildCompletedHandoffResult(
+                context,
+                subAgentName(),
+                content,
+                structuredResult
+        );
         result.getData().putAll(chainData);
         result.getData().put("stage", "done");
         result.getData().put("image", imageResult == null ? null : imageResult.getData());
@@ -180,12 +191,20 @@ public class RoleTaskSubAgent implements SubAgent {
         return result;
     }
 
-    private AgentResult waiting(String content, Map<String, Object> chainData, String stage) {
-        return waiting(content, chainData, stage, null);
+    private AgentResult waiting(AgentContext context, String content, Map<String, Object> chainData, String stage) {
+        return waiting(context, content, chainData, stage, null);
     }
 
-    private AgentResult waiting(String content, Map<String, Object> chainData, String stage, Map<String, Object> decision) {
+    private AgentResult waiting(AgentContext context,
+                                String content,
+                                Map<String, Object> chainData,
+                                String stage,
+                                Map<String, Object> decision) {
         String text = oConvertUtils.isNotEmpty(content) ? content : "你对这版角色满意吗？想先改哪部分？";
+        String resumeNodeName = STAGE_CONFIRMATION.equals(stage)
+                ? this.roleConfirmationNode.nodeName()
+                : this.roleCreateDialogNode.nodeName();
+        markStage(context, stage, resumeNodeName);
         AgentResult result = AgentResult.waitingUser(text);
         result.setStructuredResult(chainData);
         result.getData().putAll(chainData);
@@ -199,15 +218,42 @@ public class RoleTaskSubAgent implements SubAgent {
                 result.getData().put("options", options);
             }
         }
+        AgentFlowStateSupport.attachResumeData(result, context);
         return result;
     }
 
-    private boolean shouldContinue(Map<String, Object> gateDecision) {
-        if (gateDecision == null || gateDecision.isEmpty()) {
-            return true;
+    private String resolveStage(AgentContext context) {
+        if (context == null) {
+            return STAGE_DIALOG;
         }
-        Object action = gateDecision.get("action");
-        return action == null || "NEXT".equalsIgnoreCase(String.valueOf(action));
+        String stage = oConvertUtils.getString(context.getActiveStage());
+        if (!oConvertUtils.isNotEmpty(stage)) {
+            stage = oConvertUtils.getString(context.getAttribute("roleTaskStage"));
+        }
+        if (!oConvertUtils.isNotEmpty(stage)) {
+            String resumeNodeName = oConvertUtils.getString(context.getResumeNodeName());
+            if (this.roleCreateVoiceNode.nodeName().equalsIgnoreCase(resumeNodeName)) {
+                return STAGE_VOICE;
+            }
+            if (this.roleCreateImageNode.nodeName().equalsIgnoreCase(resumeNodeName)) {
+                return STAGE_IMAGE;
+            }
+            if (this.roleConfirmationNode.nodeName().equalsIgnoreCase(resumeNodeName)) {
+                return STAGE_CONFIRMATION;
+            }
+        }
+        if (!oConvertUtils.isNotEmpty(stage)) {
+            return hasRoleCoreState(context) ? STAGE_CONFIRMATION : STAGE_DIALOG;
+        }
+        return stage.trim().toLowerCase();
+    }
+
+    private void markStage(AgentContext context, String stage, String resumeNodeName) {
+        if (context == null) {
+            return;
+        }
+        context.putAttribute("roleTaskStage", stage);
+        AgentFlowStateSupport.markResume(context, resumeNodeName, stage);
     }
 
     private AgentResult handoffIfNeeded(AgentContext context, Object nodeResult, Map<String, Object> chainData, String stage) {
