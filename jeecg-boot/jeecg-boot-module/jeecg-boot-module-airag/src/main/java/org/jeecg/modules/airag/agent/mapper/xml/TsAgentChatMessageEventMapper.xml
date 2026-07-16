@@ -54,4 +54,25 @@
         LIMIT 1
     </select>
 
+    <!-- 批量查询指定消息对应的完整执行事件 -->
+    <select id="selectOwnedByMessageIds"
+            resultType="org.jeecg.modules.airag.agent.entity.TsAgentChatMessageEventEntity">
+        SELECT e.*
+        FROM ts_agent_chat_message_event e
+        INNER JOIN ts_agent_chat_session s ON s.id = e.session_id
+        INNER JOIN ts_agent_chat_message m ON m.id = e.message_id
+          AND m.session_id = e.session_id
+        WHERE s.user_id = #{userId}
+          AND s.is_deleted = 0
+          AND s.session_status != 'deleted'
+          AND m.is_deleted = 0
+          AND e.is_deleted = 0
+          AND e.session_id = #{sessionId}
+          AND e.message_id IN
+        <foreach collection="messageIds" item="messageId" open="(" separator="," close=")">
+            #{messageId}
+        </foreach>
+        ORDER BY e.message_id ASC, e.created_at ASC, e.id ASC
+    </select>
+
 </mapper>

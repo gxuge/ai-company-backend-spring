@@ -2,6 +2,7 @@ package org.jeecg.modules.airag.agent.service;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONWriter;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.jeecg.common.util.UUIDGenerator;
@@ -9,8 +10,10 @@ import org.jeecg.modules.airag.agent.entity.TsAgentChatMessageEventEntity;
 import org.jeecg.modules.airag.agent.mapper.TsAgentChatMessageEventMapper;
 import org.springframework.stereotype.Service;
 
+import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -75,6 +78,23 @@ public class TsAgentChatMessageEventService {
     }
 
     /**
+     * 批量查询指定消息对应的事件。
+     *
+     * @param userId 用户ID
+     * @param sessionId 会话ID
+     * @param messageIds 消息ID集合
+     * @return 按消息和创建时间升序排列的事件
+     */
+    public List<TsAgentChatMessageEventEntity> listOwnedEventsByMessageIds(String userId,
+                                                                           Long sessionId,
+                                                                           List<Long> messageIds) {
+        if (sessionId == null || messageIds == null || messageIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return this.eventMapper.selectOwnedByMessageIds(userId, sessionId, messageIds);
+    }
+
+    /**
      * 保存一个完整执行事件，并允许调用方预分配事件ID。
      *
      * @param eventId 事件ID，为空时自动生成
@@ -124,6 +144,61 @@ public class TsAgentChatMessageEventService {
         entity.setCreatedAt(now);
         entity.setUpdatedAt(now);
         this.eventMapper.insert(entity);
+    }
+
+    /**
+     * 查询同一会话和节点最新的运行中交互事件。
+     *
+     * @param sessionId 会话ID
+     * @param agentCode Agent编码
+     * @param nodeName 节点名称
+     * @param nodeType 节点类型
+     * @return 最新运行中事件，不存在时返回 null
+     */
+    public TsAgentChatMessageEventEntity findLatestPendingInteractiveEvent(Long sessionId,
+                                                                           String agentCode,
+                                                                           String nodeName,
+                                                                           String nodeType) {
+        if (sessionId == null || nodeName == null || nodeName.isBlank()
+                || nodeType == null || nodeType.isBlank()) {
+            return null;
+        }
+        LambdaQueryWrapper<TsAgentChatMessageEventEntity> query = new LambdaQueryWrapper<>();
+        query.eq(TsAgentChatMessageEventEntity::getSessionId, sessionId)
+                .eq(TsAgentChatMessageEventEntity::getNodeName, nodeName)
+                .eq(TsAgentChatMessageEventEntity::getNodeType, nodeType)
+                .eq(TsAgentChatMessageEventEntity::getStatus, 2)
+                .eq(TsAgentChatMessageEventEntity::getIsDeleted, 0)
+                .orderByDesc(TsAgentChatMessageEventEntity::getCreatedAt)
+                .last("LIMIT 1");
+        if (agentCode != null && !agentCode.isBlank()) {
+            query.eq(TsAgentChatMessageEventEntity::getAgentCode, agentCode);
+        }
+        return this.eventMapper.selectOne(query);
+    }
+
+    /**
+     * 更新交互事件的最终结果。
+     *
+     * @param eventId 事件ID
+     * @param content 结果摘要
+     * @param status 最终状态
+     * @param jsonData 完整事件数据
+     */
+    public void updateEventResult(String eventId,
+                                  String content,
+                                  Integer status,
+                                  Map<String, Object> jsonData) {
+        if (eventId == null || eventId.isBlank()) {
+            return;
+        }
+        TsAgentChatMessageEventEntity entity = new TsAgentChatMessageEventEntity();
+        entity.setId(eventId);
+        entity.setContent(content);
+        entity.setStatus(status);
+        entity.setJson(JSON.toJSONString(compactJsonData(jsonData), JSONWriter.Feature.WriteNulls));
+        entity.setUpdatedAt(new Date());
+        this.eventMapper.updateById(entity);
     }
 
     /**

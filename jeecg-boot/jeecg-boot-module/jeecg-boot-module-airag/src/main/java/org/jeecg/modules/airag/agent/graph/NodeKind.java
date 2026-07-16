@@ -14,5 +14,13 @@ public enum NodeKind {
     /**
      * 工具节点。
      */
-    TOOL
+    TOOL,
+    /**
+     * 用户确认节点。
+     */
+    CONFIRM,
+    /**
+     * 用户候选项选择节点。
+     */
+    OPTIONS
 }

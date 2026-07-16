@@ -3,6 +3,7 @@ package org.jeecg.modules.airag.agent.runtime;
 import com.alibaba.fastjson2.JSONObject;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jeecg.modules.airag.agent.entity.TsAgentChatMessageEventEntity;
 import org.jeecg.modules.airag.agent.graph.NodeKind;
 import org.jeecg.modules.airag.agent.sse.SseConnectionManager;
 import org.jeecg.modules.airag.agent.sse.SsePayload;
@@ -355,6 +356,206 @@ public class AgentEventPublisher {
     }
 
     /**
+     * 发送确认节点等待用户选择事件。
+     *
+     * <p>前端载荷只包含 question 和 options。</p>
+     *
+     * @param context 运行上下文
+     * @param eventName SSE 事件名
+     * @param nodeName 节点名
+     * @param question 确认问题
+     * @param options 确认选项
+     */
+    public void publishConfirmStart(AgentContext context,
+                                    String eventName,
+                                    String nodeName,
+                                    String question,
+                                    List<Map<String, String>> options) {
+        Map<String, Object> payload = buildOptionPromptSseData(question, options);
+        Map<String, Object> dbData = buildEventData(
+                eventName,
+                NodeKind.CONFIRM,
+                nodeName,
+                null,
+                null,
+                null,
+                question,
+                2,
+                payload
+        );
+        recordEventTrail(context, dbData);
+        persistInteractiveStart(context, NodeKind.CONFIRM, nodeName, question, options);
+        sendOptionPromptRaw(context, eventName, payload);
+    }
+
+    /**
+     * 发送确认节点选择完成事件，并完成原运行中事件。
+     *
+     * @param context 运行上下文
+     * @param eventName SSE 事件名
+     * @param nodeName 节点名
+     * @param question 确认问题
+     * @param options 确认选项
+     * @param resultData 节点选择结果
+     */
+    public void publishConfirmEnd(AgentContext context,
+                                  String eventName,
+                                  String nodeName,
+                                  String question,
+                                  List<Map<String, String>> options,
+                                  Map<String, Object> resultData) {
+        publishInteractiveEnd(
+                context,
+                eventName,
+                NodeKind.CONFIRM,
+                nodeName,
+                question,
+                options,
+                resultData
+        );
+    }
+
+    /**
+     * 发送确认节点异常事件。
+     *
+     * <p>为了保持确认事件协议稳定，前端载荷仍只包含 question 和 options。</p>
+     *
+     * @param context 运行上下文
+     * @param eventName SSE 事件名
+     * @param nodeName 节点名
+     * @param error 异常
+     */
+    public void publishConfirmError(AgentContext context,
+                                    String eventName,
+                                    String nodeName,
+                                    String originalQuestion,
+                                    List<Map<String, String>> options,
+                                    Throwable error) {
+        String question = error == null ? "确认节点执行失败" : error.getMessage();
+        Map<String, Object> payload = buildOptionPromptSseData(question, List.of());
+        Map<String, Object> dbData = buildEventData(
+                eventName,
+                NodeKind.CONFIRM,
+                nodeName,
+                null,
+                null,
+                null,
+                question,
+                0,
+                payload
+        );
+        recordEventTrail(context, dbData);
+        persistInteractiveError(
+                context,
+                NodeKind.CONFIRM,
+                nodeName,
+                originalQuestion,
+                options,
+                error
+        );
+        sendOptionPromptRaw(context, eventName, payload);
+    }
+
+    /**
+     * 发送候选项节点等待用户选择事件。
+     *
+     * <p>前端载荷只包含 question 和 options。</p>
+     *
+     * @param context 运行上下文
+     * @param eventName SSE 事件名
+     * @param nodeName 节点名
+     * @param question 选择问题
+     * @param options 候选项
+     */
+    public void publishOptionsStart(AgentContext context,
+                                    String eventName,
+                                    String nodeName,
+                                    String question,
+                                    List<Map<String, String>> options) {
+        Map<String, Object> payload = buildOptionPromptSseData(question, options);
+        Map<String, Object> dbData = buildEventData(
+                eventName,
+                NodeKind.OPTIONS,
+                nodeName,
+                null,
+                null,
+                null,
+                question,
+                2,
+                payload
+        );
+        recordEventTrail(context, dbData);
+        persistInteractiveStart(context, NodeKind.OPTIONS, nodeName, question, options);
+        sendOptionPromptRaw(context, eventName, payload);
+    }
+
+    /**
+     * 发送候选项节点选择完成事件，并完成原运行中事件。
+     *
+     * @param context 运行上下文
+     * @param eventName SSE 事件名
+     * @param nodeName 节点名
+     * @param question 选择问题
+     * @param options 候选项
+     * @param resultData 节点选择结果
+     */
+    public void publishOptionsEnd(AgentContext context,
+                                  String eventName,
+                                  String nodeName,
+                                  String question,
+                                  List<Map<String, String>> options,
+                                  Map<String, Object> resultData) {
+        publishInteractiveEnd(
+                context,
+                eventName,
+                NodeKind.OPTIONS,
+                nodeName,
+                question,
+                options,
+                resultData
+        );
+    }
+
+    /**
+     * 发送候选项节点异常事件。
+     *
+     * @param context 运行上下文
+     * @param eventName SSE 事件名
+     * @param nodeName 节点名
+     * @param error 异常
+     */
+    public void publishOptionsError(AgentContext context,
+                                    String eventName,
+                                    String nodeName,
+                                    String originalQuestion,
+                                    List<Map<String, String>> options,
+                                    Throwable error) {
+        String question = error == null ? "候选项节点执行失败" : error.getMessage();
+        Map<String, Object> payload = buildOptionPromptSseData(question, List.of());
+        Map<String, Object> dbData = buildEventData(
+                eventName,
+                NodeKind.OPTIONS,
+                nodeName,
+                null,
+                null,
+                null,
+                question,
+                0,
+                payload
+        );
+        recordEventTrail(context, dbData);
+        persistInteractiveError(
+                context,
+                NodeKind.OPTIONS,
+                nodeName,
+                originalQuestion,
+                options,
+                error
+        );
+        sendOptionPromptRaw(context, eventName, payload);
+    }
+
+    /**
      * 发送 tool.start，并暂存完整 Tool 事件的输入与开始时间。
      *
      * @param context 运行上下文
@@ -503,6 +704,90 @@ public class AgentEventPublisher {
     }
 
     /**
+     * 仅发送内嵌 Tool 的 tool.start SSE，不创建事件状态、不写入事件表。
+     *
+     * @param context 运行上下文
+     * @param nodeName 所属 LLM 节点名
+     * @param toolName 工具名
+     * @param payload 扩展数据
+     */
+    public void publishToolStartSseOnly(AgentContext context,
+                                        String nodeName,
+                                        String toolName,
+                                        Map<String, Object> payload) {
+        String content = "开始调用 " + safeText(toolName, "Tool");
+        Map<String, Object> sseData = buildCompactToolEventData(
+                "tool.start",
+                toolName,
+                content,
+                2,
+                payload,
+                null
+        );
+        sendOnlyCompact(context, "tool.start", NodeKind.TOOL, nodeName, content, 2, sseData);
+    }
+
+    /**
+     * 仅发送内嵌 Tool 的 tool.error SSE，不创建事件状态、不写入事件表。
+     *
+     * @param context 运行上下文
+     * @param nodeName 所属 LLM 节点名
+     * @param toolName 工具名
+     * @param error 错误对象
+     * @param payload 扩展数据
+     */
+    public void publishToolErrorSseOnly(AgentContext context,
+                                        String nodeName,
+                                        String toolName,
+                                        Throwable error,
+                                        Map<String, Object> payload) {
+        String content = error == null ? "Tool step failed" : error.getMessage();
+        Map<String, Object> errorPayload = new LinkedHashMap<>();
+        if (error != null) {
+            errorPayload.put("errorCode", error.getClass().getSimpleName());
+            errorPayload.put("errorMessage", error.getMessage());
+        }
+        Map<String, Object> mergedPayload = mergePayload(payload, errorPayload);
+        Map<String, Object> sseData = buildCompactToolEventData(
+                "tool.error",
+                toolName,
+                content,
+                0,
+                mergedPayload,
+                null
+        );
+        sendOnlyCompact(context, "tool.error", NodeKind.TOOL, nodeName, content, 0, sseData);
+    }
+
+    /**
+     * 仅发送内嵌 Tool 的 tool.end SSE，不创建事件状态、不写入事件表。
+     *
+     * @param context 运行上下文
+     * @param nodeName 所属 LLM 节点名
+     * @param toolName 工具名
+     * @param success 是否成功
+     * @param content 结果摘要
+     * @param payload 扩展数据
+     */
+    public void publishToolEndSseOnly(AgentContext context,
+                                      String nodeName,
+                                      String toolName,
+                                      boolean success,
+                                      String content,
+                                      Map<String, Object> payload) {
+        String summary = safeText(summarize(content), "调用完成 " + safeText(toolName, "Tool"));
+        Map<String, Object> sseData = buildCompactToolEventData(
+                "tool.end",
+                toolName,
+                summary,
+                success ? 1 : 0,
+                payload,
+                content
+        );
+        sendOnlyCompact(context, "tool.end", NodeKind.TOOL, nodeName, summary, success ? 1 : 0, sseData);
+    }
+
+    /**
      * 构建事件数据。
      *
      * @param eventName 事件名
@@ -575,6 +860,289 @@ public class AgentEventPublisher {
             data.putAll(payload);
         }
         return data;
+    }
+
+    private Map<String, Object> buildOptionPromptSseData(String question,
+                                                         List<Map<String, String>> options) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("question", question);
+        data.put("options", options == null ? List.of() : options);
+        return data;
+    }
+
+    private void publishInteractiveEnd(AgentContext context,
+                                       String eventName,
+                                       NodeKind nodeKind,
+                                       String nodeName,
+                                       String question,
+                                       List<Map<String, String>> options,
+                                       Map<String, Object> resultData) {
+        Map<String, Object> payload = buildOptionEndSseData(question, resultData);
+        String content = buildSelectionSummary(payload);
+        Map<String, Object> dbData = buildEventData(
+                eventName,
+                nodeKind,
+                nodeName,
+                null,
+                null,
+                null,
+                content,
+                1,
+                resultData
+        );
+        recordEventTrail(context, dbData);
+        persistInteractiveEnd(
+                context,
+                nodeKind,
+                nodeName,
+                question,
+                options,
+                resultData,
+                content
+        );
+        sendOptionPromptRaw(context, eventName, payload);
+    }
+
+    private Map<String, Object> buildOptionEndSseData(String question,
+                                                      Map<String, Object> resultData) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("question", question);
+        data.put("selectedOption", normalizedSelection(
+                resultData == null ? null : resultData.get("selectedOption"),
+                stringValue(resultData == null ? null : resultData.get("optionValue"))
+        ));
+        putString(data, "action", stringValue(resultData == null ? null : resultData.get("action")));
+        putString(data, "reply", stringValue(resultData == null ? null : resultData.get("reply")));
+        return data;
+    }
+
+    private void persistInteractiveStart(AgentContext context,
+                                         NodeKind nodeKind,
+                                         String nodeName,
+                                         String question,
+                                         List<Map<String, String>> options) {
+        if (context == null || nodeKind == null) {
+            return;
+        }
+        String nodeType = nodeKind.name().toLowerCase();
+        TsAgentChatMessageEventEntity pending = this.eventService.findLatestPendingInteractiveEvent(
+                context.getSessionId(),
+                context.getAgentCode(),
+                nodeName,
+                nodeType
+        );
+        if (pending != null) {
+            return;
+        }
+        Map<String, Object> completeData = buildInteractiveStartData(question, options);
+        fillContextFields(completeData, context);
+        this.eventService.saveEvent(
+                UUIDGenerator.generate(),
+                context.getMessageId(),
+                context.getSessionId(),
+                context.getAgentSessionId(),
+                nodeType,
+                nodeName,
+                nodeName,
+                nodeType,
+                summarize(question),
+                2,
+                completeData
+        );
+    }
+
+    private void persistInteractiveEnd(AgentContext context,
+                                       NodeKind nodeKind,
+                                       String nodeName,
+                                       String question,
+                                       List<Map<String, String>> options,
+                                       Map<String, Object> resultData,
+                                       String content) {
+        if (context == null || nodeKind == null) {
+            return;
+        }
+        String nodeType = nodeKind.name().toLowerCase();
+        TsAgentChatMessageEventEntity pending = this.eventService.findLatestPendingInteractiveEvent(
+                context.getSessionId(),
+                context.getAgentCode(),
+                nodeName,
+                nodeType
+        );
+        Map<String, Object> completeData = buildInteractiveEndData(
+                context,
+                pending,
+                question,
+                options,
+                resultData
+        );
+        fillContextFields(completeData, context);
+        if (pending != null) {
+            this.eventService.updateEventResult(
+                    pending.getId(),
+                    summarize(content),
+                    1,
+                    completeData
+            );
+            return;
+        }
+        this.eventService.saveEvent(
+                UUIDGenerator.generate(),
+                context.getMessageId(),
+                context.getSessionId(),
+                context.getAgentSessionId(),
+                nodeType,
+                nodeName,
+                nodeName,
+                nodeType,
+                summarize(content),
+                1,
+                completeData
+        );
+    }
+
+    private void persistInteractiveError(AgentContext context,
+                                         NodeKind nodeKind,
+                                         String nodeName,
+                                         String question,
+                                         List<Map<String, String>> options,
+                                         Throwable error) {
+        if (context == null || nodeKind == null) {
+            return;
+        }
+        String nodeType = nodeKind.name().toLowerCase();
+        TsAgentChatMessageEventEntity pending = this.eventService.findLatestPendingInteractiveEvent(
+                context.getSessionId(),
+                context.getAgentCode(),
+                nodeName,
+                nodeType
+        );
+        Map<String, Object> completeData = new LinkedHashMap<>();
+        completeData.put("input", pending == null
+                ? buildInteractiveInput(question, options)
+                : readInteractiveInput(pending));
+        completeData.put("output", null);
+        completeData.put("error", buildErrorData(
+                error == null ? "INTERACTIVE_NODE_ERROR" : error.getClass().getSimpleName(),
+                error == null ? "Interactive node failed" : error.getMessage()
+        ));
+        completeData.put("metrics", buildInteractiveMetrics(pending));
+        fillContextFields(completeData, context);
+        String content = error == null ? "交互节点执行失败" : error.getMessage();
+        if (pending != null) {
+            this.eventService.updateEventResult(pending.getId(), summarize(content), 0, completeData);
+        }
+    }
+
+    private Map<String, Object> buildInteractiveStartData(String question,
+                                                          List<Map<String, String>> options) {
+        Map<String, Object> completeData = new LinkedHashMap<>();
+        completeData.put("input", buildInteractiveInput(question, options));
+        completeData.put("output", null);
+        completeData.put("error", null);
+        completeData.put("metrics", new LinkedHashMap<>());
+        return completeData;
+    }
+
+    private Map<String, Object> buildInteractiveEndData(AgentContext context,
+                                                        TsAgentChatMessageEventEntity pending,
+                                                        String question,
+                                                        List<Map<String, String>> options,
+                                                        Map<String, Object> resultData) {
+        String optionValue = stringValue(resultData == null ? null : resultData.get("optionValue"));
+        Map<String, Object> output = new LinkedHashMap<>();
+        output.put("selection", normalizedSelection(
+                resultData == null ? null : resultData.get("selectedOption"),
+                optionValue
+        ));
+        putString(output, "action", stringValue(resultData == null ? null : resultData.get("action")));
+        putString(output, "reply", stringValue(resultData == null ? null : resultData.get("reply")));
+        putString(output, "selectionMessageId", context == null ? null : context.getMessageId());
+        putString(output, "selectionRunId", context == null ? null : context.getRunId());
+
+        Map<String, Object> completeData = new LinkedHashMap<>();
+        completeData.put("input", pending == null
+                ? buildInteractiveInput(question, options)
+                : readInteractiveInput(pending));
+        completeData.put("output", output);
+        completeData.put("error", null);
+        completeData.put("metrics", buildInteractiveMetrics(pending));
+        return completeData;
+    }
+
+    private Map<String, Object> buildInteractiveInput(String question,
+                                                      List<Map<String, String>> options) {
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("question", question);
+        input.put("options", options == null ? List.of() : options);
+        return input;
+    }
+
+    private Map<String, Object> readInteractiveInput(TsAgentChatMessageEventEntity pending) {
+        if (pending == null || pending.getJson() == null || pending.getJson().isBlank()) {
+            return new LinkedHashMap<>();
+        }
+        try {
+            JSONObject root = JSONObject.parseObject(pending.getJson());
+            Object rawInput = root == null ? null : root.get("input");
+            if (rawInput instanceof Map<?, ?> rawMap) {
+                Map<String, Object> input = new LinkedHashMap<>();
+                for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+                    if (entry.getKey() != null) {
+                        input.put(String.valueOf(entry.getKey()), entry.getValue());
+                    }
+                }
+                return input;
+            }
+        } catch (Exception ex) {
+            log.warn("读取交互事件输入失败，eventId={}", pending.getId(), ex);
+        }
+        return new LinkedHashMap<>();
+    }
+
+    private Map<String, Object> buildInteractiveMetrics(TsAgentChatMessageEventEntity pending) {
+        Map<String, Object> metrics = new LinkedHashMap<>();
+        if (pending != null) {
+            metrics.put("interactionEventId", pending.getId());
+            long startedAt = pending.getCreatedAt() == null
+                    ? System.currentTimeMillis()
+                    : pending.getCreatedAt().getTime();
+            metrics.put("durationMs", elapsedMillis(startedAt));
+        } else {
+            metrics.put("durationMs", 0L);
+        }
+        return metrics;
+    }
+
+    private Map<String, String> normalizedSelection(Object rawSelection, String optionValue) {
+        Map<String, String> selection = new LinkedHashMap<>();
+        if (rawSelection instanceof Map<?, ?> rawMap) {
+            String label = firstOptionValue(rawMap, "label", "text", "name");
+            String value = firstOptionValue(rawMap, "optionValue", "value", "action");
+            if (label != null) {
+                selection.put("label", label);
+            }
+            if (value != null) {
+                selection.put("optionValue", value);
+            }
+        }
+        if (!selection.containsKey("optionValue") && optionValue != null) {
+            selection.put("optionValue", optionValue);
+        }
+        if (!selection.containsKey("label") && optionValue != null) {
+            selection.put("label", optionValue);
+        }
+        return selection;
+    }
+
+    private String buildSelectionSummary(Map<String, Object> payload) {
+        Object rawSelection = payload == null ? null : payload.get("selectedOption");
+        if (rawSelection instanceof Map<?, ?> rawMap) {
+            String label = firstOptionValue(rawMap, "label", "optionValue", "value");
+            if (label != null) {
+                return "已选择：" + label;
+            }
+        }
+        return "已完成选择";
     }
 
     /**
@@ -958,6 +1526,15 @@ public class AgentEventPublisher {
         payload.setContent(content);
         payload.setStatus(status);
         this.sseConnectionManager.send(context.getSseConnectionKey(), eventName, payload);
+    }
+
+    private void sendOptionPromptRaw(AgentContext context,
+                                     String eventName,
+                                     Map<String, Object> payload) {
+        if (context == null) {
+            return;
+        }
+        this.sseConnectionManager.sendRaw(context.getSseConnectionKey(), eventName, payload);
     }
 
     @SuppressWarnings("unchecked")

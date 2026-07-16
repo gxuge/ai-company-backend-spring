@@ -32,20 +32,8 @@ public final class RoleTaskPromptSupport {
      */
     public static Map<String, String> baseVariables(AgentContext context) {
         Map<String, String> variables = new LinkedHashMap<>();
-        Map<?, ?> promptVariables = context == null ? null : context.getAttribute("promptVariables", Map.class);
-        if (promptVariables != null) {
-            for (Map.Entry<?, ?> entry : promptVariables.entrySet()) {
-                if (entry.getKey() != null) {
-                    variables.put(String.valueOf(entry.getKey()), entry.getValue() == null ? "" : String.valueOf(entry.getValue()));
-                }
-            }
-        }
-        variables.putIfAbsent("user_input", oConvertUtils.getString(context == null ? null : context.getUserInput()));
-        variables.putIfAbsent("task_description", oConvertUtils.getString(context == null ? null : context.getAttribute("taskDescription")));
-        variables.putIfAbsent("session_summary", oConvertUtils.getString(context == null ? null : context.getAttribute("sessionSummary")));
-        variables.putIfAbsent("recent_messages_block", oConvertUtils.getString(context == null ? null : context.getAttribute("recentMessagesBlock")));
-        variables.putIfAbsent("confirmed_fields_json", oConvertUtils.getString(context == null ? null : context.getAttribute("confirmedFieldsJson")));
-        variables.putIfAbsent("missing_fields_json", oConvertUtils.getString(context == null ? null : context.getAttribute("missingFieldsJson")));
+        variables.put("user_input", oConvertUtils.getString(context == null ? null : context.getUserInput()));
+        variables.put("task_description", oConvertUtils.getString(context == null ? null : context.getAttribute("taskDescription")));
         return variables;
     }
 

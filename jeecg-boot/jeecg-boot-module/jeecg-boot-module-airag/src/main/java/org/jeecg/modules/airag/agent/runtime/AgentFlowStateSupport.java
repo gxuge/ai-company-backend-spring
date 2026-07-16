@@ -23,6 +23,7 @@ public final class AgentFlowStateSupport {
     public static final String DATA_ACTIVE_STAGE = "activeStage";
 
     private static final List<String> ROLE_STATE_KEYS = List.of(
+            "taskDescription",
             "roleCoreResultJson",
             "roleCorePresetResultJson",
             "roleGenerateRoleResultJson",
@@ -31,15 +32,13 @@ public final class AgentFlowStateSupport {
             "roleConfirmationDecision"
     );
     private static final List<String> STORY_STATE_KEYS = List.of(
+            "taskDescription",
             "storyCoreResultJson",
             "storyCorePresetResultJson",
             "storyFullGenerateResultJson",
             "storyBackgroundResultJson",
             "storySceneResultJson",
-            "storyConfirmationAction",
-            "storyConfirmationDecision",
-            "storyFlowGateDecision",
-            "storyFlowStage"
+            "storyConfirmationDecision"
     );
 
     private AgentFlowStateSupport() {

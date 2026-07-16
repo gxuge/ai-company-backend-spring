@@ -9,13 +9,10 @@ import org.jeecg.modules.airag.agent.subagent.role.node.RoleConfirmationNode;
 import org.jeecg.modules.airag.agent.subagent.role.node.RoleCreateDialogNode;
 import org.jeecg.modules.airag.agent.subagent.role.node.RoleCreateImageNode;
 import org.jeecg.modules.airag.agent.subagent.role.node.RoleCreateVoiceNode;
-import org.jeecg.modules.airag.agent.tool.ToolRegistry;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-
-import java.util.Map;
 
 class RoleTaskSubAgentResumeTest {
     private NodeRunner nodeRunner;
@@ -29,7 +26,7 @@ class RoleTaskSubAgentResumeTest {
     void setUp() {
         this.nodeRunner = Mockito.mock(NodeRunner.class);
         this.dialogNode = Mockito.mock(RoleCreateDialogNode.class);
-        this.confirmationNode = new RoleConfirmationNode(Mockito.mock(ToolRegistry.class));
+        this.confirmationNode = new RoleConfirmationNode();
         this.imageNode = Mockito.mock(RoleCreateImageNode.class);
         this.voiceNode = Mockito.mock(RoleCreateVoiceNode.class);
         Mockito.when(this.dialogNode.nodeName()).thenReturn("role_create_dialog");
@@ -84,18 +81,7 @@ class RoleTaskSubAgentResumeTest {
         AgentContext context = new AgentContext();
         context.setActiveStage("confirmation");
         context.putAttribute("roleCoreResultJson", "{\"name\":\"林夏\"}");
-        NodeResult confirmationResult = NodeResult.success("需要用户确认");
-        confirmationResult.put(
-                "toolData",
-                Map.of(
-                        "action", "WAIT_CONFIRM",
-                        "question", "你对这版角色满意吗？",
-                        "options", java.util.List.of(
-                                Map.of("label", "满意，继续生成", "value", "ACCEPT_AND_CONTINUE"),
-                                Map.of("label", "不满意，重新生成", "value", "REGENERATE")
-                        )
-                )
-        );
+        NodeResult confirmationResult = this.confirmationNode.execute(context);
         Mockito.when(this.nodeRunner.run(context, this.confirmationNode)).thenReturn(confirmationResult);
 
         AgentResult result = this.subAgent.execute(context);
@@ -113,8 +99,7 @@ class RoleTaskSubAgentResumeTest {
         context.putAttribute("roleCoreResultJson", "{\"name\":\"林夏\"}");
         context.putAttribute("optionValue", "ACCEPT_AND_CONTINUE");
 
-        NodeResult confirmationResult = NodeResult.success("已接收用户选择");
-        confirmationResult.put("toolData", Map.of("action", "ACCEPT_AND_CONTINUE"));
+        NodeResult confirmationResult = this.confirmationNode.execute(context);
         NodeResult imageResult = NodeResult.success("形象已生成");
         NodeResult voiceResult = NodeResult.success("声音已生成");
         Mockito.when(this.nodeRunner.run(context, this.confirmationNode)).thenReturn(confirmationResult);
@@ -129,5 +114,44 @@ class RoleTaskSubAgentResumeTest {
         Mockito.verify(this.nodeRunner).run(context, this.voiceNode);
         Mockito.verify(this.nodeRunner, Mockito.never()).run(context, this.dialogNode);
         Assertions.assertNull(context.getAttribute("optionValue"));
+    }
+
+    @Test
+    void shouldContinueDialogWhenUserSendsTextDuringConfirmation() {
+        AgentContext context = new AgentContext();
+        context.setActiveStage("confirmation");
+        context.setResumeNodeName("role_confirmation");
+        context.setUserInput("我想继续聊聊这个角色的性格");
+        context.putAttribute("roleCoreResultJson", "{\"name\":\"林夏\"}");
+        NodeResult dialogResult = NodeResult.success("可以，你希望她更外向还是更安静？");
+        Mockito.when(this.nodeRunner.run(context, this.dialogNode)).thenReturn(dialogResult);
+
+        AgentResult result = this.subAgent.execute(context);
+
+        Assertions.assertEquals(AgentResult.Status.WAITING_USER, result.getStatus());
+        Assertions.assertEquals("dialog", result.getData().get("stage"));
+        Assertions.assertEquals("role_create_dialog", result.getData().get("resumeNodeName"));
+        Mockito.verify(this.nodeRunner).run(context, this.dialogNode);
+        Mockito.verify(this.nodeRunner, Mockito.never()).run(context, this.confirmationNode);
+        Mockito.verify(this.nodeRunner, Mockito.never()).run(context, this.imageNode);
+        Mockito.verify(this.nodeRunner, Mockito.never()).run(context, this.voiceNode);
+    }
+
+    @Test
+    void shouldKeepContinuingDialogOnFollowingFreeTextTurns() {
+        AgentContext context = new AgentContext();
+        context.setActiveStage("dialog");
+        context.setResumeNodeName("role_create_dialog");
+        context.setUserInput("她平时会怎么和朋友相处？");
+        context.putAttribute("roleCoreResultJson", "{\"name\":\"林夏\"}");
+        NodeResult dialogResult = NodeResult.success("她对熟悉的朋友会更放松，也更愿意主动分享。");
+        Mockito.when(this.nodeRunner.run(context, this.dialogNode)).thenReturn(dialogResult);
+
+        AgentResult result = this.subAgent.execute(context);
+
+        Assertions.assertEquals(AgentResult.Status.WAITING_USER, result.getStatus());
+        Assertions.assertEquals("dialog", result.getData().get("stage"));
+        Mockito.verify(this.nodeRunner).run(context, this.dialogNode);
+        Mockito.verify(this.nodeRunner, Mockito.never()).run(context, this.confirmationNode);
     }
 }

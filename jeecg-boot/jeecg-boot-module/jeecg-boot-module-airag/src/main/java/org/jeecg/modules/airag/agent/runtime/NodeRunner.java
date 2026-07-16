@@ -5,7 +5,9 @@ import org.jeecg.modules.airag.agent.graph.AgentNode;
 import org.jeecg.modules.airag.agent.graph.LlmNodeDefinition;
 import org.jeecg.modules.airag.agent.graph.NodeKind;
 import org.jeecg.modules.airag.agent.graph.NodeResult;
+import org.jeecg.modules.airag.agent.node.ConfirmationNode;
 import org.jeecg.modules.airag.agent.node.LlmNode;
+import org.jeecg.modules.airag.agent.node.OptionsNode;
 import org.jeecg.modules.airag.agent.node.ToolNode;
 import org.jeecg.modules.airag.agent.skill.registry.SkillRegistry;
 import org.springframework.stereotype.Component;
@@ -56,7 +58,16 @@ public class NodeRunner {
         if (node.kind() == NodeKind.LLM) {
             return runLlmNode(context, (LlmNode) node);
         }
-        return runToolNode(context, (ToolNode) node);
+        if (node.kind() == NodeKind.CONFIRM) {
+            return runConfirmNode(context, (ConfirmationNode) node);
+        }
+        if (node.kind() == NodeKind.OPTIONS) {
+            return runOptionsNode(context, (OptionsNode) node);
+        }
+        if (node.kind() == NodeKind.TOOL) {
+            return runToolNode(context, (ToolNode) node);
+        }
+        throw new IllegalArgumentException("不支持的节点类型：" + node.kind());
     }
 
     /**
@@ -189,6 +200,96 @@ public class NodeRunner {
                     result == null ? "" : result.getContent(),
                     payload
             );
+        }
+    }
+
+    /**
+     * 执行用户确认节点。
+     *
+     * @param context 运行上下文
+     * @param node 确认节点
+     * @return 节点结果
+     */
+    private NodeResult runConfirmNode(AgentContext context, ConfirmationNode node) {
+        markCurrentNode(context, node);
+        try {
+            NodeResult result = node.execute(context);
+            boolean success = result != null && result.isSuccess();
+            markResultNode(context, node, result, success);
+            if (success && node.isWaitingAction(result.getAction())) {
+                this.eventPublisher.publishConfirmStart(
+                        context,
+                        node.getStartSseName(),
+                        node.nodeName(),
+                        node.getQuestion(),
+                        node.getOptions()
+                );
+            } else if (success) {
+                this.eventPublisher.publishConfirmEnd(
+                        context,
+                        node.getEndSseName(),
+                        node.nodeName(),
+                        node.getQuestion(),
+                        node.getOptions(),
+                        result.getData()
+                );
+            }
+            return result;
+        } catch (Exception ex) {
+            this.eventPublisher.publishConfirmError(
+                    context,
+                    node.getErrorSseName(),
+                    node.nodeName(),
+                    node.getQuestion(),
+                    node.getOptions(),
+                    ex
+            );
+            throw new RuntimeException(ex);
+        }
+    }
+
+    /**
+     * 执行用户候选项选择节点。
+     *
+     * @param context 运行上下文
+     * @param node 候选项节点
+     * @return 节点结果
+     */
+    private NodeResult runOptionsNode(AgentContext context, OptionsNode node) {
+        markCurrentNode(context, node);
+        try {
+            NodeResult result = node.execute(context);
+            boolean success = result != null && result.isSuccess();
+            markResultNode(context, node, result, success);
+            if (success && node.isWaitingAction(result.getAction())) {
+                this.eventPublisher.publishOptionsStart(
+                        context,
+                        node.getStartSseName(),
+                        node.nodeName(),
+                        node.getQuestion(),
+                        node.getOptions()
+                );
+            } else if (success) {
+                this.eventPublisher.publishOptionsEnd(
+                        context,
+                        node.getEndSseName(),
+                        node.nodeName(),
+                        node.getQuestion(),
+                        node.getOptions(),
+                        result.getData()
+                );
+            }
+            return result;
+        } catch (Exception ex) {
+            this.eventPublisher.publishOptionsError(
+                    context,
+                    node.getErrorSseName(),
+                    node.nodeName(),
+                    node.getQuestion(),
+                    node.getOptions(),
+                    ex
+            );
+            throw new RuntimeException(ex);
         }
     }
 

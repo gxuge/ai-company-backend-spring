@@ -44,10 +44,7 @@ public final class StoryTaskPromptSupport {
             }
         }
         variables.putIfAbsent("user_input", oConvertUtils.getString(context == null ? null : context.getUserInput()));
-        variables.putIfAbsent("session_summary", oConvertUtils.getString(context == null ? null : context.getAttribute("sessionSummary")));
-        variables.putIfAbsent("recent_messages_block", oConvertUtils.getString(context == null ? null : context.getAttribute("recentMessagesBlock")));
-        variables.putIfAbsent("confirmed_fields_json", oConvertUtils.getString(context == null ? null : context.getAttribute("confirmedFieldsJson")));
-        variables.putIfAbsent("missing_fields_json", oConvertUtils.getString(context == null ? null : context.getAttribute("missingFieldsJson")));
+        variables.putIfAbsent("task_description", oConvertUtils.getString(context == null ? null : context.getAttribute("taskDescription")));
         return variables;
     }
 
@@ -89,30 +86,6 @@ public final class StoryTaskPromptSupport {
             variables.putIfAbsent("scene_elements_json", firstText(background, "sceneElements", "scene_elements"));
         }
         appendStoryCoreVariables(variables, context);
-    }
-
-    /**
-     * 判断是否是确认类输入。
-     *
-     * @param value 用户输入
-     * @return 是否确认
-     */
-    public static boolean isConfirmation(String value) {
-        String text = TaskAgentSupport.normalizeText(value);
-        if (!oConvertUtils.isNotEmpty(text)) {
-            return false;
-        }
-        return text.contains("确认")
-                || text.contains("可以")
-                || text.contains("就这样")
-                || text.contains("没问题")
-                || text.contains("继续")
-                || text.contains("好的")
-                || "好".equals(text)
-                || "行".equals(text)
-                || "对".equals(text)
-                || text.equalsIgnoreCase("yes")
-                || text.equalsIgnoreCase("ok");
     }
 
     private static JSONObject resolveStoryCoreJson(AgentContext context) {

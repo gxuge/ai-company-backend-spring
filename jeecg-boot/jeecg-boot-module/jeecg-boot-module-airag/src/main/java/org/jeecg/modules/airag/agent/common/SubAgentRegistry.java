@@ -108,8 +108,8 @@ public class SubAgentRegistry {
         return switch (subAgentName) {
             case "role_task_agent" -> "角色创建对话，支持追问、preset/full 生成、确认后补形象与声音";
             case "story_task_agent" -> "故事创建对话，支持追问、preset/full 生成、确认后补背景与场景";
-            case "role_image_task_agent" -> "生成角色形象图";
-            case "story_scene_image_task_agent" -> "生成故事场景图";
+            case "role_image_task_agent" -> "根据角色描述或已有角色设定，直接生成角色形象";
+            case "story_background_task_agent" -> "根据故事方向或已有故事设定，直接生成故事背景与场景";
             default -> subAgentName;
         };
     }

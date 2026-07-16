@@ -20,7 +20,6 @@ public final class RoleTaskToolSpec {
      * 预留工具名。
      */
     public static final String ROLE_GENERATE_ROLE = "role_generate_role";
-    public static final String ROLE_CONFIRMATION = "role_confirmation";
     /**
      * 预留工具名。
      */
@@ -36,7 +35,6 @@ public final class RoleTaskToolSpec {
     public static final List<String> TOOL_NAMES = List.of(
             ROLE_CORE_FILL_PRESET,
             ROLE_GENERATE_ROLE,
-            ROLE_CONFIRMATION,
             ROLE_GENERATE_ROLE_IMAGE,
             ROLE_GENERATE_ROLE_VOICE
     );

@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.apache.ibatis.annotations.Param;
 import org.jeecg.modules.airag.agent.entity.TsAgentChatMessageEventEntity;
 
+import java.util.List;
+
 /**
  * Agent 聊天消息事件表 Mapper。
  *
@@ -45,4 +47,17 @@ public interface TsAgentChatMessageEventMapper extends BaseMapper<TsAgentChatMes
      */
     TsAgentChatMessageEventEntity selectOwnedById(@Param("id") String id,
                                                   @Param("userId") String userId);
+
+    /**
+     * 批量查询当前用户指定消息对应的事件。
+     *
+     * @param userId 用户ID
+     * @param sessionId 会话ID
+     * @param messageIds 消息ID集合
+     * @return 按消息和创建时间升序排列的事件
+     */
+    List<TsAgentChatMessageEventEntity> selectOwnedByMessageIds(
+            @Param("userId") String userId,
+            @Param("sessionId") Long sessionId,
+            @Param("messageIds") List<Long> messageIds);
 }

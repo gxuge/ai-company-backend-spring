@@ -21,14 +21,6 @@ public final class StoryTaskToolSpec {
      */
     public static final String STORY_FULL_GENERATE = "story_full_generate";
     /**
-     * 故事确认判断工具。
-     */
-    public static final String STORY_CONFIRMATION_DECISION = "story_confirmation_decision";
-    /**
-     * 故事流程门禁工具。
-     */
-    public static final String STORY_FLOW_GATE = "story_flow_gate";
-    /**
      * 故事背景 / 场景生成工具。
      */
     public static final String STORY_GENERATE_SCENE = "story_generate_scene";
@@ -39,8 +31,6 @@ public final class StoryTaskToolSpec {
     public static final List<String> TOOL_NAMES = List.of(
             STORY_FULL_GENERATE_PRESET,
             STORY_FULL_GENERATE,
-            STORY_CONFIRMATION_DECISION,
-            STORY_FLOW_GATE,
             STORY_GENERATE_SCENE
     );
 

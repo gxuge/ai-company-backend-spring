@@ -60,15 +60,13 @@ public class TsAgentDeepAgentsMainNode extends LlmNode {
         definition.setTools(java.util.List.of("task"));
         definition.setPermissions(java.util.List.of("task"));
         definition.setResponseFormat("text");
+        definition.setConversationHistoryEnabled(true);
         definition.setUserPromptTemplate("""
                 当前用户输入：
                 {{user_input}}
 
                 会话摘要：
                 {{session_summary}}
-
-                最近对话：
-                {{recent_messages_block}}
 
                 已确认信息：
                 {{confirmed_fields_json}}
@@ -95,7 +93,6 @@ public class TsAgentDeepAgentsMainNode extends LlmNode {
         }
         variables.putIfAbsent("user_input", oConvertUtils.getString(context == null ? null : context.getUserInput()));
         variables.putIfAbsent("session_summary", oConvertUtils.getString(context == null ? null : context.getAttribute("sessionSummary")));
-        variables.putIfAbsent("recent_messages_block", oConvertUtils.getString(context == null ? null : context.getAttribute("recentMessagesBlock")));
         variables.putIfAbsent("confirmed_fields_json", JSON.toJSONString(context == null ? null : context.getAttribute("confirmedFieldsJson")));
         variables.putIfAbsent("missing_fields_json", JSON.toJSONString(context == null ? null : context.getAttribute("missingFieldsJson")));
         variables.putIfAbsent("handoff_report_json", JSON.toJSONString(context == null ? null : context.getAttribute("handoffReport")));

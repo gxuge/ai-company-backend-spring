@@ -8,6 +8,7 @@ class AgentFlowStateSupportTest {
     @Test
     void shouldSnapshotAndRestoreOnlyCurrentAgentWhitelist() {
         AgentContext source = new AgentContext();
+        source.putAttribute("taskDescription", "创建一个美女侦探角色");
         source.putAttribute("roleCoreResultJson", "{\"name\":\"林夏\"}");
         source.putAttribute("roleImageResultJson", "{\"url\":\"demo\"}");
         source.putAttribute("storyCoreResultJson", "{\"title\":\"不应保存\"}");
@@ -19,6 +20,7 @@ class AgentFlowStateSupportTest {
 
         Assertions.assertEquals("{\"name\":\"林夏\"}", restored.getAttribute("roleCoreResultJson"));
         Assertions.assertEquals("{\"url\":\"demo\"}", restored.getAttribute("roleImageResultJson"));
+        Assertions.assertEquals("创建一个美女侦探角色", restored.getAttribute("taskDescription"));
         Assertions.assertNull(restored.getAttribute("storyCoreResultJson"));
         Assertions.assertNull(restored.getAttribute("arbitraryValue"));
     }

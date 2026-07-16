@@ -73,22 +73,13 @@ public class RoleCreateDialogNode extends LlmNode {
                 RoleTaskToolSpec.ROLE_GENERATE_ROLE
         ));
         definition.setResponseFormat("text");
-        definition.setSystemPromptTemplate("""
-                你是角色创建对话节点。
-                你的目标是根据用户输入和上下文，决定是追问一个最关键问题，还是调用 preset/full 工具生成角色核心设定。
-                信息很少时优先走 preset；信息较完整时优先走 full；只有一个关键缺口时只问一个问题。
-                角色生成后的用户确认由后续确认节点处理，本节点不判断确认动作。
-                输出要简短自然，适合继续对话。
-                """);
+        definition.setConversationHistoryEnabled(true);
         definition.setUserPromptTemplate("""
-                当前用户输入：
-                {{user_input}}
-
-                主 Agent 委托任务：
+                主 Agent 初始委托（仅作为任务背景）：
                 {{task_description}}
 
-                最近对话：
-                {{recent_messages_block}}
+                本轮用户最新输入（请结合上面的历史对话优先处理）：
+                {{user_input}}
                 """);
         definition.getMetadata().put("flow", "create-role");
         definition.getMetadata().put("stage", "dialog");
@@ -97,9 +88,7 @@ public class RoleCreateDialogNode extends LlmNode {
 
     @Override
     protected Map<String, String> buildPromptVariables(AgentContext context) {
-        Map<String, String> variables = RoleTaskPromptSupport.baseVariables(context);
-        RoleTaskPromptSupport.appendRoleCoreVariables(variables, context);
-        return variables;
+        return RoleTaskPromptSupport.baseVariables(context);
     }
 
     @Override
@@ -169,7 +158,7 @@ public class RoleCreateDialogNode extends LlmNode {
             ToolCallRequest request = new ToolCallRequest();
             request.setToolName(toolName);
             request.setArguments(parseArguments(toolExecutionRequest == null ? null : toolExecutionRequest.arguments()));
-            ToolCallResult result = this.toolRegistry.execute(context, request);
+            ToolCallResult result = executeToolWithSse(context, this.toolRegistry, request);
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("success", result == null ? null : result.isSuccess());
             payload.put("summary", result == null ? null : result.getSummary());

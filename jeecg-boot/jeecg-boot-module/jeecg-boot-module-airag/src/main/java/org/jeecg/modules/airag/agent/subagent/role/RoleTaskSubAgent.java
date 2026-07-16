@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 角色子 Agent。
@@ -64,6 +65,12 @@ public class RoleTaskSubAgent implements SubAgent {
 
         try {
             String stage = resolveStage(context);
+            boolean continueExistingDialog = (STAGE_CONFIRMATION.equals(stage) || STAGE_DIALOG.equals(stage))
+                    && hasRoleCoreState(context)
+                    && !this.roleConfirmationNode.hasOptionValue(context);
+            String roleCoreStateBeforeDialog = continueExistingDialog
+                    ? roleCoreStateSnapshot(context)
+                    : null;
             if (STAGE_VOICE.equals(stage)) {
                 return continueWithVoice(context, chainData, null);
             }
@@ -71,9 +78,11 @@ public class RoleTaskSubAgent implements SubAgent {
                 return continueWithImageAndVoice(context, chainData);
             }
             if ((STAGE_CONFIRMATION.equals(stage) || hasRoleCoreState(context)) && hasRoleCoreState(context)) {
-                AgentResult decisionResult = handleConfirmationOption(context, chainData);
-                if (decisionResult != null) {
-                    return decisionResult;
+                if (this.roleConfirmationNode.hasOptionValue(context)) {
+                    AgentResult decisionResult = handleConfirmationOption(context, chainData);
+                    if (decisionResult != null) {
+                        return decisionResult;
+                    }
                 }
             }
 
@@ -86,6 +95,10 @@ public class RoleTaskSubAgent implements SubAgent {
             }
 
             if (!hasRoleCoreState(context)) {
+                return waiting(context, dialogResult == null ? null : dialogResult.getContent(), chainData, STAGE_DIALOG);
+            }
+            if (continueExistingDialog
+                    && Objects.equals(roleCoreStateBeforeDialog, roleCoreStateSnapshot(context))) {
                 return waiting(context, dialogResult == null ? null : dialogResult.getContent(), chainData, STAGE_DIALOG);
             }
 
@@ -302,18 +315,18 @@ public class RoleTaskSubAgent implements SubAgent {
                 || context.getAttribute("roleGenerateRoleResultJson") != null;
     }
 
+    private String roleCoreStateSnapshot(AgentContext context) {
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("roleCoreResultJson", context == null ? null : context.getAttribute("roleCoreResultJson"));
+        state.put("roleCorePresetResultJson", context == null ? null : context.getAttribute("roleCorePresetResultJson"));
+        state.put("roleGenerateRoleResultJson", context == null ? null : context.getAttribute("roleGenerateRoleResultJson"));
+        return com.alibaba.fastjson2.JSON.toJSONString(state);
+    }
+
     @SuppressWarnings("unchecked")
     private Map<String, Object> extractDecision(Object nodeResult) {
         if (!(nodeResult instanceof org.jeecg.modules.airag.agent.graph.NodeResult result)) {
             return new LinkedHashMap<>();
-        }
-        Object toolData = result.getData().get("toolData");
-        if (toolData instanceof Map<?, ?> rawMap) {
-            return copyStringKeyMap(rawMap);
-        }
-        Object confirmationDecision = result.getData().get("confirmationDecision");
-        if (confirmationDecision instanceof Map<?, ?> rawMap) {
-            return copyStringKeyMap(rawMap);
         }
         if (result.getData().get("action") != null) {
             return copyStringKeyMap(result.getData());

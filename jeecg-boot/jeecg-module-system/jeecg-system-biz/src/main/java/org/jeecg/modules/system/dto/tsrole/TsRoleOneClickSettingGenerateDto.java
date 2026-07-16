@@ -8,6 +8,7 @@ import org.springframework.util.StringUtils;
 public class TsRoleOneClickSettingGenerateDto {
     public static final String TEMPLATE_MODE_CORE = "core";
     public static final String TEMPLATE_MODE_BACKGROUND_OPTIMIZE = "background_optimize";
+    public static final String TEMPLATE_MODE_GREETING_OPTIMIZE = "greeting_optimize";
 
     /** 角色ID（可选，传入时会校验归属） */
     private Long roleId;
@@ -28,7 +29,7 @@ public class TsRoleOneClickSettingGenerateDto {
     /** 额外信息（可选，用于补充角色信息） */
     @JsonAlias("extra_info")
     private String extraInfo;
-    /** 模板模式：core（默认）/background_optimize */
+    /** 模板模式：core（默认）/background_optimize/greeting_optimize */
     private String templateMode;
 
     public void normalize() {
@@ -75,10 +76,17 @@ public class TsRoleOneClickSettingGenerateDto {
         if (TEMPLATE_MODE_BACKGROUND_OPTIMIZE.equals(lower)) {
             return TEMPLATE_MODE_BACKGROUND_OPTIMIZE;
         }
+        if (TEMPLATE_MODE_GREETING_OPTIMIZE.equals(lower)) {
+            return TEMPLATE_MODE_GREETING_OPTIMIZE;
+        }
         return TEMPLATE_MODE_CORE;
     }
 
     public boolean isBackgroundOptimizeMode() {
         return TEMPLATE_MODE_BACKGROUND_OPTIMIZE.equals(this.templateMode);
+    }
+
+    public boolean isGreetingOptimizeMode() {
+        return TEMPLATE_MODE_GREETING_OPTIMIZE.equals(this.templateMode);
     }
 }

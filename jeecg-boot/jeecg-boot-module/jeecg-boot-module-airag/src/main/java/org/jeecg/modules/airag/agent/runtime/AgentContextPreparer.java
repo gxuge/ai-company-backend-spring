@@ -1,7 +1,6 @@
 package org.jeecg.modules.airag.agent.runtime;
 
 import org.jeecg.common.util.oConvertUtils;
-import org.jeecg.modules.airag.agent.common.SubAgentHistorySupport;
 import org.jeecg.modules.airag.agent.graph.DeepAgentDefinition;
 import org.jeecg.modules.airag.agent.graph.DeepAgentDefinitionRegistry;
 import org.springframework.stereotype.Component;
@@ -20,9 +19,6 @@ import java.util.Map;
 public class AgentContextPreparer {
     private static final String SENDER_MAIN_AGENT = "main_agent";
     private static final String SENDER_SUB_AGENT = "sub_agent";
-    private static final String ATTR_SESSION_SUB_AGENT_HISTORY_JSON = "sessionSubAgentHistoryJson";
-    private static final String ATTR_SUB_AGENT_HISTORY_JSON = "subAgentHistoryJson";
-
     private final DeepAgentDefinitionRegistry deepAgentDefinitionRegistry;
 
     public AgentContextPreparer(DeepAgentDefinitionRegistry deepAgentDefinitionRegistry) {
@@ -79,15 +75,16 @@ public class AgentContextPreparer {
     }
 
     private void prepareSubAgent(AgentContext context, String agentCode) {
+        String taskDescription = oConvertUtils.getString(context.getAttribute("taskDescription"));
         clearSubAgentConfiguration(context);
         context.setAgentCode(agentCode);
         context.setSenderType(SENDER_SUB_AGENT);
         context.putAttribute("deepAgentsPromptMode", Boolean.TRUE);
         context.putAttribute("deepAgentsMainMode", Boolean.FALSE);
         context.putAttribute("taskSubAgentName", agentCode);
-        context.putAttribute("taskDescription", context.getUserInput());
-        injectSubAgentHistoryJson(context, agentCode);
-
+        context.putAttribute("taskDescription", StringUtils.hasText(taskDescription)
+                ? taskDescription
+                : context.getUserInput());
         DeepAgentDefinition definition = this.deepAgentDefinitionRegistry.find(agentCode).orElse(null);
         if (definition != null) {
             context.putAttribute("subAgentDefinition", definition.toMap());
@@ -113,17 +110,6 @@ public class AgentContextPreparer {
         context.removeAttribute("skillTopK");
         context.removeAttribute("nodeSkillPrompt");
         context.removeAttribute("loadedNodeSkillCodes");
-    }
-
-    private void injectSubAgentHistoryJson(AgentContext context, String agentCode) {
-        Object fullHistory = context.getAttribute(ATTR_SESSION_SUB_AGENT_HISTORY_JSON);
-        if (fullHistory == null) {
-            fullHistory = context.getAttribute(ATTR_SUB_AGENT_HISTORY_JSON);
-        }
-        String sessionHistoryJson = fullHistory == null ? null : String.valueOf(fullHistory);
-        String selectedHistoryJson = SubAgentHistorySupport.selectHistoryJson(sessionHistoryJson, agentCode);
-        context.putAttribute(ATTR_SESSION_SUB_AGENT_HISTORY_JSON, sessionHistoryJson);
-        context.putAttribute(ATTR_SUB_AGENT_HISTORY_JSON, selectedHistoryJson);
     }
 
     private void updatePromptVariables(AgentContext context) {

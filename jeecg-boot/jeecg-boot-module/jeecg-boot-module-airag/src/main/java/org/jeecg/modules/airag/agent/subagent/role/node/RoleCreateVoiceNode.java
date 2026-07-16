@@ -49,12 +49,6 @@ public class RoleCreateVoiceNode extends LlmNode {
         definition.setTools(List.of(RoleTaskToolSpec.ROLE_GENERATE_ROLE_VOICE));
         definition.setPermissions(List.of(RoleTaskToolSpec.ROLE_GENERATE_ROLE_VOICE));
         definition.setResponseFormat("text");
-        definition.setSystemPromptTemplate("""
-                你是角色声音生成节点。
-                只根据已确认的角色核心设定与角色形象，生成一版适合该角色的声音建议。
-                重点写音色、语速、语气、情绪，不要重复追问核心字段。
-                输出要简短清晰，便于最终回填角色资料。
-                """);
         definition.setUserPromptTemplate("""
                 当前角色核心：
                 {{role_core_result_json}}

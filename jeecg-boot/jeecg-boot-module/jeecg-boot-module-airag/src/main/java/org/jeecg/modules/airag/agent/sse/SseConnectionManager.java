@@ -67,6 +67,29 @@ public class SseConnectionManager {
     }
 
     /**
+     * 发送不带通用 SSE 包装字段的原始事件。
+     *
+     * @param connectionKey 连接键
+     * @param eventName 事件名
+     * @param payload 原始事件内容
+     */
+    public void sendRaw(String connectionKey, String eventName, Object payload) {
+        SseEmitter emitter = this.emitters.get(connectionKey);
+        if (emitter == null) {
+            log.debug("SSE连接不存在，忽略发送，connectionKey={}, event={}", connectionKey, eventName);
+            return;
+        }
+        synchronized (emitter) {
+            try {
+                emitter.send(SseEmitter.event().name(eventName).data(JSON.toJSONString(payload)));
+            } catch (IOException ex) {
+                log.warn("SSE发送失败，准备移除连接，connectionKey={}, event={}", connectionKey, eventName, ex);
+                remove(connectionKey);
+            }
+        }
+    }
+
+    /**
      * 移除一个 SSE 连接。
      *
      * @param connectionKey 连接键

@@ -1,5 +1,7 @@
 package org.jeecg.modules.system.monitor;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 public class TsAiLogTraceContext {
 
     private static final ThreadLocal<State> HOLDER = new ThreadLocal<>();
@@ -24,8 +26,7 @@ public class TsAiLogTraceContext {
         if (state == null) {
             return 0;
         }
-        state.stepNo++;
-        return state.stepNo;
+        return state.nextStepNo();
     }
 
     public static void clear() {
@@ -35,12 +36,16 @@ public class TsAiLogTraceContext {
     public static class State {
         private final Long logId;
         private final String traceId;
-        private int stepNo;
+        private final AtomicInteger stepCounter;
 
         public State(Long logId, String traceId) {
+            this(logId, traceId, new AtomicInteger(0));
+        }
+
+        public State(Long logId, String traceId, AtomicInteger stepCounter) {
             this.logId = logId;
             this.traceId = traceId;
-            this.stepNo = 0;
+            this.stepCounter = stepCounter == null ? new AtomicInteger(0) : stepCounter;
         }
 
         public Long getLogId() {
@@ -49,6 +54,10 @@ public class TsAiLogTraceContext {
 
         public String getTraceId() {
             return traceId;
+        }
+
+        private int nextStepNo() {
+            return this.stepCounter.incrementAndGet();
         }
     }
 }

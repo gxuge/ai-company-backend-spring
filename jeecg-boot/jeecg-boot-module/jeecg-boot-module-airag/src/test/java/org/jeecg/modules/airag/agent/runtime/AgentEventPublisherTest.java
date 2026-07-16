@@ -2,7 +2,7 @@ package org.jeecg.modules.airag.agent.runtime;
 
 import org.jeecg.modules.airag.agent.service.TsAgentChatMessageEventService;
 import org.jeecg.modules.airag.agent.sse.SseConnectionManager;
-import org.jeecg.modules.airag.agent.sse.SsePayload;
+import org.jeecg.modules.airag.agent.entity.TsAgentChatMessageEventEntity;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -11,6 +11,7 @@ import org.mockito.Mockito;
 import org.springframework.data.redis.core.RedisTemplate;
 
 import java.util.LinkedHashMap;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
@@ -88,7 +89,7 @@ class AgentEventPublisherTest {
     void shouldPersistCurrentNodeWhenSubAgentFails() {
         this.eventPublisher.publishSubAgentStart(this.context, "Role Task Agent", null);
         this.context.markResultNode("roleCreateDialogNode", "llm", "上一节点回复", true);
-        this.context.markCurrentNode("roleConfirmationNode", "tool");
+        this.context.markCurrentNode("roleConfirmationNode", "confirm");
 
         this.eventPublisher.publishSubAgentEnd(
                 this.context,
@@ -105,7 +106,7 @@ class AgentEventPublisherTest {
                 Mockito.eq("subagent"),
                 Mockito.eq("role_task_agent"),
                 Mockito.eq("roleConfirmationNode"),
-                Mockito.eq("tool"),
+                Mockito.eq("confirm"),
                 Mockito.eq("流程确认失败"),
                 Mockito.eq(0),
                 Mockito.anyMap()
@@ -184,6 +185,37 @@ class AgentEventPublisherTest {
     }
 
     @Test
+    void shouldSendEmbeddedToolSseWithoutPersistingEvent() {
+        Map<String, Object> arguments = Map.of("name", "林雪", "gender", "女");
+        this.eventPublisher.publishToolStartSseOnly(
+                this.context,
+                "role_create_dialog",
+                "role_generate_role",
+                Map.of("toolArguments", arguments)
+        );
+        this.eventPublisher.publishToolEndSseOnly(
+                this.context,
+                "role_create_dialog",
+                "role_generate_role",
+                true,
+                "角色生成完成",
+                Map.of("toolArguments", arguments, "toolData", Map.of("roleId", 88L))
+        );
+
+        Mockito.verifyNoInteractions(this.eventService);
+        Mockito.verify(this.sseConnectionManager).send(
+                Mockito.eq("sse-1"),
+                Mockito.eq("tool.start"),
+                Mockito.any()
+        );
+        Mockito.verify(this.sseConnectionManager).send(
+                Mockito.eq("sse-1"),
+                Mockito.eq("tool.end"),
+                Mockito.any()
+        );
+    }
+
+    @Test
     void shouldNotPersistInternalTaskHandoffTool() {
         this.eventPublisher.publishToolStart(this.context, "mainNode", "task", null);
         this.eventPublisher.publishToolEnd(
@@ -199,39 +231,126 @@ class AgentEventPublisherTest {
     }
 
     @Test
-    void shouldSendConfirmationQuestionAndOptionsInToolEndSse() {
-        this.eventPublisher.publishToolStart(this.context, "role_confirmation", "role_confirmation", null);
-        Map<String, Object> toolData = new LinkedHashMap<>();
-        toolData.put("question", "你对这版角色满意吗？");
-        toolData.put("options", List.of(
+    void shouldSendOnlyQuestionAndOptionsInConfirmStartSse() {
+        List<Map<String, String>> options = List.of(
                 Map.of("label", "满意，继续生成", "value", "ACCEPT_AND_CONTINUE"),
                 Map.of("label", "不满意，重新生成", "value", "REGENERATE")
-        ));
-        this.eventPublisher.publishToolEnd(
+        );
+        this.eventPublisher.publishConfirmStart(
                 this.context,
+                "confirm.start",
                 "role_confirmation",
-                "role_confirmation",
-                true,
-                "需要用户确认",
-                Map.of("toolData", toolData)
+                "你对这版角色满意吗？",
+                options
         );
 
-        ArgumentCaptor<SsePayload> payloadCaptor = ArgumentCaptor.forClass(SsePayload.class);
-        Mockito.verify(this.sseConnectionManager).send(
+        ArgumentCaptor<Map<String, Object>> payloadCaptor = mapCaptor();
+        Mockito.verify(this.sseConnectionManager).sendRaw(
                 Mockito.eq("sse-1"),
-                Mockito.eq("tool.end"),
+                Mockito.eq("confirm.start"),
                 payloadCaptor.capture()
         );
-        SsePayload payload = payloadCaptor.getValue();
-        Assertions.assertEquals("你对这版角色满意吗？", payload.getQuestion());
-        Assertions.assertEquals(
-                List.of(
-                        Map.of("label", "满意，继续生成", "value", "ACCEPT_AND_CONTINUE"),
-                        Map.of("label", "不满意，重新生成", "value", "REGENERATE")
-                ),
-                payload.getOptions()
+        Map<String, Object> payload = payloadCaptor.getValue();
+        Assertions.assertEquals(Map.of(
+                "question", "你对这版角色满意吗？",
+                "options", options
+        ), payload);
+    }
+
+    @Test
+    void shouldSendOnlyQuestionAndOptionsInOptionsStartSse() {
+        List<Map<String, String>> options = List.of(
+                Map.of("label", "现代都市", "optionValue", "MODERN"),
+                Map.of("label", "古风仙侠", "optionValue", "XIANXIA")
         );
-        Assertions.assertNull(payload.getData());
+        this.eventPublisher.publishOptionsStart(
+                this.context,
+                "options.start",
+                "role_style_options",
+                "请选择角色风格",
+                options
+        );
+
+        ArgumentCaptor<Map<String, Object>> payloadCaptor = mapCaptor();
+        Mockito.verify(this.sseConnectionManager).sendRaw(
+                Mockito.eq("sse-1"),
+                Mockito.eq("options.start"),
+                payloadCaptor.capture()
+        );
+        Map<String, Object> payload = payloadCaptor.getValue();
+        Assertions.assertEquals(Map.of(
+                "question", "请选择角色风格",
+                "options", options
+        ), payload);
+    }
+
+    @Test
+    void shouldUpdatePendingOptionsEventAndSendSelectedOptionOnEnd() {
+        TsAgentChatMessageEventEntity pending = new TsAgentChatMessageEventEntity();
+        pending.setId("options-event-1");
+        pending.setCreatedAt(new Date(System.currentTimeMillis() - 100L));
+        pending.setJson("""
+                {
+                  "input": {
+                    "question": "请选择角色风格",
+                    "options": [
+                      {"label": "现代都市", "optionValue": "MODERN"}
+                    ]
+                  },
+                  "output": null,
+                  "error": null,
+                  "metrics": {}
+                }
+                """);
+        Mockito.when(this.eventService.findLatestPendingInteractiveEvent(
+                1001L,
+                "role_task_agent",
+                "role_style_options",
+                "options"
+        )).thenReturn(pending);
+
+        Map<String, Object> resultData = new LinkedHashMap<>();
+        resultData.put("optionValue", "MODERN");
+        resultData.put("selectedOption", Map.of(
+                "label", "现代都市",
+                "optionValue", "MODERN"
+        ));
+        resultData.put("action", "OPTION_SELECTED");
+        resultData.put("reply", "现代都市");
+        this.eventPublisher.publishOptionsEnd(
+                this.context,
+                "options.end",
+                "role_style_options",
+                "请选择角色风格",
+                List.of(Map.of("label", "现代都市", "optionValue", "MODERN")),
+                resultData
+        );
+
+        ArgumentCaptor<Map<String, Object>> completeDataCaptor = mapCaptor();
+        Mockito.verify(this.eventService).updateEventResult(
+                Mockito.eq("options-event-1"),
+                Mockito.eq("已选择：现代都市"),
+                Mockito.eq(1),
+                completeDataCaptor.capture()
+        );
+        Map<String, Object> completeData = completeDataCaptor.getValue();
+        Map<String, Object> output = castMap(completeData.get("output"));
+        Assertions.assertEquals(
+                Map.of("label", "现代都市", "optionValue", "MODERN"),
+                output.get("selection")
+        );
+        Assertions.assertEquals("OPTION_SELECTED", output.get("action"));
+
+        ArgumentCaptor<Map<String, Object>> payloadCaptor = mapCaptor();
+        Mockito.verify(this.sseConnectionManager).sendRaw(
+                Mockito.eq("sse-1"),
+                Mockito.eq("options.end"),
+                payloadCaptor.capture()
+        );
+        Assertions.assertEquals(
+                Map.of("label", "现代都市", "optionValue", "MODERN"),
+                payloadCaptor.getValue().get("selectedOption")
+        );
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})

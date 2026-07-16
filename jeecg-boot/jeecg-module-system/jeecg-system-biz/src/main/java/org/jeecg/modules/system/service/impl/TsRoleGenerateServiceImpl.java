@@ -91,6 +91,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
     private static final String PROMPT_VERSION = "v2";
     private static final String PROMPT_CODE_SETTING = "role_core_fill";
     private static final String PROMPT_CODE_BACKGROUND_OPTIMIZE = "role_background_optimize";
+    private static final String PROMPT_CODE_GREETING_OPTIMIZE = "role_greeting_optimize";
     private static final String PROMPT_CODE_SETTING_PRESET = "role_core_fill_preset";
     private static final String PROMPT_CODE_GENERATE_ROLE = "role_generate_role";
     private static final String PROMPT_CODE_IMAGE = "role_image_generate";
@@ -176,8 +177,13 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         TsRoleOneClickSettingGenerateDto dto = request == null ? new TsRoleOneClickSettingGenerateDto() : request;
         dto.normalize();
         boolean backgroundOptimizeMode = dto.isBackgroundOptimizeMode();
-        String promptCode = backgroundOptimizeMode ? PROMPT_CODE_BACKGROUND_OPTIMIZE : PROMPT_CODE_SETTING;
-        String scene = backgroundOptimizeMode ? "setting-background-optimize" : "setting";
+        boolean greetingOptimizeMode = dto.isGreetingOptimizeMode();
+        String promptCode = greetingOptimizeMode
+                ? PROMPT_CODE_GREETING_OPTIMIZE
+                : backgroundOptimizeMode ? PROMPT_CODE_BACKGROUND_OPTIMIZE : PROMPT_CODE_SETTING;
+        String scene = greetingOptimizeMode
+                ? "setting-greeting-optimize"
+                : backgroundOptimizeMode ? "setting-background-optimize" : "setting";
 
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(promptCode, PROMPT_VERSION,
                 PromptRuntimeUtil.buildSettingVars(dto.getRoleName(), dto.getGender(), dto.getOccupation(), dto.getBackgroundStory(),
@@ -218,11 +224,21 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
             roleName = dto.getRoleName();
             gender = dto.getGender();
             occupation = dto.getOccupation();
+            greeting = dto.getGreeting();
+        } else if (greetingOptimizeMode) {
+            // 开场白优化模式：仅优化开场白，其它字段沿用请求值。
+            roleName = dto.getRoleName();
+            gender = dto.getGender();
+            occupation = dto.getOccupation();
+            backgroundStory = dto.getBackgroundStory();
         }
 
         // 生成并保存快照：记录渲染后的 prompt、模型原始响应与结构化结果，便于追溯。
+        String snapshotType = greetingOptimizeMode
+                ? "setting-greeting-optimize"
+                : backgroundOptimizeMode ? "setting-background-optimize" : "setting";
         JSONObject snapshot = new JSONObject();
-        snapshot.put("type", backgroundOptimizeMode ? "setting-background-optimize" : "setting");
+        snapshot.put("type", snapshotType);
         snapshot.put("promptCode", promptCode);
         snapshot.put("promptVersion", PROMPT_VERSION);
         snapshot.put("templateMode", dto.getTemplateMode());
@@ -236,7 +252,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         resultJson.put("greeting", greeting);
         snapshot.put("result", resultJson);
         String snapshotKey = RoleGenerateSnapshotUtil.saveSnapshot(redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS,
-                backgroundOptimizeMode ? "setting-background-optimize" : "setting", user.getId(), snapshot);
+                snapshotType, user.getId(), snapshot);
 
         // 组装响应给前端。
         TsRoleOneClickSettingGenerateVo vo = new TsRoleOneClickSettingGenerateVo();

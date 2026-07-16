@@ -67,6 +67,10 @@ public class AgentContext {
      */
     private String userInput;
     /**
+     * 当前业务会话的结构化历史消息。
+     */
+    private List<AgentConversationMessage> conversationMessages = new ArrayList<>();
+    /**
      * SSE 连接键。
      */
     private String sseConnectionKey;
@@ -265,6 +269,9 @@ public class AgentContext {
         child.setSessionId(this.sessionId);
         child.setUserId(this.userId);
         child.setUserInput(userInput);
+        child.setConversationMessages(this.conversationMessages == null
+                ? new ArrayList<>()
+                : new ArrayList<>(this.conversationMessages));
         child.setSseConnectionKey(this.sseConnectionKey);
         child.setLatestContent(this.latestContent);
         child.setCurrentNodeName(this.currentNodeName);

@@ -22,9 +22,6 @@ class AgentContextPreparerTest {
     void shouldPrepareSubAgentContextAndThenClearItForMainAgent() {
         AgentContext context = new AgentContext();
         context.setUserInput("创建一个侦探角色");
-        context.putAttribute("sessionSubAgentHistoryJson", """
-                {"role_task_agent":[{"summary":"已确认角色为女性"}]}
-                """);
 
         this.contextPreparer.prepare(context, "role_task_agent");
 
@@ -32,7 +29,6 @@ class AgentContextPreparerTest {
         Assertions.assertEquals("sub_agent", context.getSenderType());
         Assertions.assertEquals(Boolean.FALSE, context.getAttribute("deepAgentsMainMode"));
         Assertions.assertEquals("role", context.getAttribute("skillDomain"));
-        Assertions.assertTrue(String.valueOf(context.getAttribute("subAgentHistoryJson")).contains("已确认角色为女性"));
         Map<?, ?> subVariables = context.getAttribute("promptVariables", Map.class);
         Assertions.assertEquals("创建一个侦探角色", subVariables.get("user_input"));
 
@@ -57,6 +53,7 @@ class AgentContextPreparerTest {
         context.setUserInput("原始请求");
         context.setResumeNodeName("role_create_dialog");
         context.setActiveStage("confirmation");
+        context.putAttribute("taskDescription", "创建一个角色");
         context.putAttribute("roleCoreResultJson", "{}");
         AgentResult handoff = AgentResult.handoffTo(AgentRegistry.MAIN_AGENT_CODE, "改为创建故事");
         handoff.getHandoffContext().put("handoffReport", Map.of("reason", "超出角色职责"));
@@ -67,6 +64,19 @@ class AgentContextPreparerTest {
         Assertions.assertEquals(Map.of("reason", "超出角色职责"), context.getAttribute("handoffReport"));
         Assertions.assertNull(context.getResumeNodeName());
         Assertions.assertNull(context.getActiveStage());
+        Assertions.assertNull(context.getAttribute("taskDescription"));
         Assertions.assertNull(context.getAttribute("roleCoreResultJson"));
+    }
+
+    @Test
+    void shouldKeepDelegatedTaskWhenSubAgentResumesWithNewUserInput() {
+        AgentContext context = new AgentContext();
+        context.setUserInput("她是一个侦探");
+        context.putAttribute("taskDescription", "创建一个美女角色");
+
+        this.contextPreparer.prepare(context, "role_task_agent");
+
+        Assertions.assertEquals("她是一个侦探", context.getUserInput());
+        Assertions.assertEquals("创建一个美女角色", context.getAttribute("taskDescription"));
     }
 }

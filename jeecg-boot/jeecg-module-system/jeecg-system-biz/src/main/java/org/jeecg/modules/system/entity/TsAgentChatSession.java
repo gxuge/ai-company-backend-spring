@@ -120,12 +120,6 @@ public class TsAgentChatSession implements Serializable {
     private String stateJson;
 
     /**
-     * 子 Agent 最近执行历史快照。
-     */
-    @TableField("sub_agent_history_json")
-    private String subAgentHistoryJson;
-
-    /**
      * 最后一条消息ID。
      */
     @TableField("last_message_id")

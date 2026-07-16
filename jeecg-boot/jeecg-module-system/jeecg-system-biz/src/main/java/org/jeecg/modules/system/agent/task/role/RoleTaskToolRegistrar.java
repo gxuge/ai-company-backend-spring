@@ -3,8 +3,6 @@ package org.jeecg.modules.system.agent.task.role;
 import com.alibaba.fastjson.JSONObject;
 import jakarta.annotation.PostConstruct;
 import org.jeecg.common.system.vo.LoginUser;
-import org.jeecg.common.util.oConvertUtils;
-import org.jeecg.modules.airag.agent.common.SubAgentHistorySupport;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.subagent.role.tool.RoleTaskToolSpec;
 import org.jeecg.modules.airag.agent.task.TaskAgentSupport;
@@ -23,7 +21,6 @@ import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickVoiceGenerateVo;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -40,28 +37,35 @@ public class RoleTaskToolRegistrar {
 
     private static final String ROUTE_ROLE_CORE_FILL = "ROLE_CORE_FILL";
     private static final String ROUTE_ROLE_FULL_GENERATE = "ROLE_FULL_GENERATE";
-    private static final String ROUTE_ROLE_CONFIRMATION = "ROLE_CONFIRMATION";
     private static final String ROUTE_ROLE_IMAGE_GENERATE = "ROLE_IMAGE_GENERATE";
     private static final String ROUTE_ROLE_VOICE_GENERATE = "ROLE_VOICE_GENERATE";
 
     private final ToolRegistry toolRegistry;
     private final ITsRoleGenerateService roleGenerateService;
 
+    /**
+     * 注入工具注册中心和角色生成业务服务。
+     */
     public RoleTaskToolRegistrar(ToolRegistry toolRegistry,
                                  ITsRoleGenerateService roleGenerateService) {
         this.toolRegistry = toolRegistry;
         this.roleGenerateService = roleGenerateService;
     }
 
+    /**
+     * 容器启动后注册角色生成相关的四个业务工具。
+     */
     @PostConstruct
     public void registerTools() {
         this.toolRegistry.register(buildRoleCoreFillPresetTool());
         this.toolRegistry.register(buildRoleGenerateRoleTool());
-        this.toolRegistry.register(buildRoleConfirmationTool());
         this.toolRegistry.register(buildRoleImageGenerateTool());
         this.toolRegistry.register(buildRoleVoiceGenerateTool());
     }
 
+    /**
+     * 构建角色核心设定补全工具定义。
+     */
     private ToolDefinition buildRoleCoreFillPresetTool() {
         ToolDefinition definition = new ToolDefinition();
         definition.setName(RoleTaskToolSpec.ROLE_CORE_FILL_PRESET);
@@ -73,6 +77,9 @@ public class RoleTaskToolRegistrar {
         return definition;
     }
 
+    /**
+     * 构建完整角色生成工具定义。
+     */
     private ToolDefinition buildRoleGenerateRoleTool() {
         ToolDefinition definition = new ToolDefinition();
         definition.setName(RoleTaskToolSpec.ROLE_GENERATE_ROLE);
@@ -84,17 +91,9 @@ public class RoleTaskToolRegistrar {
         return definition;
     }
 
-    private ToolDefinition buildRoleConfirmationTool() {
-        ToolDefinition definition = new ToolDefinition();
-        definition.setName(RoleTaskToolSpec.ROLE_CONFIRMATION);
-        definition.setRouteKey(ROUTE_ROLE_CONFIRMATION);
-        definition.setCategory("role_task");
-        definition.setDisplayName("角色确认");
-        definition.setDescription("展示角色确认选项，并根据前端回传的optionValue决定继续、重生成或修改");
-        definition.setExecutor(this::executeRoleConfirmation);
-        return definition;
-    }
-
+    /**
+     * 构建角色形象生成工具定义。
+     */
     private ToolDefinition buildRoleImageGenerateTool() {
         ToolDefinition definition = new ToolDefinition();
         definition.setName(RoleTaskToolSpec.ROLE_GENERATE_ROLE_IMAGE);
@@ -106,6 +105,9 @@ public class RoleTaskToolRegistrar {
         return definition;
     }
 
+    /**
+     * 构建角色声音生成工具定义。
+     */
     private ToolDefinition buildRoleVoiceGenerateTool() {
         ToolDefinition definition = new ToolDefinition();
         definition.setName(RoleTaskToolSpec.ROLE_GENERATE_ROLE_VOICE);
@@ -117,6 +119,9 @@ public class RoleTaskToolRegistrar {
         return definition;
     }
 
+    /**
+     * 根据用户输入和提示变量补全角色核心设定，并将结果写入运行上下文。
+     */
     private ToolCallResult executeRoleCoreFillPreset(AgentContext context, ToolCallRequest request) {
         LoginUser user = TaskAgentSupport.buildLoginUser(context);
         String userInput = firstNonBlank(context, request, "userInput", "user_input");
@@ -130,15 +135,13 @@ public class RoleTaskToolRegistrar {
         dto.setStyleHint(firstNonBlank(promptVariables, userInput, "styleHint", "style_hint"));
         dto.setKeywords(firstNonBlank(promptVariables, userInput, "keywords"));
         dto.normalize();
-        Map<String, Object> payload = buildRolePayload(context, request, "preset", RoleTaskToolSpec.ROLE_CORE_FILL_PRESET);
+        Map<String, Object> payload = buildCommonPayload(context, request, "preset", RoleTaskToolSpec.ROLE_CORE_FILL_PRESET);
         Object result = this.roleGenerateService.generateRoleSettingPreset(user, dto);
         payload.put("result", result);
         payload.put("resultJson", JSONObject.toJSONString(result));
         if (context != null) {
             String resultJson = JSONObject.toJSONString(result);
-            context.putAttribute("roleCorePresetResult", result);
             context.putAttribute("roleCorePresetResultJson", resultJson);
-            context.putAttribute("roleCoreResult", result);
             context.putAttribute("roleCoreResultJson", resultJson);
         }
         ToolCallResult callResult = ToolCallResult.success("已生成角色核心设定", result);
@@ -146,30 +149,24 @@ public class RoleTaskToolRegistrar {
         return callResult;
     }
 
+    /**
+     * 根据故事设定和背景生成完整角色，并保存完整结果及角色核心设定。
+     */
     private ToolCallResult executeRoleGenerateRole(AgentContext context, ToolCallRequest request) {
         LoginUser user = TaskAgentSupport.buildLoginUser(context);
-        String userInput = firstNonBlank(context, request, "userInput", "user_input");
         TsRoleGenerateRoleDto dto = new TsRoleGenerateRoleDto();
-        dto.setStorySetting(firstNonBlank(context, request, "storySetting", "story_setting"));
+        dto.setStorySetting(firstNonBlank(context, request, "storySetting", "story_setting", "userInput", "user_input"));
         dto.setStoryBackground(firstNonBlank(context, request, "storyBackground", "story_background", "userInput", "user_input"));
-        if (!StringUtils.hasText(dto.getStorySetting()) && StringUtils.hasText(userInput)) {
-            dto.setStorySetting(userInput);
-        }
-        if (!StringUtils.hasText(dto.getStoryBackground()) && StringUtils.hasText(userInput)) {
-            dto.setStoryBackground(userInput);
-        }
         dto.normalize();
-        Map<String, Object> payload = buildRolePayload(context, request, "full", RoleTaskToolSpec.ROLE_GENERATE_ROLE);
+        Map<String, Object> payload = buildCommonPayload(context, request, "full", RoleTaskToolSpec.ROLE_GENERATE_ROLE);
         TsRoleGenerateRoleVo result = this.roleGenerateService.generateRole(user, dto);
         payload.put("result", result);
         payload.put("resultJson", JSONObject.toJSONString(result));
         if (context != null) {
             String resultJson = JSONObject.toJSONString(result);
-            context.putAttribute("roleGenerateRoleResult", result);
             context.putAttribute("roleGenerateRoleResultJson", resultJson);
             if (result != null && result.getSettingResult() != null) {
                 String coreJson = JSONObject.toJSONString(result.getSettingResult());
-                context.putAttribute("roleCoreResult", result.getSettingResult());
                 context.putAttribute("roleCoreResultJson", coreJson);
             }
         }
@@ -178,37 +175,9 @@ public class RoleTaskToolRegistrar {
         return callResult;
     }
 
-    private ToolCallResult executeRoleConfirmation(AgentContext context, ToolCallRequest request) {
-        Map<String, Object> args = request == null ? null : request.getArguments();
-        String rawOptionValue = firstText(args, "optionValue", "option_value");
-        if (!StringUtils.hasText(rawOptionValue) && context != null) {
-            rawOptionValue = oConvertUtils.getString(context.getAttribute("optionValue"));
-        }
-        String optionValue = normalizeOptionValue(rawOptionValue);
-        String action = StringUtils.hasText(optionValue) ? optionValue : "WAIT_CONFIRM";
-        boolean waiting = "WAIT_CONFIRM".equals(action) || "ASK_USER".equals(action);
-        Map<String, Object> decision = new LinkedHashMap<>();
-        decision.put("action", action);
-        decision.put("question", waiting ? "你对这版角色满意吗？" : null);
-        decision.put("reply", buildConfirmationReply(action));
-        decision.put("options", waiting ? buildConfirmationOptions() : List.of());
-        decision.put("reason", buildConfirmationReason(action));
-        if (context != null) {
-            context.putAttribute("roleConfirmationDecision", decision);
-            context.putAttribute("roleConfirmationDecisionJson", JSONObject.toJSONString(decision));
-        }
-        ToolCallResult callResult = ToolCallResult.success(waiting ? "需要用户确认" : "已接收用户选择", decision);
-        Map<String, Object> payload = buildCommonPayload(
-                context,
-                request,
-                "confirmation_option",
-                RoleTaskToolSpec.ROLE_CONFIRMATION
-        );
-        payload.put("decision", decision);
-        callResult.setPayload(payload);
-        return callResult;
-    }
-
+    /**
+     * 根据角色信息生成角色形象，并将生成结果写入运行上下文。
+     */
     private ToolCallResult executeRoleGenerateRoleImage(AgentContext context, ToolCallRequest request) {
         LoginUser user = TaskAgentSupport.buildLoginUser(context);
         TsRoleOneClickImageGenerateDto dto = new TsRoleOneClickImageGenerateDto();
@@ -231,13 +200,15 @@ public class RoleTaskToolRegistrar {
         payload.put("resultJson", JSONObject.toJSONString(result));
         if (context != null) {
             String resultJson = JSONObject.toJSONString(result);
-            context.putAttribute("roleImageResult", result);
             context.putAttribute("roleImageResultJson", resultJson);
         }
         callResult.setPayload(payload);
         return callResult;
     }
 
+    /**
+     * 根据角色信息生成声音建议和音色结果，并写入运行上下文。
+     */
     private ToolCallResult executeRoleGenerateRoleVoice(AgentContext context, ToolCallRequest request) {
         LoginUser user = TaskAgentSupport.buildLoginUser(context);
         TsRoleOneClickVoiceGenerateDto dto = new TsRoleOneClickVoiceGenerateDto();
@@ -259,78 +230,15 @@ public class RoleTaskToolRegistrar {
         payload.put("resultJson", JSONObject.toJSONString(result));
         if (context != null) {
             String resultJson = JSONObject.toJSONString(result);
-            context.putAttribute("roleVoiceResult", result);
             context.putAttribute("roleVoiceResultJson", resultJson);
         }
         callResult.setPayload(payload);
         return callResult;
     }
 
-    private Map<String, Object> buildRolePayload(AgentContext context, ToolCallRequest request, String executionMode, String toolName) {
-        Map<String, Object> payload = buildCommonPayload(context, request, executionMode, toolName);
-        payload.put("stage", "role_generate");
-        return payload;
-    }
-
-    private String normalizeOptionValue(String optionValue) {
-        if (!StringUtils.hasText(optionValue)) {
-            return null;
-        }
-        String value = optionValue.trim().toUpperCase();
-        if ("ACCEPT_AND_CONTINUE".equals(value)
-                || "REGENERATE".equals(value)
-                || "MODIFY".equals(value)) {
-            return value;
-        }
-        return "ASK_USER";
-    }
-
-    private List<Map<String, String>> buildConfirmationOptions() {
-        return List.of(
-                buildConfirmationOption("满意，继续生成", "ACCEPT_AND_CONTINUE"),
-                buildConfirmationOption("不满意，重新生成", "REGENERATE")
-        );
-    }
-
-    private Map<String, String> buildConfirmationOption(String label, String value) {
-        Map<String, String> option = new LinkedHashMap<>();
-        option.put("label", label);
-        option.put("value", value);
-        return option;
-    }
-
-    private String buildConfirmationReply(String action) {
-        if ("ACCEPT_AND_CONTINUE".equals(action)) {
-            return "好的，我继续为这个角色生成形象和声音。";
-        }
-        if ("REGENERATE".equals(action)) {
-            return "好的，我帮你重新生成一版角色。";
-        }
-        if ("MODIFY".equals(action)) {
-            return "好的，我会按你的修改意见调整这版角色。";
-        }
-        if ("WAIT_CONFIRM".equals(action)) {
-            return "你对这版角色满意吗？";
-        }
-        return "这版角色你想继续完善，还是重新生成一版？";
-    }
-
-    private String buildConfirmationReason(String action) {
-        if ("ACCEPT_AND_CONTINUE".equals(action)) {
-            return "用户选择接受当前角色并继续。";
-        }
-        if ("REGENERATE".equals(action)) {
-            return "用户选择重新生成角色。";
-        }
-        if ("MODIFY".equals(action)) {
-            return "用户选择修改当前角色。";
-        }
-        if ("WAIT_CONFIRM".equals(action)) {
-            return "角色设定已生成，等待用户选择是否继续。";
-        }
-        return "LLM判断用户意图不够明确，需要提供选择。";
-    }
-
+    /**
+     * 构建工具通用返回数据，包括工具名称、执行模式、调用参数和历史数量。
+     */
     private Map<String, Object> buildCommonPayload(AgentContext context, ToolCallRequest request, String executionMode, String toolName) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("toolName", toolName);
@@ -338,13 +246,15 @@ public class RoleTaskToolRegistrar {
         if (request != null) {
             payload.put("arguments", request.getArguments());
         }
-        String historyJson = TaskAgentSupport.readStringAttribute(context, "subAgentHistoryJson");
-        payload.put("historyCount", SubAgentHistorySupport.countHistory(historyJson));
         return payload;
     }
 
+    /**
+     * 按工具参数、提示变量、用户原始输入的优先级读取首个非空文本。
+     */
     private String firstNonBlank(AgentContext context, ToolCallRequest request, String... keys) {
-        String value = normalizeText(request, keys == null || keys.length == 0 ? null : keys[0]);
+        Map<String, Object> arguments = request == null ? null : request.getArguments();
+        String value = firstText(arguments, keys);
         if (StringUtils.hasText(value)) {
             return value;
         }
@@ -359,6 +269,9 @@ public class RoleTaskToolRegistrar {
         return null;
     }
 
+    /**
+     * 从指定数据源读取首个非空文本，未取到时使用兜底值。
+     */
     private String firstNonBlank(Map<String, Object> source, String fallback, String... keys) {
         String value = firstText(source, keys);
         if (StringUtils.hasText(value)) {
@@ -367,18 +280,9 @@ public class RoleTaskToolRegistrar {
         return StringUtils.hasText(fallback) ? fallback.trim() : null;
     }
 
-    private String normalizeText(ToolCallRequest request, String key) {
-        if (request == null || request.getArguments() == null || !StringUtils.hasText(key)) {
-            return null;
-        }
-        Object value = request.getArguments().get(key);
-        if (value == null) {
-            return null;
-        }
-        String text = String.valueOf(value).trim();
-        return text.isEmpty() ? null : text;
-    }
-
+    /**
+     * 依次从两个数据源中读取首个非空文本。
+     */
     private String firstText(Map<String, Object> firstSource, Map<String, Object> secondSource, String... keys) {
         String value = firstText(firstSource, keys);
         if (StringUtils.hasText(value)) {
@@ -387,6 +291,9 @@ public class RoleTaskToolRegistrar {
         return firstText(secondSource, keys);
     }
 
+    /**
+     * 依次从两个数据源读取首个可转换为 Long 的值。
+     */
     private Long firstLong(Map<String, Object> firstSource, Map<String, Object> secondSource, String... keys) {
         String value = firstText(firstSource, keys);
         if (StringUtils.hasText(value)) {
@@ -407,6 +314,9 @@ public class RoleTaskToolRegistrar {
         return null;
     }
 
+    /**
+     * 按字段别名顺序从数据源中读取首个非空文本。
+     */
     private String firstText(Map<String, Object> source, String... keys) {
         if (source == null || keys == null) {
             return null;

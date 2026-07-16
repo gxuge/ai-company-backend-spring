@@ -3,10 +3,7 @@ package org.jeecg.modules.airag.agent.subagent.story.node;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import dev.langchain4j.agent.tool.ToolSpecification;
-import dev.langchain4j.model.chat.request.json.JsonArraySchema;
-import dev.langchain4j.model.chat.request.json.JsonEnumSchema;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
-import dev.langchain4j.model.chat.request.json.JsonStringSchema;
 import dev.langchain4j.service.tool.ToolExecutor;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.airag.agent.graph.LlmNodeDefinition;
@@ -69,46 +66,20 @@ public class StoryCreateDialogNode extends LlmNode {
         definition.setSkills(List.of("story_create_dialog"));
         definition.setTools(List.of(
                 StoryTaskToolSpec.STORY_FULL_GENERATE_PRESET,
-                StoryTaskToolSpec.STORY_FULL_GENERATE,
-                StoryTaskToolSpec.STORY_CONFIRMATION_DECISION
+                StoryTaskToolSpec.STORY_FULL_GENERATE
         ));
         definition.setPermissions(List.of(
                 StoryTaskToolSpec.STORY_FULL_GENERATE_PRESET,
-                StoryTaskToolSpec.STORY_FULL_GENERATE,
-                StoryTaskToolSpec.STORY_CONFIRMATION_DECISION
+                StoryTaskToolSpec.STORY_FULL_GENERATE
         ));
         definition.setResponseFormat("text");
-        definition.setSystemPromptTemplate("""
-                你是故事创建对话节点。
-                你的目标是根据用户输入和上下文，决定是追问一个最关键问题，还是调用 preset/full 工具生成故事核心设定。
-                信息很少时优先走 preset；信息较完整时优先走 full；只有一个关键缺口时只问一个问题。
-                如果上下文中已有故事核心设定，先判断用户是在确认继续、重新生成、局部修改，还是意图不明确。
-                已有故事核心且 story_confirmation_action 为空时，必须调用 story_confirmation_decision 工具输出确认判断，不要普通文本回答，不要调用生成工具。
-                如果 story_confirmation_action 为 REGENERATE 或 MODIFY，则按用户最新要求继续重新生成或修改，不再调用确认工具。
-                生成后要继续确认用户是否满意，并为后续故事背景节点保留可用的核心信息。
-                输出要简短自然，适合继续对话。
-                """);
+        definition.setConversationHistoryEnabled(true);
         definition.setUserPromptTemplate("""
-                当前用户输入：
+                主 Agent 初始委托（仅作为任务背景）：
+                {{task_description}}
+
+                本轮用户最新输入（请结合上面的历史对话优先处理）：
                 {{user_input}}
-
-                会话摘要：
-                {{session_summary}}
-
-                最近对话：
-                {{recent_messages_block}}
-
-                已确认字段：
-                {{confirmed_fields_json}}
-
-                缺失字段：
-                {{missing_fields_json}}
-
-                已有故事核心：
-                {{story_core_result_json}}
-
-                当前确认动作：
-                {{story_confirmation_action}}
                 """);
         definition.getMetadata().put("flow", "create-story");
         definition.getMetadata().put("stage", "dialog");
@@ -119,7 +90,6 @@ public class StoryCreateDialogNode extends LlmNode {
     protected Map<String, String> buildPromptVariables(AgentContext context) {
         Map<String, String> variables = StoryTaskPromptSupport.baseVariables(context);
         StoryTaskPromptSupport.appendStoryCoreVariables(variables, context);
-        variables.put("story_confirmation_action", oConvertUtils.getString(context == null ? null : context.getAttribute("storyConfirmationAction")));
         return variables;
     }
 
@@ -144,14 +114,6 @@ public class StoryCreateDialogNode extends LlmNode {
         result.put("hasStoryCoreState", hasStoryCoreState(context));
         result.put("storyCoreResultJson", oConvertUtils.getString(context == null ? null : context.getAttribute("storyCoreResultJson")));
         result.put("storyFullGenerateResultJson", oConvertUtils.getString(context == null ? null : context.getAttribute("storyFullGenerateResultJson")));
-        Object confirmationDecision = context == null ? null : context.getAttribute("storyConfirmationDecision");
-        if (confirmationDecision instanceof Map<?, ?> decision) {
-            result.put("confirmationDecision", copyStringKeyMap(decision));
-            result.put("action", decision.get("action"));
-            result.put("reply", decision.get("reply"));
-            result.put("options", decision.get("options"));
-            result.put("reason", decision.get("reason"));
-        }
         return result;
     }
 
@@ -159,7 +121,6 @@ public class StoryCreateDialogNode extends LlmNode {
         Map<ToolSpecification, ToolExecutor> tools = new LinkedHashMap<>();
         tools.put(buildStoryFullGeneratePresetSpec(), buildToolExecutor(context, StoryTaskToolSpec.STORY_FULL_GENERATE_PRESET));
         tools.put(buildStoryFullGenerateSpec(), buildToolExecutor(context, StoryTaskToolSpec.STORY_FULL_GENERATE));
-        tools.put(buildStoryConfirmationDecisionSpec(), buildToolExecutor(context, StoryTaskToolSpec.STORY_CONFIRMATION_DECISION));
         return tools;
     }
 
@@ -198,33 +159,12 @@ public class StoryCreateDialogNode extends LlmNode {
                 .build();
     }
 
-    private ToolSpecification buildStoryConfirmationDecisionSpec() {
-        JsonObjectSchema schema = JsonObjectSchema.builder()
-                .addProperty("action", JsonEnumSchema.builder()
-                        .description("确认动作")
-                        .enumValues(List.of("ACCEPT_AND_CONTINUE", "REGENERATE", "MODIFY", "ASK_USER"))
-                        .build())
-                .addStringProperty("reply", "给用户看的简短回复")
-                .addProperty("options", JsonArraySchema.builder()
-                        .description("给用户展示的两个选择")
-                        .items(JsonStringSchema.builder().description("单个选择文案").build())
-                        .build())
-                .addStringProperty("reason", "简短说明判断依据")
-                .required("action", "reply", "options", "reason")
-                .build();
-        return ToolSpecification.builder()
-                .name(StoryTaskToolSpec.STORY_CONFIRMATION_DECISION)
-                .description("已有故事核心设定后，由模型判断用户是接受继续、重新生成、局部修改，还是需要展示选择")
-                .parameters(schema)
-                .build();
-    }
-
     private ToolExecutor buildToolExecutor(AgentContext context, String toolName) {
         return (toolExecutionRequest, memoryId) -> {
             ToolCallRequest request = new ToolCallRequest();
             request.setToolName(toolName);
             request.setArguments(parseArguments(toolExecutionRequest == null ? null : toolExecutionRequest.arguments()));
-            ToolCallResult result = this.toolRegistry.execute(context, request);
+            ToolCallResult result = executeToolWithSse(context, this.toolRegistry, request);
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("success", result == null ? null : result.isSuccess());
             payload.put("summary", result == null ? null : result.getSummary());
@@ -246,19 +186,6 @@ public class StoryCreateDialogNode extends LlmNode {
             }
         } catch (Exception ignored) {
             // ignore invalid tool arguments
-        }
-        return map;
-    }
-
-    private Map<String, Object> copyStringKeyMap(Map<?, ?> rawMap) {
-        Map<String, Object> map = new LinkedHashMap<>();
-        if (rawMap == null) {
-            return map;
-        }
-        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
-            if (entry.getKey() != null) {
-                map.put(String.valueOf(entry.getKey()), entry.getValue());
-            }
         }
         return map;
     }

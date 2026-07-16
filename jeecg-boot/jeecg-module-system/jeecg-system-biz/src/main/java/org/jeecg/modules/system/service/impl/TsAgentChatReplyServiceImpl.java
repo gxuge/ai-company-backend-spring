@@ -8,7 +8,7 @@ import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.common.util.UUIDGenerator;
 import org.jeecg.common.util.ShiroThreadPoolExecutor;
 import org.jeecg.common.util.oConvertUtils;
-import org.jeecg.modules.airag.agent.common.SubAgentHistorySupport;
+import org.jeecg.modules.airag.agent.runtime.AgentConversationMessage;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentFlowStateSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentRegistry;
@@ -55,10 +55,6 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
 
     private static final String ROLE_USER = "user";
     private static final String ROLE_ASSISTANT = "assistant";
-    private static final String ROLE_SYSTEM = "system";
-    private static final String ROLE_TOOL = "tool";
-    private static final String ATTR_SESSION_SUB_AGENT_HISTORY_JSON = "sessionSubAgentHistoryJson";
-    private static final String ATTR_SUB_AGENT_HISTORY_JSON = "subAgentHistoryJson";
     private static final String DEFAULT_AGENT_CODE = "main";
     private static final String SENDER_MAIN_AGENT = "main_agent";
     private static final String SENDER_SUB_AGENT = "sub_agent";
@@ -91,7 +87,6 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         ReplyRuntime runtime = prepareRuntime(user, sessionId, request);
         AgentRunOutcome runOutcome = executeAgentRun(runtime);
         AgentResult agentResult = runOutcome.getResult();
-        recordSubAgentHistory(runtime, runOutcome);
         TsAgentChatReplyVo vo = saveAssistantReply(runtime, agentResult, resolveAssistantContent(agentResult, runtime.context));
         return Result.OK(vo);
     }
@@ -161,7 +156,6 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         try {
             AgentRunOutcome runOutcome = executeAgentRun(runtime);
             AgentResult agentResult = runOutcome.getResult();
-            recordSubAgentHistory(runtime, runOutcome);
             String assistantContent = resolveAssistantContent(agentResult, runtime.context);
             if (!StringUtils.hasText(assistantContent)) {
                 throw new JeecgBootException("AI回复为空，请稍后重试");
@@ -425,13 +419,11 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         context.setActiveStage(session.getActiveStage());
         context.setUserId(user == null || user.getId() == null ? null : String.valueOf(user.getId()));
         context.setUserInput(userInput);
+        context.setConversationMessages(buildConversationMessages(recentMessages));
         context.putAttribute("sessionMemoryJson", session.getMemoryJson());
         context.putAttribute("sessionStateJson", session.getStateJson());
-        context.putAttribute(ATTR_SESSION_SUB_AGENT_HISTORY_JSON, session.getSubAgentHistoryJson());
-        context.putAttribute(ATTR_SUB_AGENT_HISTORY_JSON, session.getSubAgentHistoryJson());
         context.putAttribute("sessionTitle", session.getSessionTitle());
         context.putAttribute("sessionSummary", session.getSessionSummary());
-        context.putAttribute("recentMessagesBlock", buildRecentMessagesBlock(recentMessages));
         context.putAttribute("lastAssistantMessage", findLastAssistantMessage(recentMessages));
         context.putAttribute("promptVariables", variables);
         AgentFlowStateSupport.restore(context, context.getAgentCode(), session.getAgentFlowStateJson());
@@ -529,26 +521,39 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         putIfHas(variables, "user_input", userInput);
         putIfHas(variables, "state_json", session == null ? null : session.getStateJson());
         putIfHas(variables, "last_assistant_message", findLastAssistantMessage(recentMessages));
-        putIfHas(variables, "recent_messages_block", buildRecentMessagesBlock(recentMessages));
         return variables;
     }
 
     /**
-     * 组装最近消息文本块。
+     * 构造供 LLM 原生消息列表使用的结构化会话历史。
+     *
+     * <p>保留当前用户消息，后续由 LLM 节点结合 messageId 和当前输入决定是否去重，
+     * 避免子 Agent handoff 后丢失用户原始消息。</p>
      */
-    private String buildRecentMessagesBlock(List<TsAgentChatMessage> recentMessages) {
+    private List<AgentConversationMessage> buildConversationMessages(List<TsAgentChatMessage> recentMessages) {
+        List<AgentConversationMessage> messages = new ArrayList<>();
         if (recentMessages == null || recentMessages.isEmpty()) {
-            return "无";
+            return messages;
         }
-        List<String> lines = new ArrayList<>();
         for (TsAgentChatMessage message : recentMessages) {
-            if (message == null || !StringUtils.hasText(message.getContent())) {
+            if (message == null
+                    || !StringUtils.hasText(message.getContent())) {
                 continue;
             }
-            String roleLabel = normalizeRoleLabel(message.getRoleType());
-            lines.add("【" + roleLabel + "】" + message.getContent().trim());
+            String role = normalizeText(message.getRoleType());
+            if (!ROLE_USER.equalsIgnoreCase(role) && !ROLE_ASSISTANT.equalsIgnoreCase(role)) {
+                continue;
+            }
+            messages.add(new AgentConversationMessage(
+                    message.getId() == null ? null : String.valueOf(message.getId()),
+                    message.getParentMessageId() == null ? null : String.valueOf(message.getParentMessageId()),
+                    role.toLowerCase(Locale.ROOT),
+                    message.getContent().trim(),
+                    normalizeText(message.getAgentCode()),
+                    normalizeText(message.getSourceNodeName())
+            ));
         }
-        return lines.isEmpty() ? "无" : String.join("\n", lines);
+        return messages;
     }
 
     /**
@@ -610,132 +615,8 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         ext.put("description", agentResult == null ? null : agentResult.getData().get("description"));
         ext.put("structuredResult", agentResult == null ? null : agentResult.getStructuredResult());
         ext.put("subAgentEvents", context == null ? null : context.snapshotEvents());
-        ext.put("subAgentHistoryCount", SubAgentHistorySupport.countHistory(oConvertUtils.getString(context == null ? null : context.getAttribute(ATTR_SUB_AGENT_HISTORY_JSON))));
         ext.put("promptVariables", promptVariables);
         return ext.toJSONString();
-    }
-
-    /**
-     * 将本轮子 Agent 的执行结果写回会话历史。
-     *
-     * <p>仅保留每个子 Agent 最近两条记录，供后续同名子 Agent 续跑或重试时使用。</p>
-     *
-     * @param runtime 运行上下文
-     * @param runOutcome 顶层 Run 结果
-     */
-    private void recordSubAgentHistory(ReplyRuntime runtime, AgentRunOutcome runOutcome) {
-        if (runtime == null || runtime.session == null || runOutcome == null || runOutcome.getSteps().isEmpty()) {
-            return;
-        }
-        String updatedHistoryJson = runtime.session.getSubAgentHistoryJson();
-        String lastSubAgentName = null;
-        for (AgentRunStep step : runOutcome.getSteps()) {
-            if (step == null || AgentRegistry.MAIN_AGENT_CODE.equalsIgnoreCase(step.getAgentCode()) || step.getResult() == null) {
-                continue;
-            }
-            AgentResult agentResult = step.getResult();
-            Object structuredResult = extractStructuredResult(agentResult);
-            if (agentResult.getStatus() == AgentResult.Status.WAITING_USER && structuredResult == null) {
-                continue;
-            }
-            JSONObject record = new JSONObject();
-            record.put("runId", runtime.context == null ? null : runtime.context.getRunId());
-            record.put("stepIndex", step.getStepIndex());
-            record.put("status", agentResult.getStatus() == null ? null : agentResult.getStatus().name());
-            record.put("summary", normalizeText(agentResult.getContent()));
-            record.put("resultJson", structuredResult);
-            record.put("error", extractErrorMessage(agentResult));
-            record.put("toolName", extractString(agentResult.getData(), "toolName"));
-            record.put("description", extractString(agentResult.getData(), "description"));
-            record.put("executionMode", extractString(agentResult.getData(), "executionMode"));
-            record.put("events", runtime.context == null ? null : runtime.context.snapshotEvents());
-            record.put("createdAt", new Date());
-            updatedHistoryJson = SubAgentHistorySupport.appendHistoryJson(
-                    updatedHistoryJson,
-                    step.getAgentCode(),
-                    record,
-                    SubAgentHistorySupport.DEFAULT_HISTORY_LIMIT
-            );
-            lastSubAgentName = step.getAgentCode();
-        }
-        if (!StringUtils.hasText(lastSubAgentName)) {
-            return;
-        }
-        runtime.session.setSubAgentHistoryJson(updatedHistoryJson);
-        runtime.session.setUpdatedAt(new Date());
-        tsAgentChatSessionService.updateById(runtime.session);
-
-        if (runtime.context != null) {
-            String selectedHistoryJson = SubAgentHistorySupport.selectHistoryJson(updatedHistoryJson, lastSubAgentName);
-            runtime.context.putAttribute(ATTR_SESSION_SUB_AGENT_HISTORY_JSON, updatedHistoryJson);
-            runtime.context.putAttribute(ATTR_SUB_AGENT_HISTORY_JSON, selectedHistoryJson);
-        }
-    }
-
-    /**
-     * 提取结构化结果 JSON。
-     *
-     * @param agentResult Agent 结果
-     * @return 结构化结果
-     */
-    private Object extractStructuredResult(AgentResult agentResult) {
-        if (agentResult == null) {
-            return null;
-        }
-        Object structuredResult = agentResult.getStructuredResult();
-        if (structuredResult != null) {
-            return structuredResult;
-        }
-        if (agentResult.getData() == null) {
-            return null;
-        }
-        Object value = agentResult.getData().get("resultJson");
-        if (value == null) {
-            value = agentResult.getData().get("result");
-        }
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof JSONObject || value instanceof com.alibaba.fastjson.JSONArray) {
-            return value;
-        }
-        if (value instanceof String text) {
-            String normalized = normalizeText(text);
-            if (!StringUtils.hasText(normalized)) {
-                return null;
-            }
-            try {
-                return JSONObject.parse(normalized);
-            } catch (Exception ignore) {
-                return normalized;
-            }
-        }
-        try {
-            return JSONObject.parse(JSONObject.toJSONString(value));
-        } catch (Exception ignore) {
-            return String.valueOf(value);
-        }
-    }
-
-    /**
-     * 提取错误信息。
-     *
-     * @param agentResult Agent 结果
-     * @return 错误信息
-     */
-    private String extractErrorMessage(AgentResult agentResult) {
-        if (agentResult == null || agentResult.getData() == null) {
-            return null;
-        }
-        String errorMessage = extractString(agentResult.getData(), "errorMessage");
-        if (StringUtils.hasText(errorMessage)) {
-            return errorMessage;
-        }
-        errorMessage = extractString(agentResult.getData(), "message");
-        if (StringUtils.hasText(errorMessage)) {
-            return errorMessage;
-        }
-        return agentResult.getStatus() == AgentResult.Status.FAILED ? normalizeText(agentResult.getContent()) : null;
     }
 
     /**
@@ -868,30 +749,6 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
             summaries.add(summary);
         }
         return summaries;
-    }
-
-    /**
-     * 角色标签归一化。
-     */
-    private String normalizeRoleLabel(String roleType) {
-        String normalized = normalizeText(roleType);
-        if (!StringUtils.hasText(normalized)) {
-            return ROLE_ASSISTANT;
-        }
-        String lower = normalized.toLowerCase(Locale.ROOT);
-        if (ROLE_USER.equals(lower)) {
-            return "用户";
-        }
-        if (ROLE_ASSISTANT.equals(lower)) {
-            return "助手";
-        }
-        if (ROLE_SYSTEM.equals(lower)) {
-            return "系统";
-        }
-        if (ROLE_TOOL.equals(lower)) {
-            return "工具";
-        }
-        return normalized;
     }
 
     /**

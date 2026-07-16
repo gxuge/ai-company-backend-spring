@@ -6,6 +6,8 @@ import com.alibaba.fastjson2.JSONObject;
 import org.jeecg.common.exception.JeecgBootBizTipException;
 import org.jeecg.common.util.AssertUtils;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
+import org.jeecg.modules.airag.agent.trace.AgentToolTraceContextBridge;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -28,6 +30,12 @@ public class ToolRegistry {
      * 工具定义缓存。
      */
     private final Map<String, ToolDefinition> toolDefinitions = new ConcurrentHashMap<>();
+
+    /**
+     * Tool 执行线程 Trace 上下文桥接器。
+     */
+    @Autowired(required = false)
+    private AgentToolTraceContextBridge traceContextBridge;
 
     /**
      * 注册一个工具定义。
@@ -129,6 +137,38 @@ public class ToolRegistry {
         AssertUtils.assertNotEmpty("工具请求不能为空", request);
         AssertUtils.assertNotEmpty("工具名称不能为空", request.getToolName());
         ToolDefinition definition = getDefinition(request.getToolName());
-        return definition.getExecutor().execute(context, request);
+        AgentToolTraceContextBridge.Scope scope = openTraceScope(context, request.getToolName());
+        try {
+            return definition.getExecutor().execute(context, request);
+        } finally {
+            closeTraceScope(scope, request.getToolName());
+        }
+    }
+
+    /**
+     * 打开 Tool Trace 作用域，监控扩展异常不能影响业务工具执行。
+     */
+    private AgentToolTraceContextBridge.Scope openTraceScope(AgentContext context, String toolName) {
+        if (this.traceContextBridge == null) {
+            return AgentToolTraceContextBridge.Scope.NOOP;
+        }
+        try {
+            AgentToolTraceContextBridge.Scope scope = this.traceContextBridge.open(context);
+            return scope == null ? AgentToolTraceContextBridge.Scope.NOOP : scope;
+        } catch (Exception ex) {
+            log.warn("打开Agent Tool Trace上下文失败，toolName={}", toolName, ex);
+            return AgentToolTraceContextBridge.Scope.NOOP;
+        }
+    }
+
+    /**
+     * 关闭 Tool Trace 作用域。
+     */
+    private void closeTraceScope(AgentToolTraceContextBridge.Scope scope, String toolName) {
+        try {
+            scope.close();
+        } catch (Exception ex) {
+            log.warn("关闭Agent Tool Trace上下文失败，toolName={}", toolName, ex);
+        }
     }
 }

@@ -36,6 +36,10 @@ public class LlmNodeDefinition extends DeepAgentDefinition {
      */
     private String userPromptTemplate;
     /**
+     * 是否将业务会话历史按原生 ChatMessage 结构传给模型。
+     */
+    private boolean conversationHistoryEnabled;
+    /**
      * 输入约束说明。
      */
     private String inputConstraints;
@@ -59,6 +63,7 @@ public class LlmNodeDefinition extends DeepAgentDefinition {
         map.put("promptVersion", this.promptVersion);
         map.put("systemPromptTemplate", this.systemPromptTemplate);
         map.put("userPromptTemplate", this.userPromptTemplate);
+        map.put("conversationHistoryEnabled", this.conversationHistoryEnabled);
         map.put("inputConstraints", this.inputConstraints);
         map.put("outputConstraints", this.outputConstraints);
         map.put("nextStepCondition", this.nextStepCondition);
