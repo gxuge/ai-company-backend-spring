@@ -30,7 +30,7 @@ import java.util.Map;
 /**
  * 故事创建对话节点。
  *
- * <p>负责围绕故事核心字段进行追问、preset/full 决策和结果确认引导。</p>
+ * <p>负责围绕故事核心字段进行追问、生成决策和结果确认引导。</p>
  *
  * @author codex
  * @date 2026/7/11
@@ -60,18 +60,12 @@ public class StoryCreateDialogNode extends LlmNode {
     private static LlmNodeDefinition buildDefinition() {
         LlmNodeDefinition definition = new LlmNodeDefinition();
         definition.setName("故事创建对话");
-        definition.setDescription("围绕创建故事收集信息、追问或调用 preset/full 生成核心设定。");
+        definition.setDescription("围绕创建故事收集信息、追问或生成核心设定。");
         definition.setSkillDomain("story");
         definition.setSkillTopK(3);
         definition.setSkills(List.of("story_create_dialog"));
-        definition.setTools(List.of(
-                StoryTaskToolSpec.STORY_FULL_GENERATE_PRESET,
-                StoryTaskToolSpec.STORY_FULL_GENERATE
-        ));
-        definition.setPermissions(List.of(
-                StoryTaskToolSpec.STORY_FULL_GENERATE_PRESET,
-                StoryTaskToolSpec.STORY_FULL_GENERATE
-        ));
+        definition.setTools(List.of(StoryTaskToolSpec.STORY_FULL_GENERATE));
+        definition.setPermissions(List.of(StoryTaskToolSpec.STORY_FULL_GENERATE));
         definition.setResponseFormat("text");
         definition.setConversationHistoryEnabled(true);
         definition.setUserPromptTemplate("""
@@ -119,26 +113,8 @@ public class StoryCreateDialogNode extends LlmNode {
 
     private Map<ToolSpecification, ToolExecutor> buildStoryToolMap(AgentContext context) {
         Map<ToolSpecification, ToolExecutor> tools = new LinkedHashMap<>();
-        tools.put(buildStoryFullGeneratePresetSpec(), buildToolExecutor(context, StoryTaskToolSpec.STORY_FULL_GENERATE_PRESET));
         tools.put(buildStoryFullGenerateSpec(), buildToolExecutor(context, StoryTaskToolSpec.STORY_FULL_GENERATE));
         return tools;
-    }
-
-    private ToolSpecification buildStoryFullGeneratePresetSpec() {
-        JsonObjectSchema schema = JsonObjectSchema.builder()
-                .addStringProperty("userInput", "用户原始输入或本次任务描述")
-                .addStringProperty("title", "故事标题，可为空")
-                .addStringProperty("storyMode", "故事模式，可为空，normal 或 chapter")
-                .addStringProperty("storyIntro", "故事简介，可为空")
-                .addStringProperty("storySetting", "故事设定，可为空")
-                .addStringProperty("siteSetting", "场景设定，可为空")
-                .addStringProperty("plotOutline", "剧情大纲，可为空")
-                .build();
-        return ToolSpecification.builder()
-                .name(StoryTaskToolSpec.STORY_FULL_GENERATE_PRESET)
-                .description("信息很少或用户想随机生成故事时，生成一版故事核心设定")
-                .parameters(schema)
-                .build();
     }
 
     private ToolSpecification buildStoryFullGenerateSpec() {

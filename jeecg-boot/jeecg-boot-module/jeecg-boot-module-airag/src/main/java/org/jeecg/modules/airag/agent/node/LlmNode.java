@@ -279,7 +279,7 @@ public abstract class LlmNode extends BaseAgentNode {
     }
 
     /**
-     * 执行 LLM 节点内嵌 Tool，并仅发送 Tool SSE，不写入 Tool Event。
+     * 执行 LLM 节点内嵌 Tool，并发送 SSE、写入完整 Tool Event。
      *
      * @param context 运行上下文
      * @param toolRegistry Tool 注册中心
@@ -292,7 +292,7 @@ public abstract class LlmNode extends BaseAgentNode {
         String toolName = request == null ? null : request.getToolName();
         Map<String, Object> startPayload = new LinkedHashMap<>();
         startPayload.put("toolArguments", request == null ? null : request.getArguments());
-        this.eventPublisher.publishToolStartSseOnly(context, nodeName(), toolName, startPayload);
+        this.eventPublisher.publishToolStart(context, nodeName(), toolName, startPayload);
         try {
             ToolCallResult result = toolRegistry.execute(context, request);
             Map<String, Object> endPayload = buildToolSsePayload(request, result);
@@ -301,7 +301,7 @@ public abstract class LlmNode extends BaseAgentNode {
             if (!success && oConvertUtils.isEmpty(content) && result != null) {
                 content = result.getErrorMessage();
             }
-            this.eventPublisher.publishToolEndSseOnly(
+            this.eventPublisher.publishToolEnd(
                     context,
                     nodeName(),
                     toolName,
@@ -313,8 +313,8 @@ public abstract class LlmNode extends BaseAgentNode {
         } catch (RuntimeException ex) {
             Map<String, Object> errorPayload = new LinkedHashMap<>(startPayload);
             errorPayload.put("errorMessage", ex.getMessage());
-            this.eventPublisher.publishToolErrorSseOnly(context, nodeName(), toolName, ex, errorPayload);
-            this.eventPublisher.publishToolEndSseOnly(
+            this.eventPublisher.publishToolError(context, nodeName(), toolName, ex, errorPayload);
+            this.eventPublisher.publishToolEnd(
                     context,
                     nodeName(),
                     toolName,

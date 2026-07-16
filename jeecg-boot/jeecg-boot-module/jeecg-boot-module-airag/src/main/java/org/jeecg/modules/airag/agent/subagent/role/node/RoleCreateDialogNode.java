@@ -30,7 +30,7 @@ import java.util.Map;
 /**
  * 角色创建对话节点。
  *
- * <p>负责收集信息、判断追问 / preset / full，并把核心设定结果交给后续确认节点。</p>
+ * <p>负责收集信息、判断追问或生成完整角色，并把核心设定结果交给后续确认节点。</p>
  *
  * @author codex
  * @date 2026/7/11
@@ -60,18 +60,12 @@ public class RoleCreateDialogNode extends LlmNode {
     private static LlmNodeDefinition buildDefinition() {
         LlmNodeDefinition definition = new LlmNodeDefinition();
         definition.setName("角色创建对话");
-        definition.setDescription("围绕创建角色收集信息、追问或调用 preset/full 生成核心设定。");
+        definition.setDescription("围绕创建角色收集信息、追问或生成核心设定。");
         definition.setSkillDomain("role");
         definition.setSkillTopK(3);
         definition.setSkills(List.of("role_create_dialog"));
-        definition.setTools(List.of(
-                RoleTaskToolSpec.ROLE_CORE_FILL_PRESET,
-                RoleTaskToolSpec.ROLE_GENERATE_ROLE
-        ));
-        definition.setPermissions(List.of(
-                RoleTaskToolSpec.ROLE_CORE_FILL_PRESET,
-                RoleTaskToolSpec.ROLE_GENERATE_ROLE
-        ));
+        definition.setTools(List.of(RoleTaskToolSpec.ROLE_GENERATE_ROLE));
+        definition.setPermissions(List.of(RoleTaskToolSpec.ROLE_GENERATE_ROLE));
         definition.setResponseFormat("text");
         definition.setConversationHistoryEnabled(true);
         definition.setUserPromptTemplate("""
@@ -117,27 +111,8 @@ public class RoleCreateDialogNode extends LlmNode {
 
     private Map<ToolSpecification, ToolExecutor> buildRoleToolMap(AgentContext context) {
         Map<ToolSpecification, ToolExecutor> tools = new LinkedHashMap<>();
-        tools.put(buildRoleCoreFillPresetSpec(), buildToolExecutor(context, RoleTaskToolSpec.ROLE_CORE_FILL_PRESET));
         tools.put(buildRoleGenerateRoleSpec(), buildToolExecutor(context, RoleTaskToolSpec.ROLE_GENERATE_ROLE));
         return tools;
-    }
-
-    private ToolSpecification buildRoleCoreFillPresetSpec() {
-        JsonObjectSchema schema = JsonObjectSchema.builder()
-                .addStringProperty("userInput", "用户原始输入或本次任务描述")
-                .addStringProperty("roleName", "角色名称，可为空")
-                .addStringProperty("gender", "性别，可为空，建议 male/female/random")
-                .addStringProperty("occupation", "职业或身份，可为空")
-                .addStringProperty("backgroundStory", "角色背景故事或用户给出的设定方向，可为空")
-                .addStringProperty("greeting", "角色开场白，可为空")
-                .addStringProperty("styleHint", "风格提示，可为空")
-                .addStringProperty("keywords", "关键词，可为空")
-                .build();
-        return ToolSpecification.builder()
-                .name(RoleTaskToolSpec.ROLE_CORE_FILL_PRESET)
-                .description("信息很少或用户想随机生成角色时，生成一版角色核心设定")
-                .parameters(schema)
-                .build();
     }
 
     private ToolSpecification buildRoleGenerateRoleSpec() {

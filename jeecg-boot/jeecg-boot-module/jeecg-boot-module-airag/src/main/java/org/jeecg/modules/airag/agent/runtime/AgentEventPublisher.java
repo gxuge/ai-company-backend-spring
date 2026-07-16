@@ -46,11 +46,6 @@ public class AgentEventPublisher {
     private static final int SUMMARY_MAX_LENGTH = 200;
 
     /**
-     * 当前 SubAgent 完整事件暂存键。
-     */
-    private static final String ATTR_SUBAGENT_EVENT_STATE = AgentEventPublisher.class.getName() + ".subagentEventState";
-
-    /**
      * 当前 Tool 完整事件暂存集合键。
      */
     private static final String ATTR_TOOL_EVENT_STATES = AgentEventPublisher.class.getName() + ".toolEventStates";
@@ -131,22 +126,7 @@ public class AgentEventPublisher {
      * @param payload 扩展数据
      */
     public void publishSubAgentStart(AgentContext context, String subAgentName, Map<String, Object> payload) {
-        CompleteEventState state = new CompleteEventState(
-                UUIDGenerator.generate(),
-                System.currentTimeMillis(),
-                buildSubAgentInput(context, payload),
-                null
-        );
-        context.putAttribute(ATTR_SUBAGENT_EVENT_STATE, state);
-        Map<String, Object> dbData = buildCustomEventData(
-                "subagent.start",
-                "subagent",
-                subAgentName,
-                "开始执行 " + safeText(subAgentName, "SubAgent"),
-                2,
-                payload
-        );
-        recordEventTrail(context, dbData);
+        context.setLastCompletedSubAgentEventId(null);
         sendOnlyCustomCompact(context, "subagent.start", "subagent", subAgentName,
                 "开始执行 " + safeText(subAgentName, "SubAgent"), 2);
     }
@@ -163,41 +143,7 @@ public class AgentEventPublisher {
                                    String subAgentName,
                                    AgentResult result,
                                    Map<String, Object> payload) {
-        Map<String, Object> mergedPayload = new LinkedHashMap<>();
-        if (result != null && result.getData() != null) {
-            mergedPayload.putAll(result.getData());
-        }
-        if (payload != null && !payload.isEmpty()) {
-            mergedPayload.putAll(payload);
-        }
-        Map<String, Object> dbData = buildCustomEventData(
-                "subagent.end",
-                "subagent",
-                subAgentName,
-                result == null ? null : result.getContent(),
-                result == null || result.getStatus() == null ? 0 : eventStatus(result),
-                mergedPayload
-        );
-        recordEventTrail(context, dbData);
-        CompleteEventState state = getSubAgentState(context);
-        context.removeAttribute(ATTR_SUBAGENT_EVENT_STATE);
-        Map<String, Object> completeData = buildCompleteSubAgentData(context, result, payload, state);
-        fillContextFields(completeData, context);
-        String persistedName = safeText(context == null ? null : context.getAgentCode(), subAgentName);
-        this.eventService.saveEvent(
-                state.eventId(),
-                context.getMessageId(),
-                context.getSessionId(),
-                context.getAgentSessionId(),
-                "subagent",
-                persistedName,
-                resolveSourceNodeName(context, result),
-                resolveSourceNodeType(context, result),
-                summarize(result == null ? null : result.getContent()),
-                result == null || result.getStatus() == null ? 0 : eventStatus(result),
-                completeData
-        );
-        context.setLastCompletedSubAgentEventId(state.eventId());
+        context.setLastCompletedSubAgentEventId(null);
         sendOnlyCustomCompact(context, "subagent.end", "subagent", subAgentName,
                 buildSubAgentEndContent(result),
                 result == null || result.getStatus() == null ? 0 : eventStatus(result));
@@ -215,26 +161,6 @@ public class AgentEventPublisher {
                                      String subAgentName,
                                      Throwable error,
                                      Map<String, Object> payload) {
-        Map<String, Object> errorPayload = new LinkedHashMap<>();
-        if (error != null) {
-            errorPayload.put("errorCode", error.getClass().getSimpleName());
-            errorPayload.put("errorMessage", error.getMessage());
-        }
-        Map<String, Object> mergedPayload = mergePayload(payload, errorPayload);
-        Map<String, Object> dbData = buildCustomEventData(
-                "subagent.error",
-                "subagent",
-                subAgentName,
-                error == null ? "SubAgent step failed" : error.getMessage(),
-                0,
-                mergedPayload
-        );
-        recordEventTrail(context, dbData);
-        CompleteEventState state = getSubAgentState(context);
-        state.setError(buildErrorData(
-                error == null ? "SUBAGENT_EXECUTION_ERROR" : error.getClass().getSimpleName(),
-                error == null ? "SubAgent step failed" : error.getMessage()
-        ));
         sendOnlyCustomCompact(context, "subagent.error", "subagent", subAgentName,
                 error == null ? "SubAgent step failed" : error.getMessage(), 0);
     }
@@ -564,12 +490,10 @@ public class AgentEventPublisher {
      * @param payload 扩展数据
      */
     public void publishToolStart(AgentContext context, String nodeName, String toolName, Map<String, Object> payload) {
-        CompleteEventState subAgentState = context.getAttribute(ATTR_SUBAGENT_EVENT_STATE, CompleteEventState.class);
         CompleteEventState toolState = new CompleteEventState(
                 UUIDGenerator.generate(),
                 System.currentTimeMillis(),
-                buildToolInput(payload),
-                subAgentState == null ? null : subAgentState.eventId()
+                buildToolInput(payload)
         );
         getToolStates(context).put(buildToolStateKey(nodeName, toolName), toolState);
         String content = "开始调用 " + safeText(toolName, "Tool");
@@ -684,9 +608,6 @@ public class AgentEventPublisher {
         }
         Map<String, Object> completeData = buildCompleteToolData(success, content, payload, state);
         fillContextFields(completeData, context);
-        if (state.parentEventId() != null) {
-            completeData.put("parentEventId", state.parentEventId());
-        }
         this.eventService.saveEvent(
                 state.eventId(),
                 context.getMessageId(),
@@ -699,90 +620,6 @@ public class AgentEventPublisher {
                 summarize(summary),
                 success ? 1 : 0,
                 completeData
-        );
-        sendOnlyCompact(context, "tool.end", NodeKind.TOOL, nodeName, summary, success ? 1 : 0, sseData);
-    }
-
-    /**
-     * 仅发送内嵌 Tool 的 tool.start SSE，不创建事件状态、不写入事件表。
-     *
-     * @param context 运行上下文
-     * @param nodeName 所属 LLM 节点名
-     * @param toolName 工具名
-     * @param payload 扩展数据
-     */
-    public void publishToolStartSseOnly(AgentContext context,
-                                        String nodeName,
-                                        String toolName,
-                                        Map<String, Object> payload) {
-        String content = "开始调用 " + safeText(toolName, "Tool");
-        Map<String, Object> sseData = buildCompactToolEventData(
-                "tool.start",
-                toolName,
-                content,
-                2,
-                payload,
-                null
-        );
-        sendOnlyCompact(context, "tool.start", NodeKind.TOOL, nodeName, content, 2, sseData);
-    }
-
-    /**
-     * 仅发送内嵌 Tool 的 tool.error SSE，不创建事件状态、不写入事件表。
-     *
-     * @param context 运行上下文
-     * @param nodeName 所属 LLM 节点名
-     * @param toolName 工具名
-     * @param error 错误对象
-     * @param payload 扩展数据
-     */
-    public void publishToolErrorSseOnly(AgentContext context,
-                                        String nodeName,
-                                        String toolName,
-                                        Throwable error,
-                                        Map<String, Object> payload) {
-        String content = error == null ? "Tool step failed" : error.getMessage();
-        Map<String, Object> errorPayload = new LinkedHashMap<>();
-        if (error != null) {
-            errorPayload.put("errorCode", error.getClass().getSimpleName());
-            errorPayload.put("errorMessage", error.getMessage());
-        }
-        Map<String, Object> mergedPayload = mergePayload(payload, errorPayload);
-        Map<String, Object> sseData = buildCompactToolEventData(
-                "tool.error",
-                toolName,
-                content,
-                0,
-                mergedPayload,
-                null
-        );
-        sendOnlyCompact(context, "tool.error", NodeKind.TOOL, nodeName, content, 0, sseData);
-    }
-
-    /**
-     * 仅发送内嵌 Tool 的 tool.end SSE，不创建事件状态、不写入事件表。
-     *
-     * @param context 运行上下文
-     * @param nodeName 所属 LLM 节点名
-     * @param toolName 工具名
-     * @param success 是否成功
-     * @param content 结果摘要
-     * @param payload 扩展数据
-     */
-    public void publishToolEndSseOnly(AgentContext context,
-                                      String nodeName,
-                                      String toolName,
-                                      boolean success,
-                                      String content,
-                                      Map<String, Object> payload) {
-        String summary = safeText(summarize(content), "调用完成 " + safeText(toolName, "Tool"));
-        Map<String, Object> sseData = buildCompactToolEventData(
-                "tool.end",
-                toolName,
-                summary,
-                success ? 1 : 0,
-                payload,
-                content
         );
         sendOnlyCompact(context, "tool.end", NodeKind.TOOL, nodeName, summary, success ? 1 : 0, sseData);
     }
@@ -1054,6 +891,7 @@ public class AgentEventPublisher {
                 resultData == null ? null : resultData.get("selectedOption"),
                 optionValue
         ));
+        putString(output, "value", optionValue);
         putString(output, "action", stringValue(resultData == null ? null : resultData.get("action")));
         putString(output, "reply", stringValue(resultData == null ? null : resultData.get("reply")));
         putString(output, "selectionMessageId", context == null ? null : context.getMessageId());
@@ -1122,11 +960,15 @@ public class AgentEventPublisher {
                 selection.put("label", label);
             }
             if (value != null) {
+                selection.put("value", value);
                 selection.put("optionValue", value);
             }
         }
         if (!selection.containsKey("optionValue") && optionValue != null) {
             selection.put("optionValue", optionValue);
+        }
+        if (!selection.containsKey("value") && optionValue != null) {
+            selection.put("value", optionValue);
         }
         if (!selection.containsKey("label") && optionValue != null) {
             selection.put("label", optionValue);
@@ -1143,79 +985,6 @@ public class AgentEventPublisher {
             }
         }
         return "已完成选择";
-    }
-
-    /**
-     * 构建 SubAgent Task 输入。
-     *
-     * @param context 运行上下文
-     * @param payload Handoff 扩展上下文
-     * @return 固定结构输入
-     */
-    private Map<String, Object> buildSubAgentInput(AgentContext context, Map<String, Object> payload) {
-        Map<String, Object> input = new LinkedHashMap<>();
-        input.put("userInput", context == null ? null : context.getUserInput());
-        Object taskDescription = context == null ? null : context.getAttribute("taskDescription");
-        input.put("taskDescription", taskDescription == null && context != null ? context.getUserInput() : taskDescription);
-        input.put("handoffContext", payload == null ? new LinkedHashMap<>() : new LinkedHashMap<>(payload));
-        return input;
-    }
-
-    /**
-     * 构建完整 SubAgent Task 数据。
-     *
-     * @param context 运行上下文
-     * @param result Agent 最终结果
-     * @param payload 结束扩展数据
-     * @param state 起始状态
-     * @return 固定结构完整数据
-     */
-    private Map<String, Object> buildCompleteSubAgentData(AgentContext context,
-                                                          AgentResult result,
-                                                          Map<String, Object> payload,
-                                                          CompleteEventState state) {
-        Map<String, Object> complete = new LinkedHashMap<>();
-        complete.put("input", new LinkedHashMap<>(state.input()));
-
-        boolean failed = result == null || result.getStatus() == null || result.getStatus() == AgentResult.Status.FAILED;
-        if (failed) {
-            complete.put("output", null);
-        } else {
-            Map<String, Object> output = new LinkedHashMap<>();
-            output.put("content", result.getContent());
-            Object structuredResult = result.getStructuredResult();
-            if (structuredResult == null && result.getData() != null && !result.getData().isEmpty()) {
-                structuredResult = new LinkedHashMap<>(result.getData());
-            }
-            if (structuredResult == null && payload != null && !payload.isEmpty()) {
-                structuredResult = new LinkedHashMap<>(payload);
-            }
-            output.put("structuredResult", structuredResult);
-            complete.put("output", output);
-        }
-
-        Map<String, Object> error = state.error();
-        if (failed && error == null) {
-            String errorCode = result == null || result.getData() == null
-                    ? null
-                    : stringValue(result.getData().get("errorCode"));
-            String errorMessage = result == null ? null : stringValue(result.getError());
-            if (errorMessage == null && result != null) {
-                errorMessage = stringValue(result.getContent());
-            }
-            error = buildErrorData(safeText(errorCode, "SUBAGENT_EXECUTION_ERROR"),
-                    safeText(errorMessage, "SubAgent execution failed"));
-        }
-        complete.put("error", error);
-
-        Map<String, Object> metrics = new LinkedHashMap<>();
-        Object stepIndex = context == null ? null : context.getAttribute("agentStepIndex");
-        if (stepIndex != null) {
-            metrics.put("stepIndex", stepIndex);
-        }
-        metrics.put("durationMs", elapsedMillis(state.startedAt()));
-        complete.put("metrics", metrics);
-        return complete;
     }
 
     /**
@@ -1279,27 +1048,6 @@ public class AgentEventPublisher {
     }
 
     /**
-     * 获取当前 SubAgent Task 状态。
-     *
-     * @param context 运行上下文
-     * @return Task 状态
-     */
-    private CompleteEventState getSubAgentState(AgentContext context) {
-        CompleteEventState state = context.getAttribute(ATTR_SUBAGENT_EVENT_STATE, CompleteEventState.class);
-        if (state != null) {
-            return state;
-        }
-        state = new CompleteEventState(
-                UUIDGenerator.generate(),
-                System.currentTimeMillis(),
-                buildSubAgentInput(context, null),
-                null
-        );
-        context.putAttribute(ATTR_SUBAGENT_EVENT_STATE, state);
-        return state;
-    }
-
-    /**
      * 获取 Tool 状态集合。
      *
      * @param context 运行上下文
@@ -1331,12 +1079,10 @@ public class AgentEventPublisher {
         if (state != null) {
             return state;
         }
-        CompleteEventState subAgentState = context.getAttribute(ATTR_SUBAGENT_EVENT_STATE, CompleteEventState.class);
         state = new CompleteEventState(
                 UUIDGenerator.generate(),
                 System.currentTimeMillis(),
-                buildToolInput(null),
-                subAgentState == null ? null : subAgentState.eventId()
+                buildToolInput(null)
         );
         states.put(key, state);
         return state;
@@ -1359,12 +1105,10 @@ public class AgentEventPublisher {
         if (state != null) {
             return state;
         }
-        CompleteEventState subAgentState = context.getAttribute(ATTR_SUBAGENT_EVENT_STATE, CompleteEventState.class);
         return new CompleteEventState(
                 UUIDGenerator.generate(),
                 System.currentTimeMillis(),
-                buildToolInput(null),
-                subAgentState == null ? null : subAgentState.eventId()
+                buildToolInput(null)
         );
     }
 
@@ -1994,44 +1738,6 @@ public class AgentEventPublisher {
     }
 
     /**
-     * 获取最终产出节点名称，失败场景回退到当前节点。
-     *
-     * @param context 运行上下文
-     * @param result Agent 执行结果
-     * @return 节点名称
-     */
-    private String resolveSourceNodeName(AgentContext context, AgentResult result) {
-        if (context == null) {
-            return null;
-        }
-        if (result == null
-                || result.getStatus() == null
-                || result.getStatus() == AgentResult.Status.FAILED) {
-            return safeText(context.getCurrentNodeName(), context.getResultNodeName());
-        }
-        return safeText(context.getResultNodeName(), context.getCurrentNodeName());
-    }
-
-    /**
-     * 获取最终产出节点类型，失败场景回退到当前节点类型。
-     *
-     * @param context 运行上下文
-     * @param result Agent 执行结果
-     * @return 节点类型
-     */
-    private String resolveSourceNodeType(AgentContext context, AgentResult result) {
-        if (context == null) {
-            return null;
-        }
-        if (result == null
-                || result.getStatus() == null
-                || result.getStatus() == AgentResult.Status.FAILED) {
-            return safeText(context.getCurrentNodeType(), context.getResultNodeType());
-        }
-        return safeText(context.getResultNodeType(), context.getCurrentNodeType());
-    }
-
-    /**
      * 将事件追加到上下文轨迹中。
      *
      * @param context 运行上下文
@@ -2068,17 +1774,14 @@ public class AgentEventPublisher {
         private final String eventId;
         private final long startedAt;
         private final Map<String, Object> input;
-        private final String parentEventId;
         private Map<String, Object> error;
 
         private CompleteEventState(String eventId,
                                    long startedAt,
-                                   Map<String, Object> input,
-                                   String parentEventId) {
+                                   Map<String, Object> input) {
             this.eventId = eventId;
             this.startedAt = startedAt;
             this.input = input == null ? new LinkedHashMap<>() : new LinkedHashMap<>(input);
-            this.parentEventId = parentEventId;
         }
 
         private String eventId() {
@@ -2091,10 +1794,6 @@ public class AgentEventPublisher {
 
         private Map<String, Object> input() {
             return this.input;
-        }
-
-        private String parentEventId() {
-            return this.parentEventId;
         }
 
         private Map<String, Object> error() {

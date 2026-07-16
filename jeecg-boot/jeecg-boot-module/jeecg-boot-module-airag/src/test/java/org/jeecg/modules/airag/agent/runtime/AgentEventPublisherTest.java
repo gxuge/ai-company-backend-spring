@@ -44,78 +44,30 @@ class AgentEventPublisherTest {
     }
 
     @Test
-    void shouldPersistOneCompleteSubAgentEventOnEnd() {
+    void shouldOnlySendSubAgentEventsWithoutPersistingThem() {
         this.eventPublisher.publishSubAgentStart(this.context, "Role Task Agent", null);
-        Mockito.verifyNoInteractions(this.eventService);
-
         AgentResult result = AgentResult.success("角色设定完成");
-        result.setStructuredResult(Map.of("roleId", 88L));
         this.context.markCurrentNode("roleCreateDialogNode", "llm");
         this.context.markResultNode("roleCreateDialogNode", "llm", "角色设定完成", true);
         this.eventPublisher.publishSubAgentEnd(this.context, "Role Task Agent", result, null);
 
-        ArgumentCaptor<String> eventIdCaptor = ArgumentCaptor.forClass(String.class);
-        ArgumentCaptor<Map<String, Object>> dataCaptor = mapCaptor();
-        Mockito.verify(this.eventService).saveEvent(
-                eventIdCaptor.capture(),
-                Mockito.eq("10001"),
-                Mockito.eq(1001L),
-                Mockito.isNull(),
-                Mockito.eq("subagent"),
-                Mockito.eq("role_task_agent"),
-                Mockito.eq("roleCreateDialogNode"),
-                Mockito.eq("llm"),
-                Mockito.eq("角色设定完成"),
-                Mockito.eq(1),
-                dataCaptor.capture()
+        Mockito.verifyNoInteractions(this.eventService);
+        Mockito.verify(this.sseConnectionManager).send(
+                Mockito.eq("sse-1"),
+                Mockito.eq("subagent.start"),
+                Mockito.any()
         );
-        Assertions.assertEquals(eventIdCaptor.getValue(), this.context.getLastCompletedSubAgentEventId());
-
-        Map<String, Object> data = dataCaptor.getValue();
-        Map<String, Object> input = castMap(data.get("input"));
-        Map<String, Object> output = castMap(data.get("output"));
-        Map<String, Object> metrics = castMap(data.get("metrics"));
-        Assertions.assertEquals("创建一个女性角色", input.get("userInput"));
-        Assertions.assertEquals("完善角色设定", input.get("taskDescription"));
-        Assertions.assertEquals("角色设定完成", output.get("content"));
-        Assertions.assertEquals(Map.of("roleId", 88L), output.get("structuredResult"));
-        Assertions.assertTrue(data.containsKey("error"));
-        Assertions.assertNull(data.get("error"));
-        Assertions.assertEquals(2, metrics.get("stepIndex"));
-        Assertions.assertTrue(((Number) metrics.get("durationMs")).longValue() >= 0L);
-    }
-
-    @Test
-    void shouldPersistCurrentNodeWhenSubAgentFails() {
-        this.eventPublisher.publishSubAgentStart(this.context, "Role Task Agent", null);
-        this.context.markResultNode("roleCreateDialogNode", "llm", "上一节点回复", true);
-        this.context.markCurrentNode("roleConfirmationNode", "confirm");
-
-        this.eventPublisher.publishSubAgentEnd(
-                this.context,
-                "Role Task Agent",
-                AgentResult.failed("流程确认失败"),
-                null
+        Mockito.verify(this.sseConnectionManager).send(
+                Mockito.eq("sse-1"),
+                Mockito.eq("subagent.end"),
+                Mockito.any()
         );
-
-        Mockito.verify(this.eventService).saveEvent(
-                Mockito.anyString(),
-                Mockito.eq("10001"),
-                Mockito.eq(1001L),
-                Mockito.isNull(),
-                Mockito.eq("subagent"),
-                Mockito.eq("role_task_agent"),
-                Mockito.eq("roleConfirmationNode"),
-                Mockito.eq("confirm"),
-                Mockito.eq("流程确认失败"),
-                Mockito.eq(0),
-                Mockito.anyMap()
-        );
+        Assertions.assertTrue(this.context.snapshotEvents().isEmpty());
+        Assertions.assertNull(this.context.getLastCompletedSubAgentEventId());
     }
 
     @Test
     void shouldPersistOneCompleteFailedToolEventOnEnd() {
-        this.eventPublisher.publishSubAgentStart(this.context, "Role Task Agent", null);
         Map<String, Object> arguments = Map.of("name", "林雪", "gender", "女");
         this.eventPublisher.publishToolStart(
                 this.context,
@@ -168,7 +120,7 @@ class AgentEventPublisherTest {
         Assertions.assertEquals("IllegalStateException", error.get("code"));
         Assertions.assertEquals("角色创建失败", error.get("message"));
         Assertions.assertEquals(eventIdCaptor.getValue(), metrics.get("toolCallId"));
-        Assertions.assertNotNull(data.get("parentEventId"));
+        Assertions.assertFalse(data.containsKey("parentEventId"));
     }
 
     @Test
@@ -185,15 +137,15 @@ class AgentEventPublisherTest {
     }
 
     @Test
-    void shouldSendEmbeddedToolSseWithoutPersistingEvent() {
+    void shouldPersistEmbeddedToolAndSendSse() {
         Map<String, Object> arguments = Map.of("name", "林雪", "gender", "女");
-        this.eventPublisher.publishToolStartSseOnly(
+        this.eventPublisher.publishToolStart(
                 this.context,
                 "role_create_dialog",
                 "role_generate_role",
                 Map.of("toolArguments", arguments)
         );
-        this.eventPublisher.publishToolEndSseOnly(
+        this.eventPublisher.publishToolEnd(
                 this.context,
                 "role_create_dialog",
                 "role_generate_role",
@@ -202,7 +154,19 @@ class AgentEventPublisherTest {
                 Map.of("toolArguments", arguments, "toolData", Map.of("roleId", 88L))
         );
 
-        Mockito.verifyNoInteractions(this.eventService);
+        Mockito.verify(this.eventService).saveEvent(
+                Mockito.anyString(),
+                Mockito.eq("10001"),
+                Mockito.eq(1001L),
+                Mockito.isNull(),
+                Mockito.eq("tool"),
+                Mockito.eq("role_generate_role"),
+                Mockito.eq("role_create_dialog"),
+                Mockito.eq("tool"),
+                Mockito.eq("角色生成完成"),
+                Mockito.eq(1),
+                Mockito.anyMap()
+        );
         Mockito.verify(this.sseConnectionManager).send(
                 Mockito.eq("sse-1"),
                 Mockito.eq("tool.start"),
@@ -255,6 +219,65 @@ class AgentEventPublisherTest {
                 "question", "你对这版角色满意吗？",
                 "options", options
         ), payload);
+    }
+
+    @Test
+    void shouldPersistConfirmSelectedValue() {
+        TsAgentChatMessageEventEntity pending = new TsAgentChatMessageEventEntity();
+        pending.setId("confirm-event-1");
+        pending.setCreatedAt(new Date(System.currentTimeMillis() - 100L));
+        pending.setJson("""
+                {
+                  "input": {
+                    "question": "你对这版角色满意吗？",
+                    "options": [
+                      {"label": "不满意，重新生成", "value": "REGENERATE"}
+                    ]
+                  },
+                  "output": null,
+                  "error": null,
+                  "metrics": {}
+                }
+                """);
+        Mockito.when(this.eventService.findLatestPendingInteractiveEvent(
+                1001L,
+                "role_task_agent",
+                "role_confirmation",
+                "confirm"
+        )).thenReturn(pending);
+
+        Map<String, Object> resultData = new LinkedHashMap<>();
+        resultData.put("optionValue", "REGENERATE");
+        resultData.put("selectedOption", Map.of(
+                "label", "不满意，重新生成",
+                "optionValue", "REGENERATE"
+        ));
+        this.eventPublisher.publishConfirmEnd(
+                this.context,
+                "confirm.end",
+                "role_confirmation",
+                "你对这版角色满意吗？",
+                List.of(Map.of("label", "不满意，重新生成", "value", "REGENERATE")),
+                resultData
+        );
+
+        ArgumentCaptor<Map<String, Object>> completeDataCaptor = mapCaptor();
+        Mockito.verify(this.eventService).updateEventResult(
+                Mockito.eq("confirm-event-1"),
+                Mockito.eq("已选择：不满意，重新生成"),
+                Mockito.eq(1),
+                completeDataCaptor.capture()
+        );
+        Map<String, Object> output = castMap(completeDataCaptor.getValue().get("output"));
+        Assertions.assertEquals("REGENERATE", output.get("value"));
+        Assertions.assertEquals(
+                Map.of(
+                        "label", "不满意，重新生成",
+                        "value", "REGENERATE",
+                        "optionValue", "REGENERATE"
+                ),
+                output.get("selection")
+        );
     }
 
     @Test
@@ -336,9 +359,10 @@ class AgentEventPublisherTest {
         Map<String, Object> completeData = completeDataCaptor.getValue();
         Map<String, Object> output = castMap(completeData.get("output"));
         Assertions.assertEquals(
-                Map.of("label", "现代都市", "optionValue", "MODERN"),
+                Map.of("label", "现代都市", "value", "MODERN", "optionValue", "MODERN"),
                 output.get("selection")
         );
+        Assertions.assertEquals("MODERN", output.get("value"));
         Assertions.assertEquals("OPTION_SELECTED", output.get("action"));
 
         ArgumentCaptor<Map<String, Object>> payloadCaptor = mapCaptor();
@@ -348,7 +372,7 @@ class AgentEventPublisherTest {
                 payloadCaptor.capture()
         );
         Assertions.assertEquals(
-                Map.of("label", "现代都市", "optionValue", "MODERN"),
+                Map.of("label", "现代都市", "value", "MODERN", "optionValue", "MODERN"),
                 payloadCaptor.getValue().get("selectedOption")
         );
     }

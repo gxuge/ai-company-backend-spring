@@ -100,18 +100,16 @@ public class DeepAgentDefinitionRegistry {
     private DeepAgentDefinition buildRoleDefinition() {
         DeepAgentDefinition definition = new DeepAgentDefinition();
         definition.setName("role_task_agent");
-        definition.setDescription("创建角色对话子 Agent，支持追问、preset/full 生成、确认后补形象与声音。");
+        definition.setDescription("创建角色对话子 Agent，支持追问、角色生成、确认后补形象与声音。");
         definition.setSkillDomain("role");
         definition.setSkillTopK(3);
         definition.setSkills(List.of("role_create_dialog", "role_create_image", "role_create_voice"));
         definition.setTools(List.of(
-                "role_core_fill_preset",
                 "role_generate_role",
                 "role_generate_role_image",
                 "role_generate_role_voice"
         ));
         definition.setPermissions(List.of(
-                "role_core_fill_preset",
                 "role_generate_role",
                 "role_generate_role_image",
                 "role_generate_role_voice"
@@ -129,17 +127,15 @@ public class DeepAgentDefinitionRegistry {
     private DeepAgentDefinition buildStoryDefinition() {
         DeepAgentDefinition definition = new DeepAgentDefinition();
         definition.setName("story_task_agent");
-        definition.setDescription("创建故事对话子 Agent，支持追问、preset/full 生成、确认后补背景与场景。");
+        definition.setDescription("创建故事对话子 Agent，支持追问、故事生成、确认后补背景与场景。");
         definition.setSkillDomain("story");
         definition.setSkillTopK(3);
         definition.setSkills(List.of("story_create_dialog", "story_create_background"));
         definition.setTools(List.of(
-                "story_full_generate_preset",
                 "story_full_generate",
                 "story_generate_scene"
         ));
         definition.setPermissions(List.of(
-                "story_full_generate_preset",
                 "story_full_generate",
                 "story_generate_scene"
         ));
