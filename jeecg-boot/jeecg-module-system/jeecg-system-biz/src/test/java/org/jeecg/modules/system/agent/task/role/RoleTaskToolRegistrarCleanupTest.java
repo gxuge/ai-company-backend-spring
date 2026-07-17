@@ -5,8 +5,10 @@ import org.jeecg.modules.airag.agent.subagent.role.tool.RoleTaskToolSpec;
 import org.jeecg.modules.airag.agent.tool.ToolCallRequest;
 import org.jeecg.modules.airag.agent.tool.ToolRegistry;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateRoleDto;
+import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickSettingGenerateDto;
 import org.jeecg.modules.system.service.ITsRoleGenerateService;
 import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateRoleVo;
+import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickSettingGenerateVo;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -22,15 +24,32 @@ class RoleTaskToolRegistrarCleanupTest {
         ITsRoleGenerateService generateService = Mockito.mock(ITsRoleGenerateService.class);
         Mockito.when(generateService.generateRole(Mockito.any(), Mockito.any()))
                 .thenReturn(new TsRoleGenerateRoleVo());
+        Mockito.when(generateService.generateRoleSetting(Mockito.any(), Mockito.any()))
+                .thenReturn(new TsRoleOneClickSettingGenerateVo());
         RoleTaskToolRegistrar registrar = new RoleTaskToolRegistrar(toolRegistry, generateService);
         registrar.registerTools();
 
-        Assertions.assertEquals(4, toolRegistry.listDefinitions().size());
+        Assertions.assertEquals(5, toolRegistry.listDefinitions().size());
         Assertions.assertTrue(toolRegistry.listDefinitions().stream()
                 .noneMatch(definition -> "role_confirmation".equals(definition.getName())));
 
         AgentContext context = new AgentContext();
         context.setUserId("test-user");
+        ToolCallRequest coreRequest = new ToolCallRequest();
+        coreRequest.setToolName(RoleTaskToolSpec.ROLE_CORE_FILL);
+        coreRequest.setArguments(Map.of(
+                "occupation", "都市侦探",
+                "extra_info", "擅长观察细节"
+        ));
+        toolRegistry.execute(context, coreRequest);
+
+        ArgumentCaptor<TsRoleOneClickSettingGenerateDto> settingCaptor =
+                ArgumentCaptor.forClass(TsRoleOneClickSettingGenerateDto.class);
+        Mockito.verify(generateService).generateRoleSetting(Mockito.any(), settingCaptor.capture());
+        Assertions.assertEquals("都市侦探", settingCaptor.getValue().getOccupation());
+        Assertions.assertEquals("擅长观察细节", settingCaptor.getValue().getExtraInfo());
+        Assertions.assertNotNull(context.getAttribute("roleCoreResultJson"));
+
         ToolCallRequest request = new ToolCallRequest();
         request.setToolName(RoleTaskToolSpec.ROLE_GENERATE_ROLE);
         request.setArguments(Map.of("user_input", "创建一个都市侦探角色"));

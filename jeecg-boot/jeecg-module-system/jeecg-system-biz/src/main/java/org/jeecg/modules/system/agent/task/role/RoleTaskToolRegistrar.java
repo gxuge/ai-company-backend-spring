@@ -36,6 +36,7 @@ import java.util.Map;
 public class RoleTaskToolRegistrar {
 
     private static final String ROUTE_ROLE_CORE_FILL = "ROLE_CORE_FILL";
+    private static final String ROUTE_ROLE_CORE_FILL_PRESET = "ROLE_CORE_FILL_PRESET";
     private static final String ROUTE_ROLE_FULL_GENERATE = "ROLE_FULL_GENERATE";
     private static final String ROUTE_ROLE_IMAGE_GENERATE = "ROLE_IMAGE_GENERATE";
     private static final String ROUTE_ROLE_VOICE_GENERATE = "ROLE_VOICE_GENERATE";
@@ -53,14 +54,29 @@ public class RoleTaskToolRegistrar {
     }
 
     /**
-     * 容器启动后注册角色生成相关的四个业务工具。
+     * 容器启动后注册角色生成相关的五个业务工具。
      */
     @PostConstruct
     public void registerTools() {
+        this.toolRegistry.register(buildRoleCoreFillTool());
         this.toolRegistry.register(buildRoleCoreFillPresetTool());
         this.toolRegistry.register(buildRoleGenerateRoleTool());
         this.toolRegistry.register(buildRoleImageGenerateTool());
         this.toolRegistry.register(buildRoleVoiceGenerateTool());
+    }
+
+    /**
+     * 构建普通角色核心设定补全工具定义。
+     */
+    private ToolDefinition buildRoleCoreFillTool() {
+        ToolDefinition definition = new ToolDefinition();
+        definition.setName(RoleTaskToolSpec.ROLE_CORE_FILL);
+        definition.setRouteKey(ROUTE_ROLE_CORE_FILL);
+        definition.setCategory("role_task");
+        definition.setDisplayName("角色核心设定补全");
+        definition.setDescription("根据用户已提供的信息补全角色核心设定，不生成形象或声音");
+        definition.setExecutor(this::executeRoleCoreFill);
+        return definition;
     }
 
     /**
@@ -69,7 +85,7 @@ public class RoleTaskToolRegistrar {
     private ToolDefinition buildRoleCoreFillPresetTool() {
         ToolDefinition definition = new ToolDefinition();
         definition.setName(RoleTaskToolSpec.ROLE_CORE_FILL_PRESET);
-        definition.setRouteKey(ROUTE_ROLE_CORE_FILL);
+        definition.setRouteKey(ROUTE_ROLE_CORE_FILL_PRESET);
         definition.setCategory("role_task");
         definition.setDisplayName("角色核心设定补全");
         definition.setDescription("适合角色信息较少、需要先补全核心设定时使用");
@@ -117,6 +133,36 @@ public class RoleTaskToolRegistrar {
         definition.setDescription("基于角色核心设定生成声音建议与音色推荐");
         definition.setExecutor(this::executeRoleGenerateRoleVoice);
         return definition;
+    }
+
+    /**
+     * 根据工具参数和当前对话上下文补全角色核心设定。
+     */
+    private ToolCallResult executeRoleCoreFill(AgentContext context, ToolCallRequest request) {
+        LoginUser user = TaskAgentSupport.buildLoginUser(context);
+        Map<String, Object> args = request == null ? null : request.getArguments();
+        Map<String, Object> promptVariables = TaskAgentSupport.readMapAttribute(context, "promptVariables");
+        TsRoleOneClickSettingGenerateDto dto = new TsRoleOneClickSettingGenerateDto();
+        dto.setRoleId(firstLong(args, promptVariables, "roleId", "role_id"));
+        dto.setRoleName(firstText(args, promptVariables, "roleName", "role_name"));
+        dto.setGender(firstText(args, promptVariables, "gender"));
+        dto.setOccupation(firstText(args, promptVariables, "occupation"));
+        dto.setBackgroundStory(firstText(args, promptVariables, "backgroundStory", "background_story"));
+        dto.setGreeting(firstText(args, promptVariables, "greeting"));
+        dto.setStyleHint(firstText(args, promptVariables, "styleHint", "style_hint"));
+        dto.setKeywords(firstText(args, promptVariables, "keywords"));
+        dto.setExtraInfo(firstNonBlank(context, request, "extraInfo", "extra_info", "userInput", "user_input"));
+        dto.normalize();
+        Object result = this.roleGenerateService.generateRoleSetting(user, dto);
+        Map<String, Object> payload = buildCommonPayload(context, request, "core", RoleTaskToolSpec.ROLE_CORE_FILL);
+        payload.put("result", result);
+        payload.put("resultJson", JSONObject.toJSONString(result));
+        if (context != null) {
+            context.putAttribute("roleCoreResultJson", JSONObject.toJSONString(result));
+        }
+        ToolCallResult callResult = ToolCallResult.success("已生成角色核心设定", result);
+        callResult.setPayload(payload);
+        return callResult;
     }
 
     /**

@@ -3,6 +3,8 @@ package org.jeecg.modules.airag.agent.runtime;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
+
 class AgentFlowStateSupportTest {
 
     @Test
@@ -11,6 +13,10 @@ class AgentFlowStateSupportTest {
         source.putAttribute("taskDescription", "创建一个美女侦探角色");
         source.putAttribute("roleCoreResultJson", "{\"name\":\"林夏\"}");
         source.putAttribute("roleImageResultJson", "{\"url\":\"demo\"}");
+        source.putAttribute("pendingUserInteraction", Map.of(
+                "interactionId", "confirm-1",
+                "interactionType", "confirm"
+        ));
         source.putAttribute("storyCoreResultJson", "{\"title\":\"不应保存\"}");
         source.putAttribute("arbitraryValue", "不应保存");
 
@@ -21,6 +27,7 @@ class AgentFlowStateSupportTest {
         Assertions.assertEquals("{\"name\":\"林夏\"}", restored.getAttribute("roleCoreResultJson"));
         Assertions.assertEquals("{\"url\":\"demo\"}", restored.getAttribute("roleImageResultJson"));
         Assertions.assertEquals("创建一个美女侦探角色", restored.getAttribute("taskDescription"));
+        Assertions.assertNotNull(restored.getAttribute("pendingUserInteraction"));
         Assertions.assertNull(restored.getAttribute("storyCoreResultJson"));
         Assertions.assertNull(restored.getAttribute("arbitraryValue"));
     }

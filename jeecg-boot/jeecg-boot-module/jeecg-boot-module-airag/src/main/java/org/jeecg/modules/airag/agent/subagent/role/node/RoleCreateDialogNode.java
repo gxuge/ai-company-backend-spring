@@ -30,7 +30,7 @@ import java.util.Map;
 /**
  * 角色创建对话节点。
  *
- * <p>负责收集信息、判断追问或生成完整角色，并把核心设定结果交给后续确认节点。</p>
+ * <p>负责收集信息、生成角色核心设定，并通过 Tool 显式发起用户确认。</p>
  *
  * @author codex
  * @date 2026/7/11
@@ -64,8 +64,14 @@ public class RoleCreateDialogNode extends LlmNode {
         definition.setSkillDomain("role");
         definition.setSkillTopK(3);
         definition.setSkills(List.of("role_create_dialog"));
-        definition.setTools(List.of(RoleTaskToolSpec.ROLE_GENERATE_ROLE));
-        definition.setPermissions(List.of(RoleTaskToolSpec.ROLE_GENERATE_ROLE));
+        definition.setTools(List.of(
+                RoleTaskToolSpec.ROLE_CORE_FILL,
+                RoleTaskToolSpec.ROLE_REQUEST_CONFIRMATION
+        ));
+        definition.setPermissions(List.of(
+                RoleTaskToolSpec.ROLE_CORE_FILL,
+                RoleTaskToolSpec.ROLE_REQUEST_CONFIRMATION
+        ));
         definition.setResponseFormat("text");
         definition.setConversationHistoryEnabled(true);
         definition.setUserPromptTemplate("""
@@ -111,19 +117,42 @@ public class RoleCreateDialogNode extends LlmNode {
 
     private Map<ToolSpecification, ToolExecutor> buildRoleToolMap(AgentContext context) {
         Map<ToolSpecification, ToolExecutor> tools = new LinkedHashMap<>();
-        tools.put(buildRoleGenerateRoleSpec(), buildToolExecutor(context, RoleTaskToolSpec.ROLE_GENERATE_ROLE));
+        tools.put(buildRoleCoreFillSpec(), buildToolExecutor(context, RoleTaskToolSpec.ROLE_CORE_FILL));
+        tools.put(
+                buildRoleRequestConfirmationSpec(),
+                buildToolExecutor(context, RoleTaskToolSpec.ROLE_REQUEST_CONFIRMATION)
+        );
         return tools;
     }
 
-    private ToolSpecification buildRoleGenerateRoleSpec() {
+    private ToolSpecification buildRoleCoreFillSpec() {
         JsonObjectSchema schema = JsonObjectSchema.builder()
                 .addStringProperty("userInput", "用户原始输入或本次任务描述")
-                .addStringProperty("storySetting", "角色相关故事设定或关系背景")
-                .addStringProperty("storyBackground", "角色背景、用户要求或已有设定")
+                .addStringProperty("roleName", "角色名称，可为空")
+                .addStringProperty("gender", "角色性别，可为空")
+                .addStringProperty("occupation", "角色职业，可为空")
+                .addStringProperty("backgroundStory", "角色背景故事，可为空")
+                .addStringProperty("greeting", "角色开场白，可为空")
+                .addStringProperty("styleHint", "角色风格提示，可为空")
+                .addStringProperty("keywords", "角色关键词，可为空")
+                .addStringProperty("extraInfo", "不属于核心字段的其它有效角色信息，可为空")
                 .build();
         return ToolSpecification.builder()
-                .name(RoleTaskToolSpec.ROLE_GENERATE_ROLE)
-                .description("信息较完整或用户明确要求按现有方向生成/修改角色时，生成完整角色设定")
+                .name(RoleTaskToolSpec.ROLE_CORE_FILL)
+                .description("根据用户已提供的信息生成或修改角色核心设定，不生成形象或声音")
+                .parameters(schema)
+                .build();
+    }
+
+    private ToolSpecification buildRoleRequestConfirmationSpec() {
+        JsonObjectSchema schema = JsonObjectSchema.builder()
+                .addStringProperty("question", "结合当前角色内容生成的简短确认问题")
+                .addStringProperty("summary", "本次角色设定的简短摘要，可为空")
+                .required("question")
+                .build();
+        return ToolSpecification.builder()
+                .name(RoleTaskToolSpec.ROLE_REQUEST_CONFIRMATION)
+                .description("角色核心设定已生成且适合交给用户确认时，发起确认并暂停当前角色流程")
                 .parameters(schema)
                 .build();
     }

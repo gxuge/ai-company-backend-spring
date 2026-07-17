@@ -214,6 +214,7 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         Map<String, String> variables = buildPromptVariables(session, userInput, recentMessages);
         AgentContext context = buildAgentContext(user, session, userInput, userMessage, recentMessages, variables);
         context.putAttribute("optionValue", normalizeText(request.getOptionValue()));
+        context.putAttribute("interactionId", normalizeText(request.getInteractionId()));
         ReplyRuntime runtime = new ReplyRuntime();
         runtime.session = session;
         runtime.userMessage = userMessage;

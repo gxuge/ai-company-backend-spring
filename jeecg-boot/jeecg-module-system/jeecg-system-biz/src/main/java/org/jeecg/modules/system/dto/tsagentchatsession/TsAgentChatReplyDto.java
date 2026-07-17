@@ -31,6 +31,11 @@ public class TsAgentChatReplyDto {
     private String optionValue;
 
     /**
+     * 当前待交互标识。
+     */
+    private String interactionId;
+
+    /**
      * 历史消息条数。
      */
     private Integer historyCount;

@@ -15,6 +15,14 @@ public final class RoleTaskToolSpec {
     /**
      * 预留工具名。
      */
+    public static final String ROLE_CORE_FILL = "role_core_fill";
+    /**
+     * 预留工具名。
+     */
+    public static final String ROLE_REQUEST_CONFIRMATION = "role_request_confirmation";
+    /**
+     * 预留工具名。
+     */
     public static final String ROLE_CORE_FILL_PRESET = "role_core_fill_preset";
     /**
      * 预留工具名。
@@ -33,6 +41,8 @@ public final class RoleTaskToolSpec {
      * 当前角色链路的预留工具列表。
      */
     public static final List<String> TOOL_NAMES = List.of(
+            ROLE_CORE_FILL,
+            ROLE_REQUEST_CONFIRMATION,
             ROLE_CORE_FILL_PRESET,
             ROLE_GENERATE_ROLE,
             ROLE_GENERATE_ROLE_IMAGE,

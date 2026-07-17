@@ -51,6 +51,11 @@ public class AgentEventPublisher {
     private static final String ATTR_TOOL_EVENT_STATES = AgentEventPublisher.class.getName() + ".toolEventStates";
 
     /**
+     * 当前 LLM 完整事件暂存集合键。
+     */
+    private static final String ATTR_LLM_EVENT_STATES = AgentEventPublisher.class.getName() + ".llmEventStates";
+
+    /**
      * 事件落库服务。
      */
     private final TsAgentChatMessageEventService eventService;
@@ -166,13 +171,18 @@ public class AgentEventPublisher {
     }
 
     /**
-     * 发送 llm.start，不写入事件表。
+     * 发送 llm.start，并暂存轻量 LLM 执行状态。
      *
      * @param context 运行上下文
      * @param nodeName 节点名
      * @param promptCode 模板编码
      */
     public void publishLlmStart(AgentContext context, String nodeName, String promptCode) {
+        getLlmStates(context).put(buildLlmStateKey(nodeName), new LlmEventState(
+                UUIDGenerator.generate(),
+                System.currentTimeMillis(),
+                promptCode
+        ));
         Map<String, Object> dbData = buildEventData(
                 "llm.start",
                 NodeKind.LLM,
@@ -186,6 +196,23 @@ public class AgentEventPublisher {
         );
         recordEventTrail(context, dbData);
         sendOnlyCompact(context, "llm.start", NodeKind.LLM, nodeName, "开始生成", 2, null);
+    }
+
+    /**
+     * 更新 LLM 调用元数据，不保存 Prompt、消息或回复正文。
+     */
+    public void updateLlmExecutionMetadata(AgentContext context,
+                                           String nodeName,
+                                           String modelId,
+                                           String provider,
+                                           String modelName,
+                                           String finishReason,
+                                           Integer inputTokens,
+                                           Integer outputTokens,
+                                           Integer totalTokens) {
+        LlmEventState state = getLlmState(context, nodeName, null);
+        state.updateModel(modelId, provider, modelName);
+        state.updateResult(finishReason, inputTokens, outputTokens, totalTokens);
     }
 
     /**
@@ -214,7 +241,7 @@ public class AgentEventPublisher {
     }
 
     /**
-     * 发送 llm.error，不写入事件表。
+     * 发送 llm.error，并暂存错误信息。
      *
      * @param context 运行上下文
      * @param nodeName 节点名
@@ -240,11 +267,16 @@ public class AgentEventPublisher {
                 payload
         );
         recordEventTrail(context, dbData);
+        LlmEventState state = getLlmState(context, nodeName, promptCode);
+        state.setError(buildErrorData(
+                error == null ? "LLM_EXECUTION_ERROR" : error.getClass().getSimpleName(),
+                errorText
+        ));
         sendOnlyCompact(context, "llm.error", NodeKind.LLM, nodeName, errorText, 0, null);
     }
 
     /**
-     * 发送 llm.end，不写入事件表。
+     * 发送 llm.end，并将轻量 LLM 执行信息写入事件表。
      *
      * @param context 运行上下文
      * @param nodeName 节点名
@@ -278,6 +310,27 @@ public class AgentEventPublisher {
                 payload
         );
         recordEventTrail(context, dbData);
+        LlmEventState state = removeLlmState(context, nodeName, promptCode);
+        Map<String, Object> completeData = buildCompleteLlmData(success, state);
+        fillContextFields(completeData, context);
+        String eventContent = success ? "模型调用成功" : "模型调用失败";
+        try {
+            this.eventService.saveEvent(
+                    state.eventId(),
+                    context.getMessageId(),
+                    context.getSessionId(),
+                    context.getAgentSessionId(),
+                    "llm",
+                    safeText(state.modelName(), safeText(state.modelId(), nodeName)),
+                    nodeName,
+                    NodeKind.LLM.name().toLowerCase(),
+                    eventContent,
+                    success ? 1 : 0,
+                    completeData
+            );
+        } catch (Exception ex) {
+            log.warn("保存轻量 LLM 事件失败，nodeName={}, modelId={}", nodeName, state.modelId(), ex);
+        }
         sendOnlyCompact(context, "llm.end", NodeKind.LLM, nodeName, content, success ? 1 : 0, null);
     }
 
@@ -1048,6 +1101,83 @@ public class AgentEventPublisher {
     }
 
     /**
+     * 构建不包含 Prompt、消息和回复正文的轻量 LLM 执行数据。
+     */
+    private Map<String, Object> buildCompleteLlmData(boolean success, LlmEventState state) {
+        Map<String, Object> input = new LinkedHashMap<>();
+        putString(input, "modelId", state.modelId());
+        putString(input, "provider", state.provider());
+        putString(input, "modelName", state.modelName());
+        putString(input, "promptCode", state.promptCode());
+
+        Map<String, Object> complete = new LinkedHashMap<>();
+        complete.put("input", input);
+        if (success) {
+            Map<String, Object> output = new LinkedHashMap<>();
+            putString(output, "finishReason", state.finishReason());
+            complete.put("output", output);
+        } else {
+            complete.put("output", null);
+        }
+        complete.put("error", state.error());
+
+        Map<String, Object> metrics = new LinkedHashMap<>();
+        metrics.put("durationMs", elapsedMillis(state.startedAt()));
+        putNumber(metrics, "inputTokens", state.inputTokens());
+        putNumber(metrics, "outputTokens", state.outputTokens());
+        putNumber(metrics, "totalTokens", state.totalTokens());
+        complete.put("metrics", metrics);
+        return complete;
+    }
+
+    /**
+     * 获取 LLM 状态集合。
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, LlmEventState> getLlmStates(AgentContext context) {
+        Object rawStates = context.getAttribute(ATTR_LLM_EVENT_STATES);
+        if (rawStates instanceof Map<?, ?>) {
+            return (Map<String, LlmEventState>) rawStates;
+        }
+        Map<String, LlmEventState> states = new ConcurrentHashMap<>();
+        context.putAttribute(ATTR_LLM_EVENT_STATES, states);
+        return states;
+    }
+
+    /**
+     * 获取指定 LLM 状态，不存在时创建。
+     */
+    private LlmEventState getLlmState(AgentContext context, String nodeName, String promptCode) {
+        String key = buildLlmStateKey(nodeName);
+        Map<String, LlmEventState> states = getLlmStates(context);
+        LlmEventState state = states.get(key);
+        if (state != null) {
+            return state;
+        }
+        state = new LlmEventState(UUIDGenerator.generate(), System.currentTimeMillis(), promptCode);
+        states.put(key, state);
+        return state;
+    }
+
+    /**
+     * 移除并返回指定 LLM 状态。
+     */
+    private LlmEventState removeLlmState(AgentContext context, String nodeName, String promptCode) {
+        Map<String, LlmEventState> states = getLlmStates(context);
+        LlmEventState state = states.remove(buildLlmStateKey(nodeName));
+        if (states.isEmpty()) {
+            context.removeAttribute(ATTR_LLM_EVENT_STATES);
+        }
+        return state == null
+                ? new LlmEventState(UUIDGenerator.generate(), System.currentTimeMillis(), promptCode)
+                : state;
+    }
+
+    private String buildLlmStateKey(String nodeName) {
+        return safeText(nodeName, "llm-node");
+    }
+
+    /**
      * 获取 Tool 状态集合。
      *
      * @param context 运行上下文
@@ -1362,6 +1492,14 @@ public class AgentEventPublisher {
             return;
         }
         putString(target, "question", stringValue(rawMap.get("question")));
+        putString(target, "interactionId", stringValue(rawMap.get("interactionId")));
+        putString(target, "interactionType", stringValue(rawMap.get("interactionType")));
+        putString(target, "summary", stringValue(rawMap.get("summary")));
+        putString(target, "contextRef", stringValue(rawMap.get("contextRef")));
+        putString(target, "interactionStatus", stringValue(rawMap.get("status")));
+        if (rawMap.get("suspendRun") instanceof Boolean suspendRun) {
+            target.put("suspendRun", suspendRun);
+        }
         List<Map<String, String>> options = optionListValue(rawMap.get("options"));
         if (options != null && !options.isEmpty()) {
             target.put("options", options);
@@ -1712,6 +1850,13 @@ public class AgentEventPublisher {
         }
     }
 
+    private void putNumber(Map<String, Object> target, String key, Number value) {
+        if (target == null || key == null || key.isBlank() || value == null) {
+            return;
+        }
+        target.put(key, value);
+    }
+
     /**
      * 补充当前运行上下文字段。
      *
@@ -1794,6 +1939,107 @@ public class AgentEventPublisher {
 
         private Map<String, Object> input() {
             return this.input;
+        }
+
+        private Map<String, Object> error() {
+            return this.error;
+        }
+
+        private void setError(Map<String, Object> error) {
+            this.error = error == null ? null : new LinkedHashMap<>(error);
+        }
+    }
+
+    /**
+     * LLM 事件只保留模型、执行结果和 Token 指标。
+     */
+    private static final class LlmEventState {
+        private final String eventId;
+        private final long startedAt;
+        private final String promptCode;
+        private String modelId;
+        private String provider;
+        private String modelName;
+        private String finishReason;
+        private Integer inputTokens;
+        private Integer outputTokens;
+        private Integer totalTokens;
+        private Map<String, Object> error;
+
+        private LlmEventState(String eventId, long startedAt, String promptCode) {
+            this.eventId = eventId;
+            this.startedAt = startedAt;
+            this.promptCode = promptCode;
+        }
+
+        private void updateModel(String modelId, String provider, String modelName) {
+            if (modelId != null && !modelId.isBlank()) {
+                this.modelId = modelId;
+            }
+            if (provider != null && !provider.isBlank()) {
+                this.provider = provider;
+            }
+            if (modelName != null && !modelName.isBlank()) {
+                this.modelName = modelName;
+            }
+        }
+
+        private void updateResult(String finishReason,
+                                  Integer inputTokens,
+                                  Integer outputTokens,
+                                  Integer totalTokens) {
+            if (finishReason != null && !finishReason.isBlank()) {
+                this.finishReason = finishReason;
+            }
+            if (inputTokens != null) {
+                this.inputTokens = inputTokens;
+            }
+            if (outputTokens != null) {
+                this.outputTokens = outputTokens;
+            }
+            if (totalTokens != null) {
+                this.totalTokens = totalTokens;
+            }
+        }
+
+        private String eventId() {
+            return this.eventId;
+        }
+
+        private long startedAt() {
+            return this.startedAt;
+        }
+
+        private String promptCode() {
+            return this.promptCode;
+        }
+
+        private String modelId() {
+            return this.modelId;
+        }
+
+        private String provider() {
+            return this.provider;
+        }
+
+        private String modelName() {
+            return this.modelName;
+        }
+
+        private String finishReason() {
+            return this.finishReason;
+        }
+
+        private Integer inputTokens() {
+            return this.inputTokens;
+        }
+
+        private Integer outputTokens() {
+            return this.outputTokens;
+        }
+
+        private Integer totalTokens() {
+            return this.totalTokens;
         }
 
         private Map<String, Object> error() {

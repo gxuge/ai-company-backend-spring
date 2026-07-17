@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 
 import java.util.LinkedHashMap;
 import java.util.Date;
@@ -27,6 +28,8 @@ class AgentEventPublisherTest {
         this.eventService = Mockito.mock(TsAgentChatMessageEventService.class);
         this.sseConnectionManager = Mockito.mock(SseConnectionManager.class);
         RedisTemplate redisTemplate = Mockito.mock(RedisTemplate.class);
+        ValueOperations valueOperations = Mockito.mock(ValueOperations.class);
+        Mockito.when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         this.eventPublisher = new AgentEventPublisher(this.eventService, this.sseConnectionManager, redisTemplate);
 
         this.context = new AgentContext();
@@ -124,16 +127,107 @@ class AgentEventPublisherTest {
     }
 
     @Test
-    void shouldNotPersistLlmEvents() {
+    void shouldPersistLightweightLlmEventWithoutConversationContext() {
         this.eventPublisher.publishLlmStart(this.context, "dialogNode", "role_dialog_v1");
+        this.eventPublisher.updateLlmExecutionMetadata(
+                this.context,
+                "dialogNode",
+                "model-1",
+                "DEEPSEEK",
+                "deepseek-v4-flash",
+                "STOP",
+                120,
+                30,
+                150
+        );
         this.eventPublisher.publishLlmError(
                 this.context,
                 "dialogNode",
                 "role_dialog_v1",
                 new IllegalStateException("模型调用失败")
         );
+        this.eventPublisher.publishLlmEnd(
+                this.context,
+                "dialogNode",
+                "role_dialog_v1",
+                false,
+                Map.of("content", "不应写入完整输出")
+        );
 
-        Mockito.verifyNoInteractions(this.eventService);
+        ArgumentCaptor<Map<String, Object>> dataCaptor = mapCaptor();
+        Mockito.verify(this.eventService).saveEvent(
+                Mockito.anyString(),
+                Mockito.eq("10001"),
+                Mockito.eq(1001L),
+                Mockito.isNull(),
+                Mockito.eq("llm"),
+                Mockito.eq("deepseek-v4-flash"),
+                Mockito.eq("dialogNode"),
+                Mockito.eq("llm"),
+                Mockito.eq("模型调用失败"),
+                Mockito.eq(0),
+                dataCaptor.capture()
+        );
+
+        Map<String, Object> data = dataCaptor.getValue();
+        Map<String, Object> input = castMap(data.get("input"));
+        Map<String, Object> error = castMap(data.get("error"));
+        Map<String, Object> metrics = castMap(data.get("metrics"));
+        Assertions.assertEquals("model-1", input.get("modelId"));
+        Assertions.assertEquals("DEEPSEEK", input.get("provider"));
+        Assertions.assertEquals("deepseek-v4-flash", input.get("modelName"));
+        Assertions.assertEquals("role_dialog_v1", input.get("promptCode"));
+        Assertions.assertFalse(input.containsKey("messages"));
+        Assertions.assertFalse(input.containsKey("prompt"));
+        Assertions.assertNull(data.get("output"));
+        Assertions.assertEquals("IllegalStateException", error.get("code"));
+        Assertions.assertEquals(120, metrics.get("inputTokens"));
+        Assertions.assertEquals(30, metrics.get("outputTokens"));
+        Assertions.assertEquals(150, metrics.get("totalTokens"));
+    }
+
+    @Test
+    void shouldPersistSuccessfulLlmStatusAndTokenUsage() {
+        this.eventPublisher.publishLlmStart(this.context, "dialogNode", "role_dialog_v1");
+        this.eventPublisher.updateLlmExecutionMetadata(
+                this.context,
+                "dialogNode",
+                "model-1",
+                "DEEPSEEK",
+                "deepseek-v4-flash",
+                "STOP",
+                100,
+                20,
+                120
+        );
+        this.eventPublisher.publishLlmEnd(
+                this.context,
+                "dialogNode",
+                "role_dialog_v1",
+                true,
+                Map.of()
+        );
+
+        ArgumentCaptor<Map<String, Object>> dataCaptor = mapCaptor();
+        Mockito.verify(this.eventService).saveEvent(
+                Mockito.anyString(),
+                Mockito.eq("10001"),
+                Mockito.eq(1001L),
+                Mockito.isNull(),
+                Mockito.eq("llm"),
+                Mockito.eq("deepseek-v4-flash"),
+                Mockito.eq("dialogNode"),
+                Mockito.eq("llm"),
+                Mockito.eq("模型调用成功"),
+                Mockito.eq(1),
+                dataCaptor.capture()
+        );
+        Map<String, Object> data = dataCaptor.getValue();
+        Map<String, Object> output = castMap(data.get("output"));
+        Map<String, Object> metrics = castMap(data.get("metrics"));
+        Assertions.assertEquals("STOP", output.get("finishReason"));
+        Assertions.assertNull(data.get("error"));
+        Assertions.assertEquals(120, metrics.get("totalTokens"));
     }
 
     @Test

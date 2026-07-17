@@ -6,6 +6,7 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.output.FinishReason;
+import dev.langchain4j.model.output.TokenUsage;
 import dev.langchain4j.service.TokenStream;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +14,7 @@ import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.airag.agent.graph.LlmNodeDefinition;
 import org.jeecg.modules.airag.agent.graph.NodeKind;
 import org.jeecg.modules.airag.agent.graph.NodeResult;
+import org.jeecg.modules.airag.agent.interaction.AgentInteractionEventPublisher;
 import org.jeecg.modules.airag.agent.runtime.AgentConversationMessage;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentEventPublisher;
@@ -102,6 +104,11 @@ public abstract class LlmNode extends BaseAgentNode {
     @Autowired(required = false)
     private AgentControlToolService agentControlToolService;
     /**
+     * Tool 交互事件发布器。
+     */
+    @Autowired(required = false)
+    private AgentInteractionEventPublisher interactionEventPublisher;
+    /**
      * LLM trace sinks.
      */
     @Autowired(required = false)
@@ -146,6 +153,17 @@ public abstract class LlmNode extends BaseAgentNode {
         List<ChatMessage> messages = buildMessages(promptVariables, skillLoadResult, context);
         String modelId = this.modelResolver.resolveTextModelId(context.getAppId());
         AIChatParams params = buildChatParams(context, skillLoadResult);
+        this.eventPublisher.updateLlmExecutionMetadata(
+                context,
+                nodeName(),
+                modelId,
+                params == null ? null : params.getProvider(),
+                params == null ? null : params.getModelName(),
+                null,
+                null,
+                null,
+                null
+        );
         traceLlmRequest(context, modelId, messages, params);
         CountDownLatch done = new CountDownLatch(1);
         AtomicReference<Throwable> errorRef = new AtomicReference<>();
@@ -153,6 +171,17 @@ public abstract class LlmNode extends BaseAgentNode {
         AtomicReference<String> finishReasonRef = new AtomicReference<>();
         AtomicBoolean terminalReceived = new AtomicBoolean(false);
         TokenStream tokenStream = this.aiChatHandler.chat(modelId, messages, params);
+        this.eventPublisher.updateLlmExecutionMetadata(
+                context,
+                nodeName(),
+                modelId,
+                params == null ? null : params.getProvider(),
+                params == null ? null : params.getModelName(),
+                null,
+                null,
+                null,
+                null
+        );
 
         tokenStream.onPartialResponse(delta -> {
             if (terminalReceived.get()) {
@@ -170,6 +199,21 @@ public abstract class LlmNode extends BaseAgentNode {
             String finalText = response == null || response.aiMessage() == null ? "" : response.aiMessage().text();
             FinishReason finishReason = response == null ? null : response.finishReason();
             finishReasonRef.set(finishReason == null ? null : finishReason.name());
+            TokenUsage tokenUsage = response == null ? null : response.tokenUsage();
+            String actualModelName = response == null ? null : response.modelName();
+            this.eventPublisher.updateLlmExecutionMetadata(
+                    context,
+                    nodeName(),
+                    modelId,
+                    params == null ? null : params.getProvider(),
+                    oConvertUtils.isNotEmpty(actualModelName)
+                            ? actualModelName
+                            : (params == null ? null : params.getModelName()),
+                    finishReasonRef.get(),
+                    tokenUsage == null ? null : tokenUsage.inputTokenCount(),
+                    tokenUsage == null ? null : tokenUsage.outputTokenCount(),
+                    tokenUsage == null ? null : tokenUsage.totalTokenCount()
+            );
             if (FinishReason.STOP.equals(finishReason) || finishReason == null) {
                 textRef.set(finalText);
             } else {
@@ -309,6 +353,9 @@ public abstract class LlmNode extends BaseAgentNode {
                     content,
                     endPayload
             );
+            if (success && this.interactionEventPublisher != null) {
+                this.interactionEventPublisher.publishRequested(context, result);
+            }
             return result;
         } catch (RuntimeException ex) {
             Map<String, Object> errorPayload = new LinkedHashMap<>(startPayload);
