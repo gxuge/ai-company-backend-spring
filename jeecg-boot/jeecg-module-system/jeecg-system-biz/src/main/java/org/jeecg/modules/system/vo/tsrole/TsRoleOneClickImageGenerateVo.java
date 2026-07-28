@@ -1,8 +1,11 @@
 package org.jeecg.modules.system.vo.tsrole;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Data;
 
 @Data
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class TsRoleOneClickImageGenerateVo {
     /** 是否已受理 */
     private Boolean accepted;
@@ -23,5 +26,6 @@ public class TsRoleOneClickImageGenerateVo {
     /** 实际渲染后的Prompt */
     private String renderedPrompt;
     /** Redis快照Key */
-    private String snapshotKey;
+    @JsonIgnore
+    private transient String snapshotKey;
 }

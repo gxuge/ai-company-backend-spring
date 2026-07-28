@@ -382,6 +382,25 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
      * @return 回复文本
      */
     private String resolveAssistantContent(AgentResult agentResult, AgentContext context) {
+        if (isConfirmationInteraction(agentResult)) {
+            String question = normalizeText(extractString(agentResult.getData(), "question"));
+            String generatedContent = normalizeText(context == null ? null : context.getLatestContent());
+            if (StringUtils.hasText(generatedContent) && !generatedContent.equals(question)) {
+                return generatedContent;
+            }
+            for (String attributeName : List.of("roleDialogNodeResultContent", "storyDialogNodeResultContent")) {
+                generatedContent = normalizeText(oConvertUtils.getString(
+                        context == null ? null : context.getAttribute(attributeName)
+                ));
+                if (StringUtils.hasText(generatedContent) && !generatedContent.equals(question)) {
+                    return generatedContent;
+                }
+            }
+            generatedContent = normalizeText(extractString(agentResult.getData(), "formattedResult"));
+            return StringUtils.hasText(generatedContent) && !generatedContent.equals(question)
+                    ? generatedContent
+                    : null;
+        }
         String assistantContent = normalizeText(agentResult == null ? null : agentResult.getContent());
         if (!StringUtils.hasText(assistantContent) && agentResult != null && agentResult.getData() != null) {
             assistantContent = normalizeText(extractString(agentResult.getData(), "formattedResult"));
@@ -390,6 +409,17 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
             assistantContent = normalizeText(context.getLatestContent());
         }
         return assistantContent;
+    }
+
+    private boolean isConfirmationInteraction(AgentResult agentResult) {
+        if (agentResult == null
+                || agentResult.getStatus() != AgentResult.Status.WAITING_USER
+                || agentResult.getData() == null) {
+            return false;
+        }
+        String interactionType = normalizeText(extractString(agentResult.getData(), "interactionType"));
+        return "confirm".equalsIgnoreCase(interactionType)
+                && StringUtils.hasText(extractString(agentResult.getData(), "interactionId"));
     }
 
     /**

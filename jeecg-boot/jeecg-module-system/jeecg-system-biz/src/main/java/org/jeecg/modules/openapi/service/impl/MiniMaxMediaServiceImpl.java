@@ -158,12 +158,31 @@ public class MiniMaxMediaServiceImpl implements IMiniMaxMediaService {
             )));
         }
         Map<String, Object> resp = postForMap("/v1/image_generation", req, "image");
-        if (resp == null || !(resp.get("data") instanceof Map<?, ?> data)) {
+        if (resp == null || resp.isEmpty()) {
             throw new JeecgBootBizTipException("MiniMax image generation response is empty");
+        }
+        if (resp.get("base_resp") instanceof Map<?, ?> baseResp) {
+            int statusCode = toInt(baseResp.get("status_code"), 0);
+            if (statusCode != 0) {
+                Object statusMsgObj = baseResp.get("status_msg");
+                String statusMsg = statusMsgObj == null ? "" : String.valueOf(statusMsgObj).trim();
+                if (!StringUtils.hasText(statusMsg)) {
+                    statusMsg = "unknown error";
+                }
+                if (statusCode == 1008 || "insufficient balance".equalsIgnoreCase(statusMsg)) {
+                    throw new JeecgBootBizTipException(
+                            "MiniMax image generation failed: insufficient balance (" + statusCode + ")");
+                }
+                throw new JeecgBootBizTipException(
+                        "MiniMax image generation business error: " + statusCode + " - " + statusMsg);
+            }
+        }
+        if (!(resp.get("data") instanceof Map<?, ?> data)) {
+            throw new JeecgBootBizTipException("MiniMax image generation response missing data object");
         }
         Object imageUrls = data.get("image_urls");
         if (!(imageUrls instanceof List<?> urlList)) {
-            return List.of();
+            throw new JeecgBootBizTipException("MiniMax image generation response missing image_urls");
         }
         List<String> result = new ArrayList<>(urlList.size());
         for (Object item : urlList) {

@@ -88,6 +88,13 @@
 | GET | `/ts-agent-chat-message-events` | Agent 消息事件分页查询 |
 | GET | `/ts-agent-chat-message-events/detail` | Agent 消息事件详情 |
 
+Agent SSE 确认交互说明：
+- 确认交互通过 `tool.end` 返回，核心字段为 `contentType=options`、`interactionId`、`question` 和 `options`。
+- `interactionType`、`interactionStatus`、`suspendRun`、`contextRef`、`transferData` 等运行控制字段不向前端透传；角色或故事结构化结果继续通过后端上下文传给后续节点。
+- 角色流程中，`role_request_confirmation` 只生成动态问题和两个动态候选文案，不携带角色数据，也不触发节点跳转。
+- 前端点击候选项后，将候选文案作为普通 `userInput` 发送；`interactionId/optionValue` 暂时保留兼容，但后端不再依据选项 Key 决定下一节点。
+- 只有模型在确认四项角色字段齐全且用户明确同意继续后调用 `role_continue_generation`，后端才保存 `roleName/gender/occupation/backgroundStory` 并进入角色形象、声音节点。
+
 事件查询参数：
 - `sessionId`：可选，Agent 会话 ID。
 - `messageId`：可选，触发当前 Run 的用户消息 ID，不是 Run 结束后生成的助手消息 ID。

@@ -48,4 +48,62 @@ class TsAgentChatReplyFlowStateTest {
         Assertions.assertNull(session.getActiveStage());
         Assertions.assertNull(session.getAgentFlowStateJson());
     }
+
+    @Test
+    void shouldPersistGeneratedContentInsteadOfConfirmationQuestion() {
+        TsAgentChatReplyServiceImpl service = new TsAgentChatReplyServiceImpl();
+        AgentContext context = new AgentContext();
+        context.setLatestContent("角色设定已经整理完成：林夏是一位年轻的男性魔法师。");
+        AgentResult waiting = AgentResult.waitingUser("你对这版角色满意吗？");
+        waiting.getData().put("interactionId", "interaction-1");
+        waiting.getData().put("interactionType", "confirm");
+        waiting.getData().put("question", "你对这版角色满意吗？");
+
+        String content = ReflectionTestUtils.invokeMethod(
+                service,
+                "resolveAssistantContent",
+                waiting,
+                context
+        );
+
+        Assertions.assertEquals(
+                "角色设定已经整理完成：林夏是一位年轻的男性魔法师。",
+                content
+        );
+    }
+
+    @Test
+    void shouldKeepOrdinaryWaitingQuestionAsAssistantContent() {
+        TsAgentChatReplyServiceImpl service = new TsAgentChatReplyServiceImpl();
+        AgentContext context = new AgentContext();
+        context.setLatestContent("上一轮内容");
+        AgentResult waiting = AgentResult.waitingUser("请补充角色年龄。");
+
+        String content = ReflectionTestUtils.invokeMethod(
+                service,
+                "resolveAssistantContent",
+                waiting,
+                context
+        );
+
+        Assertions.assertEquals("请补充角色年龄。", content);
+    }
+
+    @Test
+    void shouldNotPersistConfirmationQuestionWhenGeneratedContentIsMissing() {
+        TsAgentChatReplyServiceImpl service = new TsAgentChatReplyServiceImpl();
+        AgentResult waiting = AgentResult.waitingUser("你对这版角色满意吗？");
+        waiting.getData().put("interactionId", "interaction-2");
+        waiting.getData().put("interactionType", "confirm");
+        waiting.getData().put("question", "你对这版角色满意吗？");
+
+        String content = ReflectionTestUtils.invokeMethod(
+                service,
+                "resolveAssistantContent",
+                waiting,
+                new AgentContext()
+        );
+
+        Assertions.assertNull(content);
+    }
 }

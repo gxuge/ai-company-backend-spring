@@ -3,7 +3,6 @@ package org.jeecg.modules.airag.agent.subagent.role;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.airag.agent.graph.NodeResult;
 import org.jeecg.modules.airag.agent.graph.SubAgent;
-import org.jeecg.modules.airag.agent.interaction.AgentInteractionEventPublisher;
 import org.jeecg.modules.airag.agent.interaction.UserInteractionSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentFlowStateSupport;
@@ -13,6 +12,7 @@ import org.jeecg.modules.airag.agent.runtime.NodeRunner;
 import org.jeecg.modules.airag.agent.subagent.role.node.RoleCreateDialogNode;
 import org.jeecg.modules.airag.agent.subagent.role.node.RoleCreateImageNode;
 import org.jeecg.modules.airag.agent.subagent.role.node.RoleCreateVoiceNode;
+import org.jeecg.modules.airag.agent.subagent.role.tool.RoleContinueGenerationToolContract;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -21,7 +21,7 @@ import java.util.Map;
 /**
  * 角色子 Agent。
  *
- * <p>角色对话节点通过 Tool 显式发起确认，用户选择后再按声明式映射进入后续阶段。</p>
+ * <p>角色对话节点通过 Tool 展示确认，用户明确同意后由继续生成 Tool 进入后续阶段。</p>
  *
  * @author codex
  * @date 2026/7/10
@@ -34,18 +34,15 @@ public class RoleTaskSubAgent implements SubAgent {
     private static final String STAGE_VOICE = "voice";
 
     private final NodeRunner nodeRunner;
-    private final AgentInteractionEventPublisher interactionEventPublisher;
     private final RoleCreateDialogNode roleCreateDialogNode;
     private final RoleCreateImageNode roleCreateImageNode;
     private final RoleCreateVoiceNode roleCreateVoiceNode;
 
     public RoleTaskSubAgent(NodeRunner nodeRunner,
-                            AgentInteractionEventPublisher interactionEventPublisher,
                             RoleCreateDialogNode roleCreateDialogNode,
                             RoleCreateImageNode roleCreateImageNode,
                             RoleCreateVoiceNode roleCreateVoiceNode) {
         this.nodeRunner = nodeRunner;
-        this.interactionEventPublisher = interactionEventPublisher;
         this.roleCreateDialogNode = roleCreateDialogNode;
         this.roleCreateImageNode = roleCreateImageNode;
         this.roleCreateVoiceNode = roleCreateVoiceNode;
@@ -90,31 +87,16 @@ public class RoleTaskSubAgent implements SubAgent {
     }
 
     /**
-     * 处理 Tool 创建的待交互；未选择时保持等待，已选择时进入声明的目标阶段。
+     * 处理 Tool 创建的展示交互；用户回复后只清理交互并重新进入角色对话。
      */
     private AgentResult handlePendingInteraction(AgentContext context,
                                                  Map<String, Object> chainData,
                                                  Map<String, Object> pendingInteraction) {
-        String optionValue = UserInteractionSupport.resolveSelectedValue(context, pendingInteraction);
-        if (!oConvertUtils.isNotEmpty(optionValue)) {
+        if (context == null || !oConvertUtils.isNotEmpty(context.getUserInput())) {
             return waitingInteraction(context, chainData, pendingInteraction);
         }
-        String targetStage = RoleConfirmationTransitions.resolveTargetStage(optionValue);
-        if (!oConvertUtils.isNotEmpty(targetStage)) {
-            throw new IllegalArgumentException("角色确认选项未配置后续阶段：" + optionValue);
-        }
-        this.interactionEventPublisher.publishResolved(context, pendingInteraction, optionValue);
         UserInteractionSupport.clear(context);
-        if (STAGE_IMAGE.equals(targetStage)) {
-            return continueWithImageAndVoice(context, chainData);
-        }
-        if (STAGE_VOICE.equals(targetStage)) {
-            return continueWithVoice(context, chainData, null);
-        }
-        if (STAGE_DIALOG.equals(targetStage)) {
-            return null;
-        }
-        throw new IllegalArgumentException("角色流程不支持目标阶段：" + targetStage);
+        return null;
     }
 
     /**
@@ -127,6 +109,9 @@ public class RoleTaskSubAgent implements SubAgent {
         AgentResult dialogHandoff = handoffIfNeeded(context, dialogResult, chainData, STAGE_DIALOG);
         if (dialogHandoff != null) {
             return dialogHandoff;
+        }
+        if (RoleContinueGenerationToolContract.consumeContinueRequested(context)) {
+            return continueWithImageAndVoice(context, chainData);
         }
 
         Map<String, Object> pendingInteraction = UserInteractionSupport.getPending(context);
@@ -210,7 +195,6 @@ public class RoleTaskSubAgent implements SubAgent {
         result.getData().put("status", "WAITING_USER");
         copyInteractionField(result, interaction, "interactionId");
         copyInteractionField(result, interaction, "interactionType");
-        copyInteractionField(result, interaction, "summary");
         copyInteractionField(result, interaction, "options");
         copyInteractionField(result, interaction, "suspendRun");
         AgentFlowStateSupport.attachResumeData(result, context);
@@ -318,6 +302,10 @@ public class RoleTaskSubAgent implements SubAgent {
                                                       Object voiceResult) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("roleCoreResultJson", context == null ? null : context.getAttribute("roleCoreResultJson"));
+        result.put(
+                RoleContinueGenerationToolContract.TRANSFER_DATA_JSON,
+                context == null ? null : context.getAttribute(RoleContinueGenerationToolContract.TRANSFER_DATA_JSON)
+        );
         result.put("roleImageResultJson", context == null ? null : context.getAttribute("roleImageResultJson"));
         result.put("roleVoiceResultJson", context == null ? null : context.getAttribute("roleVoiceResultJson"));
         if (imageResult instanceof NodeResult imageNodeResult) {

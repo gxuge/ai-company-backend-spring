@@ -21,6 +21,10 @@ public final class RoleTaskToolSpec {
      */
     public static final String ROLE_REQUEST_CONFIRMATION = "role_request_confirmation";
     /**
+     * 用户确认满意后显式继续生成角色形象和声音。
+     */
+    public static final String ROLE_CONTINUE_GENERATION = "role_continue_generation";
+    /**
      * 预留工具名。
      */
     public static final String ROLE_CORE_FILL_PRESET = "role_core_fill_preset";
@@ -43,6 +47,7 @@ public final class RoleTaskToolSpec {
     public static final List<String> TOOL_NAMES = List.of(
             ROLE_CORE_FILL,
             ROLE_REQUEST_CONFIRMATION,
+            ROLE_CONTINUE_GENERATION,
             ROLE_CORE_FILL_PRESET,
             ROLE_GENERATE_ROLE,
             ROLE_GENERATE_ROLE_IMAGE,

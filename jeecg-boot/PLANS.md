@@ -544,6 +544,32 @@
 - 等待用户或可重试失败时保存白名单状态，完成 Handoff 回主 Agent 后清空。
 
 ### 任务 ID
+`20260717-agent-confirm-summary-removal`
+
+### 目标与边界
+- 从角色和故事确认 Tool Schema、待交互状态、AgentResult 与 SSE 中移除 `summary`。
+- 保留 `transferData` 的后端节点传递能力，以及普通工具结果的通用摘要机制。
+- backup 前端确认区域只消费 `question` 和 `options`，不保存或渲染确认摘要。
+
+### 执行步骤
+- [x] 移除角色/故事确认工具的 `summary` 参数和校验。
+- [x] 移除待交互、等待结果及确认型 `tool.end` 的 `summary` 字段。
+- [x] 同步 backup 前端状态机和测试。
+- [x] 完成后端定向测试、前端验证与证据回写。
+
+### 风险与回滚
+- 风险：仍按旧 schema 调用的模型可能多传 `summary`，将因 `additionalProperties=false` 触发参数校验失败。
+- 缓解：模型侧 ToolSpecification 与注册中心 JSON Schema 已同步更新，下一次模型调用会使用新 schema。
+- 回滚：恢复两个确认工具契约中的 `summary` 属性及 SSE 映射，不涉及数据库变更。
+
+### 验证记录
+- 后端编译：`mvn -pl jeecg-boot-module/jeecg-boot-module-airag -am -DskipTests compile`，结果 `BUILD SUCCESS`。
+- 后端定向测试：`AgentEventPublisherTest`、角色/故事确认工具与恢复测试共 24 条，0 失败。
+- 前端状态机测试：6 条通过，覆盖新协议及旧 `data.summary` 不进入状态、不渲染。
+- 前端 TypeScript 定向诊断为零，Babel Web 转译通过。
+- 标准 Maven `test` 生命周期仍被既有 `AiragPromptTemplateServiceTest.java:77` 类型错误阻塞，定向测试通过临时 Surefire 覆盖执行，覆盖已删除且未留在 POM。
+
+### 任务 ID
 `20260601-ts-story-full-generate-v1`
 
 ### 背景

@@ -58,6 +58,10 @@ public class SsePayload {
      */
     private String question;
     /**
+     * 用户交互标识。
+     */
+    private String interactionId;
+    /**
      * 交互选项。
      */
     private List<Map<String, String>> options;

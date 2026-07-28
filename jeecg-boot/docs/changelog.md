@@ -6,6 +6,8 @@
 `type` 推荐值：`feat`、`fix`、`refactor`、`breaking`、`security`、`docs`
 
 ## 记录
+- [2026-07-17] [refactor] [agent-runtime] 角色确认拆分为展示型 `role_request_confirmation` 与推进型 `role_continue_generation`；按钮文案按普通用户输入处理，只有后者携带四项角色数据并进入形象、声音生成
+- [2026-07-17] [refactor] [agent-runtime] 角色/故事确认工具移除 `summary` 入参和 SSE 字段，确认型 `tool.end` 仅保留问题、选项与交互控制字段
 - [2026-07-14] [feat] [agent-runtime] Agent 会话新增活动节点、阶段和白名单流程快照；角色/故事子 Agent 可跨消息从具体节点续跑，完成后显式 Handoff 回主 Agent
 - [2026-07-14] [feat] [agent-chat] Agent 事件新增 `node_name/node_type`，正式助手消息新增 `source_node_name/source_event_id`，可定位子 Agent 最终产出节点并关联完整 Task 事件
 - [2026-07-14] [refactor] [agent-chat] 新增 `ts_agent_chat_message_event` 独立保存 Agent SubAgent/Tool 完整事件，新增事件分页/详情接口，并将 Agent Session 与 Message Controller 拆分且保持原路由兼容

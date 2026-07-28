@@ -1,4 +1,4 @@
-package org.jeecg.modules.airag.agent.subagent.role.tool;
+package org.jeecg.modules.airag.agent.subagent.story.tool;
 
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.tool.ToolCallRequest;
@@ -10,19 +10,19 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 
-class RoleInteractionToolRegistrarTest {
+class StoryInteractionToolRegistrarTest {
 
     @Test
-    void shouldExposeOnlyCurrentRoleConfirmationOptions() {
+    void shouldExposeAiGeneratedStoryConfirmationCopyWithoutTransferData() {
         ToolRegistry toolRegistry = new ToolRegistry();
-        RoleInteractionToolRegistrar registrar = new RoleInteractionToolRegistrar(toolRegistry);
+        StoryInteractionToolRegistrar registrar = new StoryInteractionToolRegistrar(toolRegistry);
         registrar.registerTools();
         AgentContext context = new AgentContext();
-        context.setCurrentNodeName("role_create_dialog");
+        context.setCurrentNodeName("story_create_dialog");
         ToolCallRequest request = new ToolCallRequest();
-        request.setToolName(RoleTaskToolSpec.ROLE_REQUEST_CONFIRMATION);
+        request.setToolName(StoryTaskToolSpec.STORY_REQUEST_CONFIRMATION);
         request.setArguments(Map.of(
-                "question", "这版喜欢吗？✨",
+                "question", "这版故事喜欢吗？",
                 "confirmLabel", "喜欢，继续✨",
                 "reviseLabel", "再改改吧～"
         ));
@@ -33,7 +33,7 @@ class RoleInteractionToolRegistrarTest {
         Assertions.assertTrue(result.getData() instanceof Map<?, ?>);
         Map<?, ?> interaction = (Map<?, ?>) result.getData();
         Assertions.assertEquals("confirm", interaction.get("interactionType"));
-        Assertions.assertEquals("这版喜欢吗？✨", interaction.get("question"));
+        Assertions.assertEquals("这版故事喜欢吗？", interaction.get("question"));
         Assertions.assertFalse(interaction.containsKey("summary"));
         Assertions.assertNull(interaction.get("contextRef"));
         Assertions.assertFalse(interaction.containsKey("transferData"));
@@ -41,7 +41,6 @@ class RoleInteractionToolRegistrarTest {
                 Map.of("label", "喜欢，继续✨", "value", "ACCEPT_AND_CONTINUE"),
                 Map.of("label", "再改改吧～", "value", "REGENERATE")
         ), interaction.get("options"));
-        Assertions.assertFalse(String.valueOf(interaction.get("options")).contains("MODIFY"));
         Assertions.assertEquals(interaction, context.getAttribute("pendingUserInteraction"));
         Assertions.assertNull(context.getAttribute("transferDataJson"));
     }

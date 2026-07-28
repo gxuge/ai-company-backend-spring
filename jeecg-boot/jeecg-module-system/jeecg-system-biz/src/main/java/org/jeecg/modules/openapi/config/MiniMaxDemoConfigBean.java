@@ -38,7 +38,7 @@ public class MiniMaxDemoConfigBean {
     /**
      * Image aspect ratio.
      */
-    private String imageAspectRatio = "16:9";
+    private String imageAspectRatio = "13:18";
 
     /**
      * HTTP connect timeout in milliseconds.

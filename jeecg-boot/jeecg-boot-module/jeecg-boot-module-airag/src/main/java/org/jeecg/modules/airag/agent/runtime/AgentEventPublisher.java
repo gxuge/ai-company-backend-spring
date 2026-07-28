@@ -1371,7 +1371,7 @@ public class AgentEventPublisher {
         payload.setName(nodeName);
         payload.setContent(content);
         payload.setStatus(status);
-        if (nodeKind == NodeKind.TOOL) {
+        if (data != null) {
             applyCompactSseData(payload, nodeKind, data);
         }
         this.sseConnectionManager.send(context.getSseConnectionKey(), eventName, payload);
@@ -1428,6 +1428,7 @@ public class AgentEventPublisher {
             payload.setResult(data.get("result"));
             payload.setError(stringValue(data.get("error")));
             payload.setQuestion(stringValue(data.get("question")));
+            payload.setInteractionId(stringValue(data.get("interactionId")));
             payload.setOptions(optionListValue(data.get("options")));
             return;
         }
@@ -1493,13 +1494,6 @@ public class AgentEventPublisher {
         }
         putString(target, "question", stringValue(rawMap.get("question")));
         putString(target, "interactionId", stringValue(rawMap.get("interactionId")));
-        putString(target, "interactionType", stringValue(rawMap.get("interactionType")));
-        putString(target, "summary", stringValue(rawMap.get("summary")));
-        putString(target, "contextRef", stringValue(rawMap.get("contextRef")));
-        putString(target, "interactionStatus", stringValue(rawMap.get("status")));
-        if (rawMap.get("suspendRun") instanceof Boolean suspendRun) {
-            target.put("suspendRun", suspendRun);
-        }
         List<Map<String, String>> options = optionListValue(rawMap.get("options"));
         if (options != null && !options.isEmpty()) {
             target.put("options", options);

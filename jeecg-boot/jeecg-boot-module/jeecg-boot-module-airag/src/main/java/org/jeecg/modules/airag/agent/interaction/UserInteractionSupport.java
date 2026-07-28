@@ -34,7 +34,6 @@ public final class UserInteractionSupport {
                                                     String sourceNode,
                                                     String resumeNode,
                                                     String question,
-                                                    String summary,
                                                     String contextRef,
                                                     List<Map<String, String>> options) {
         Map<String, Object> interaction = new LinkedHashMap<>();
@@ -44,7 +43,6 @@ public final class UserInteractionSupport {
         interaction.put("sourceNode", normalize(sourceNode, null));
         interaction.put("resumeNode", normalize(resumeNode, null));
         interaction.put("question", normalize(question, null));
-        interaction.put("summary", normalize(summary, null));
         interaction.put("contextRef", normalize(contextRef, null));
         interaction.put("options", copyOptions(options));
         interaction.put("status", "WAITING_USER");

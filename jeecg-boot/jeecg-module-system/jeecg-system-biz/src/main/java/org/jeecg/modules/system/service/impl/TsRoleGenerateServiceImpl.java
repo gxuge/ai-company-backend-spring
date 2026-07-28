@@ -315,9 +315,8 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
 
     private TsRoleOneClickImageGenerateVo generateRoleImageSynchronously(LoginUser user, TsRoleOneClickImageGenerateDto dto, TsRole role) {
         ImageGenerateRuntimeResult runtime = executeImageGenerate(user, dto);
-        Long recordId = null;
         if (role != null) {
-            recordId = createSuccessImageGenerateRecord(user.getId(), role.getId(), dto, runtime);
+            createSuccessImageGenerateRecord(user.getId(), role.getId(), dto, runtime);
             updateRoleAvatar(role.getId(), runtime.getImageUrl());
         }
 
@@ -333,15 +332,9 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
                 "image", user.getId(), snapshot);
 
         TsRoleOneClickImageGenerateVo vo = new TsRoleOneClickImageGenerateVo();
-        vo.setAccepted(Boolean.TRUE);
-        vo.setGenerateStatus(IMAGE_GENERATE_STATUS_SUCCESS);
         vo.setImageUrl(runtime.getImageUrl());
-        vo.setImageAssetId(runtime.getAssetId());
-        vo.setGenerateRecordId(recordId);
-        vo.setImagePrompt(runtime.getImagePrompt());
         vo.setPromptCode(PROMPT_CODE_IMAGE);
         vo.setPromptVersion(PROMPT_VERSION);
-        vo.setRenderedPrompt(runtime.getRenderedPrompt());
         vo.setSnapshotKey(snapshotKey);
         return vo;
     }

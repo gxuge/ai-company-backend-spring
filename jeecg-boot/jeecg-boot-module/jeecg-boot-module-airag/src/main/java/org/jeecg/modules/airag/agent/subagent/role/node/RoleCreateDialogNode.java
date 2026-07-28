@@ -3,7 +3,6 @@ package org.jeecg.modules.airag.agent.subagent.role.node;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import dev.langchain4j.agent.tool.ToolSpecification;
-import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.service.tool.ToolExecutor;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.airag.agent.graph.LlmNodeDefinition;
@@ -14,12 +13,15 @@ import org.jeecg.modules.airag.agent.runtime.AgentEventPublisher;
 import org.jeecg.modules.airag.agent.runtime.AgentModelResolver;
 import org.jeecg.modules.airag.agent.skill.model.SkillLoadResult;
 import org.jeecg.modules.airag.agent.subagent.role.RoleTaskPromptSupport;
+import org.jeecg.modules.airag.agent.subagent.role.tool.RoleConfirmationToolContract;
+import org.jeecg.modules.airag.agent.subagent.role.tool.RoleContinueGenerationToolContract;
 import org.jeecg.modules.airag.agent.subagent.role.tool.RoleTaskToolSpec;
 import org.jeecg.modules.airag.agent.tool.ToolCallRequest;
 import org.jeecg.modules.airag.agent.tool.ToolCallResult;
 import org.jeecg.modules.airag.agent.tool.ToolRegistry;
 import org.jeecg.modules.airag.common.handler.AIChatParams;
 import org.jeecg.modules.airag.common.handler.IAIChatHandler;
+import org.jeecg.modules.airag.llm.stream.ImmediateToolExecutor;
 import org.jeecg.modules.airag.prompts.service.IAiragPromptTemplateService;
 import org.springframework.stereotype.Component;
 
@@ -30,7 +32,7 @@ import java.util.Map;
 /**
  * 角色创建对话节点。
  *
- * <p>负责收集信息、生成角色核心设定，并通过 Tool 显式发起用户确认。</p>
+ * <p>负责收集并完善角色核心设定，通过 Tool 显式传递最终数据并发起用户确认。</p>
  *
  * @author codex
  * @date 2026/7/11
@@ -60,17 +62,17 @@ public class RoleCreateDialogNode extends LlmNode {
     private static LlmNodeDefinition buildDefinition() {
         LlmNodeDefinition definition = new LlmNodeDefinition();
         definition.setName("角色创建对话");
-        definition.setDescription("围绕创建角色收集信息、追问或生成核心设定。");
+        definition.setDescription("围绕创建角色收集信息、追问并整理最终核心设定。");
         definition.setSkillDomain("role");
         definition.setSkillTopK(3);
         definition.setSkills(List.of("role_create_dialog"));
         definition.setTools(List.of(
-                RoleTaskToolSpec.ROLE_CORE_FILL,
-                RoleTaskToolSpec.ROLE_REQUEST_CONFIRMATION
+                RoleTaskToolSpec.ROLE_REQUEST_CONFIRMATION,
+                RoleTaskToolSpec.ROLE_CONTINUE_GENERATION
         ));
         definition.setPermissions(List.of(
-                RoleTaskToolSpec.ROLE_CORE_FILL,
-                RoleTaskToolSpec.ROLE_REQUEST_CONFIRMATION
+                RoleTaskToolSpec.ROLE_REQUEST_CONFIRMATION,
+                RoleTaskToolSpec.ROLE_CONTINUE_GENERATION
         ));
         definition.setResponseFormat("text");
         definition.setConversationHistoryEnabled(true);
@@ -109,52 +111,29 @@ public class RoleCreateDialogNode extends LlmNode {
         NodeResult result = NodeResult.success(finalText);
         result.setContent(finalText);
         result.put("stage", "dialog");
-        result.put("hasRoleCoreState", hasRoleCoreState(context));
-        result.put("roleCoreResultJson", oConvertUtils.getString(context == null ? null : context.getAttribute("roleCoreResultJson")));
-        result.put("roleGenerateRoleResultJson", oConvertUtils.getString(context == null ? null : context.getAttribute("roleGenerateRoleResultJson")));
+        String transferDataJson = oConvertUtils.getString(
+                context == null ? null : context.getAttribute(RoleContinueGenerationToolContract.TRANSFER_DATA_JSON)
+        );
+        result.put("hasTransferDataState", oConvertUtils.isNotEmpty(transferDataJson));
+        result.put(RoleContinueGenerationToolContract.TRANSFER_DATA_JSON, transferDataJson);
         return result;
     }
 
     private Map<ToolSpecification, ToolExecutor> buildRoleToolMap(AgentContext context) {
         Map<ToolSpecification, ToolExecutor> tools = new LinkedHashMap<>();
-        tools.put(buildRoleCoreFillSpec(), buildToolExecutor(context, RoleTaskToolSpec.ROLE_CORE_FILL));
         tools.put(
-                buildRoleRequestConfirmationSpec(),
-                buildToolExecutor(context, RoleTaskToolSpec.ROLE_REQUEST_CONFIRMATION)
+                RoleConfirmationToolContract.buildSpecification(),
+                ImmediateToolExecutor.wrap(
+                        buildToolExecutor(context, RoleTaskToolSpec.ROLE_REQUEST_CONFIRMATION)
+                )
+        );
+        tools.put(
+                RoleContinueGenerationToolContract.buildSpecification(),
+                ImmediateToolExecutor.wrap(
+                        buildToolExecutor(context, RoleTaskToolSpec.ROLE_CONTINUE_GENERATION)
+                )
         );
         return tools;
-    }
-
-    private ToolSpecification buildRoleCoreFillSpec() {
-        JsonObjectSchema schema = JsonObjectSchema.builder()
-                .addStringProperty("userInput", "用户原始输入或本次任务描述")
-                .addStringProperty("roleName", "角色名称，可为空")
-                .addStringProperty("gender", "角色性别，可为空")
-                .addStringProperty("occupation", "角色职业，可为空")
-                .addStringProperty("backgroundStory", "角色背景故事，可为空")
-                .addStringProperty("greeting", "角色开场白，可为空")
-                .addStringProperty("styleHint", "角色风格提示，可为空")
-                .addStringProperty("keywords", "角色关键词，可为空")
-                .addStringProperty("extraInfo", "不属于核心字段的其它有效角色信息，可为空")
-                .build();
-        return ToolSpecification.builder()
-                .name(RoleTaskToolSpec.ROLE_CORE_FILL)
-                .description("根据用户已提供的信息生成或修改角色核心设定，不生成形象或声音")
-                .parameters(schema)
-                .build();
-    }
-
-    private ToolSpecification buildRoleRequestConfirmationSpec() {
-        JsonObjectSchema schema = JsonObjectSchema.builder()
-                .addStringProperty("question", "结合当前角色内容生成的简短确认问题")
-                .addStringProperty("summary", "本次角色设定的简短摘要，可为空")
-                .required("question")
-                .build();
-        return ToolSpecification.builder()
-                .name(RoleTaskToolSpec.ROLE_REQUEST_CONFIRMATION)
-                .description("角色核心设定已生成且适合交给用户确认时，发起确认并暂停当前角色流程")
-                .parameters(schema)
-                .build();
     }
 
     private ToolExecutor buildToolExecutor(AgentContext context, String toolName) {
@@ -163,6 +142,10 @@ public class RoleCreateDialogNode extends LlmNode {
             request.setToolName(toolName);
             request.setArguments(parseArguments(toolExecutionRequest == null ? null : toolExecutionRequest.arguments()));
             ToolCallResult result = executeToolWithSse(context, this.toolRegistry, request);
+            if (RoleTaskToolSpec.ROLE_REQUEST_CONFIRMATION.equals(toolName)
+                    || RoleTaskToolSpec.ROLE_CONTINUE_GENERATION.equals(toolName)) {
+                suppressRemainingLlmOutput(context);
+            }
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("success", result == null ? null : result.isSuccess());
             payload.put("summary", result == null ? null : result.getSummary());
@@ -188,12 +171,4 @@ public class RoleCreateDialogNode extends LlmNode {
         return map;
     }
 
-    private boolean hasRoleCoreState(AgentContext context) {
-        if (context == null) {
-            return false;
-        }
-        return context.getAttribute("roleCoreResultJson") != null
-                || context.getAttribute("roleCorePresetResultJson") != null
-                || context.getAttribute("roleGenerateRoleResultJson") != null;
-    }
 }

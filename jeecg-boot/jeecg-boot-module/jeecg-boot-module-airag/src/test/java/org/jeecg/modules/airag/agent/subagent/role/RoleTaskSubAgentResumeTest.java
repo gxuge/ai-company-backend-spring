@@ -1,7 +1,6 @@
 package org.jeecg.modules.airag.agent.subagent.role;
 
 import org.jeecg.modules.airag.agent.graph.NodeResult;
-import org.jeecg.modules.airag.agent.interaction.AgentInteractionEventPublisher;
 import org.jeecg.modules.airag.agent.interaction.UserInteractionSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentRegistry;
@@ -10,6 +9,7 @@ import org.jeecg.modules.airag.agent.runtime.NodeRunner;
 import org.jeecg.modules.airag.agent.subagent.role.node.RoleCreateDialogNode;
 import org.jeecg.modules.airag.agent.subagent.role.node.RoleCreateImageNode;
 import org.jeecg.modules.airag.agent.subagent.role.node.RoleCreateVoiceNode;
+import org.jeecg.modules.airag.agent.subagent.role.tool.RoleContinueGenerationToolContract;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,7 +20,6 @@ import java.util.Map;
 
 class RoleTaskSubAgentResumeTest {
     private NodeRunner nodeRunner;
-    private AgentInteractionEventPublisher interactionEventPublisher;
     private RoleCreateDialogNode dialogNode;
     private RoleCreateImageNode imageNode;
     private RoleCreateVoiceNode voiceNode;
@@ -29,7 +28,6 @@ class RoleTaskSubAgentResumeTest {
     @BeforeEach
     void setUp() {
         this.nodeRunner = Mockito.mock(NodeRunner.class);
-        this.interactionEventPublisher = Mockito.mock(AgentInteractionEventPublisher.class);
         this.dialogNode = Mockito.mock(RoleCreateDialogNode.class);
         this.imageNode = Mockito.mock(RoleCreateImageNode.class);
         this.voiceNode = Mockito.mock(RoleCreateVoiceNode.class);
@@ -38,7 +36,6 @@ class RoleTaskSubAgentResumeTest {
         Mockito.when(this.voiceNode.nodeName()).thenReturn("role_create_voice");
         this.subAgent = new RoleTaskSubAgent(
                 this.nodeRunner,
-                this.interactionEventPublisher,
                 this.dialogNode,
                 this.imageNode,
                 this.voiceNode
@@ -107,39 +104,36 @@ class RoleTaskSubAgentResumeTest {
         Assertions.assertEquals("confirmation", result.getData().get("stage"));
         Assertions.assertEquals(interaction.get("interactionId"), result.getData().get("interactionId"));
         Assertions.assertEquals(interaction.get("options"), result.getData().get("options"));
+        Assertions.assertEquals("这版喜欢吗？✨", result.getContent());
+        Assertions.assertFalse(result.getData().containsKey("summary"));
         Mockito.verifyNoInteractions(this.nodeRunner);
     }
 
     @Test
-    void shouldContinueWithImageAndVoiceWhenConfirmationIsAccepted() {
+    void shouldTreatAcceptedConfirmationAsOrdinaryDialogInput() {
         AgentContext context = new AgentContext();
         Map<String, Object> interaction = createPendingConfirmation(context);
+        context.setUserInput("喜欢，继续✨");
         context.putAttribute("interactionId", interaction.get("interactionId"));
         context.putAttribute("optionValue", RoleConfirmationTransitions.ACCEPT_AND_CONTINUE);
-        NodeResult imageResult = NodeResult.success("形象已生成");
-        NodeResult voiceResult = NodeResult.success("声音已生成");
-        Mockito.when(this.nodeRunner.run(context, this.imageNode)).thenReturn(imageResult);
-        Mockito.when(this.nodeRunner.run(context, this.voiceNode)).thenReturn(voiceResult);
+        NodeResult dialogResult = NodeResult.success("好的，我来继续确认最终设定。");
+        Mockito.when(this.nodeRunner.run(context, this.dialogNode)).thenReturn(dialogResult);
 
         AgentResult result = this.subAgent.execute(context);
 
-        Assertions.assertEquals(AgentResult.Status.HANDOFF, result.getStatus());
-        Mockito.verify(this.interactionEventPublisher).publishResolved(
-                context,
-                interaction,
-                RoleConfirmationTransitions.ACCEPT_AND_CONTINUE
-        );
-        Mockito.verify(this.nodeRunner).run(context, this.imageNode);
-        Mockito.verify(this.nodeRunner).run(context, this.voiceNode);
-        Mockito.verify(this.nodeRunner, Mockito.never()).run(context, this.dialogNode);
+        Assertions.assertEquals(AgentResult.Status.WAITING_USER, result.getStatus());
+        Mockito.verify(this.nodeRunner).run(context, this.dialogNode);
+        Mockito.verify(this.nodeRunner, Mockito.never()).run(context, this.imageNode);
+        Mockito.verify(this.nodeRunner, Mockito.never()).run(context, this.voiceNode);
         Assertions.assertNull(context.getAttribute("pendingUserInteraction"));
         Assertions.assertNull(context.getAttribute("optionValue"));
     }
 
     @Test
-    void shouldReturnToDialogWhenRegenerateIsSelected() {
+    void shouldTreatRevisionSelectionAsOrdinaryDialogInput() {
         AgentContext context = new AgentContext();
         Map<String, Object> interaction = createPendingConfirmation(context);
+        context.setUserInput("再改改吧～");
         context.putAttribute("interactionId", interaction.get("interactionId"));
         context.putAttribute("optionValue", RoleConfirmationTransitions.REGENERATE);
         NodeResult dialogResult = NodeResult.success("好的，我重新生成一版角色。");
@@ -149,14 +143,33 @@ class RoleTaskSubAgentResumeTest {
 
         Assertions.assertEquals(AgentResult.Status.WAITING_USER, result.getStatus());
         Assertions.assertEquals("dialog", result.getData().get("stage"));
-        Mockito.verify(this.interactionEventPublisher).publishResolved(
-                context,
-                interaction,
-                RoleConfirmationTransitions.REGENERATE
-        );
         Mockito.verify(this.nodeRunner).run(context, this.dialogNode);
         Mockito.verify(this.nodeRunner, Mockito.never()).run(context, this.imageNode);
         Mockito.verify(this.nodeRunner, Mockito.never()).run(context, this.voiceNode);
+    }
+
+    @Test
+    void shouldContinueWithImageAndVoiceWhenContinueToolIsCalled() {
+        AgentContext context = new AgentContext();
+        NodeResult dialogResult = NodeResult.success("");
+        NodeResult imageResult = NodeResult.success("形象已生成");
+        NodeResult voiceResult = NodeResult.success("声音已生成");
+        Mockito.when(this.nodeRunner.run(context, this.dialogNode)).thenAnswer(invocation -> {
+            RoleContinueGenerationToolContract.markContinueRequested(context);
+            return dialogResult;
+        });
+        Mockito.when(this.nodeRunner.run(context, this.imageNode)).thenReturn(imageResult);
+        Mockito.when(this.nodeRunner.run(context, this.voiceNode)).thenReturn(voiceResult);
+
+        AgentResult result = this.subAgent.execute(context);
+
+        Assertions.assertEquals(AgentResult.Status.HANDOFF, result.getStatus());
+        Mockito.verify(this.nodeRunner).run(context, this.dialogNode);
+        Mockito.verify(this.nodeRunner).run(context, this.imageNode);
+        Mockito.verify(this.nodeRunner).run(context, this.voiceNode);
+        Assertions.assertNull(context.getAttribute(
+                RoleContinueGenerationToolContract.ATTR_CONTINUE_REQUESTED
+        ));
     }
 
     private Map<String, Object> createPendingConfirmation(AgentContext context) {
@@ -166,12 +179,11 @@ class RoleTaskSubAgentResumeTest {
                 "role_request_confirmation",
                 "role_create_dialog",
                 "role_create_dialog",
-                "你对这版角色满意吗？",
-                "角色摘要",
-                "roleCoreResultJson",
+                "这版喜欢吗？✨",
+                null,
                 List.of(
-                        Map.of("label", "满意，继续生成", "value", RoleConfirmationTransitions.ACCEPT_AND_CONTINUE),
-                        Map.of("label", "不满意，重新生成", "value", RoleConfirmationTransitions.REGENERATE)
+                        Map.of("label", "喜欢，继续✨", "value", RoleConfirmationTransitions.ACCEPT_AND_CONTINUE),
+                        Map.of("label", "再改改吧～", "value", RoleConfirmationTransitions.REGENERATE)
                 )
         );
     }

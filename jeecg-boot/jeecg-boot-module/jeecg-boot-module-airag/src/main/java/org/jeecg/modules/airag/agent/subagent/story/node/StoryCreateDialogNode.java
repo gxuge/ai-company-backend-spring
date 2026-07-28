@@ -3,7 +3,6 @@ package org.jeecg.modules.airag.agent.subagent.story.node;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import dev.langchain4j.agent.tool.ToolSpecification;
-import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.service.tool.ToolExecutor;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.airag.agent.graph.LlmNodeDefinition;
@@ -14,12 +13,15 @@ import org.jeecg.modules.airag.agent.runtime.AgentEventPublisher;
 import org.jeecg.modules.airag.agent.runtime.AgentModelResolver;
 import org.jeecg.modules.airag.agent.skill.model.SkillLoadResult;
 import org.jeecg.modules.airag.agent.subagent.story.StoryTaskPromptSupport;
+import org.jeecg.modules.airag.agent.subagent.story.tool.StoryConfirmationToolContract;
+import org.jeecg.modules.airag.agent.subagent.story.tool.StoryContinueGenerationToolContract;
 import org.jeecg.modules.airag.agent.subagent.story.tool.StoryTaskToolSpec;
 import org.jeecg.modules.airag.agent.tool.ToolCallRequest;
 import org.jeecg.modules.airag.agent.tool.ToolCallResult;
 import org.jeecg.modules.airag.agent.tool.ToolRegistry;
 import org.jeecg.modules.airag.common.handler.AIChatParams;
 import org.jeecg.modules.airag.common.handler.IAIChatHandler;
+import org.jeecg.modules.airag.llm.stream.ImmediateToolExecutor;
 import org.jeecg.modules.airag.prompts.service.IAiragPromptTemplateService;
 import org.springframework.stereotype.Component;
 
@@ -30,7 +32,7 @@ import java.util.Map;
 /**
  * 故事创建对话节点。
  *
- * <p>负责围绕故事核心字段进行追问、生成决策和结果确认引导。</p>
+ * <p>负责收集并完善故事核心设定，通过 Tool 显式传递最终数据并发起用户确认。</p>
  *
  * @author codex
  * @date 2026/7/11
@@ -60,12 +62,18 @@ public class StoryCreateDialogNode extends LlmNode {
     private static LlmNodeDefinition buildDefinition() {
         LlmNodeDefinition definition = new LlmNodeDefinition();
         definition.setName("故事创建对话");
-        definition.setDescription("围绕创建故事收集信息、追问或生成核心设定。");
+        definition.setDescription("围绕创建故事收集信息、追问并整理最终核心设定。");
         definition.setSkillDomain("story");
         definition.setSkillTopK(3);
         definition.setSkills(List.of("story_create_dialog"));
-        definition.setTools(List.of(StoryTaskToolSpec.STORY_FULL_GENERATE));
-        definition.setPermissions(List.of(StoryTaskToolSpec.STORY_FULL_GENERATE));
+        definition.setTools(List.of(
+                StoryTaskToolSpec.STORY_REQUEST_CONFIRMATION,
+                StoryTaskToolSpec.STORY_CONTINUE_GENERATION
+        ));
+        definition.setPermissions(List.of(
+                StoryTaskToolSpec.STORY_REQUEST_CONFIRMATION,
+                StoryTaskToolSpec.STORY_CONTINUE_GENERATION
+        ));
         definition.setResponseFormat("text");
         definition.setConversationHistoryEnabled(true);
         definition.setUserPromptTemplate("""
@@ -82,9 +90,7 @@ public class StoryCreateDialogNode extends LlmNode {
 
     @Override
     protected Map<String, String> buildPromptVariables(AgentContext context) {
-        Map<String, String> variables = StoryTaskPromptSupport.baseVariables(context);
-        StoryTaskPromptSupport.appendStoryCoreVariables(variables, context);
-        return variables;
+        return StoryTaskPromptSupport.baseVariables(context);
     }
 
     @Override
@@ -105,34 +111,29 @@ public class StoryCreateDialogNode extends LlmNode {
         NodeResult result = NodeResult.success(finalText);
         result.setContent(finalText);
         result.put("stage", "dialog");
-        result.put("hasStoryCoreState", hasStoryCoreState(context));
-        result.put("storyCoreResultJson", oConvertUtils.getString(context == null ? null : context.getAttribute("storyCoreResultJson")));
-        result.put("storyFullGenerateResultJson", oConvertUtils.getString(context == null ? null : context.getAttribute("storyFullGenerateResultJson")));
+        String transferDataJson = oConvertUtils.getString(
+                context == null ? null : context.getAttribute(StoryContinueGenerationToolContract.TRANSFER_DATA_JSON)
+        );
+        result.put("hasTransferDataState", oConvertUtils.isNotEmpty(transferDataJson));
+        result.put(StoryContinueGenerationToolContract.TRANSFER_DATA_JSON, transferDataJson);
         return result;
     }
 
     private Map<ToolSpecification, ToolExecutor> buildStoryToolMap(AgentContext context) {
         Map<ToolSpecification, ToolExecutor> tools = new LinkedHashMap<>();
-        tools.put(buildStoryFullGenerateSpec(), buildToolExecutor(context, StoryTaskToolSpec.STORY_FULL_GENERATE));
+        tools.put(
+                StoryConfirmationToolContract.buildSpecification(),
+                ImmediateToolExecutor.wrap(
+                        buildToolExecutor(context, StoryTaskToolSpec.STORY_REQUEST_CONFIRMATION)
+                )
+        );
+        tools.put(
+                StoryContinueGenerationToolContract.buildSpecification(),
+                ImmediateToolExecutor.wrap(
+                        buildToolExecutor(context, StoryTaskToolSpec.STORY_CONTINUE_GENERATION)
+                )
+        );
         return tools;
-    }
-
-    private ToolSpecification buildStoryFullGenerateSpec() {
-        JsonObjectSchema schema = JsonObjectSchema.builder()
-                .addStringProperty("userInput", "用户原始输入或本次任务描述")
-                .addStringProperty("title", "故事标题，可为空")
-                .addStringProperty("storyMode", "故事模式，可为空，normal 或 chapter")
-                .addStringProperty("storyIntro", "故事简介，可为空")
-                .addStringProperty("storySetting", "故事设定，可为空")
-                .addStringProperty("siteSetting", "场景设定，可为空")
-                .addStringProperty("plotOutline", "剧情大纲，可为空")
-                .addStringProperty("extraInfo", "补充故事信息，可为空")
-                .build();
-        return ToolSpecification.builder()
-                .name(StoryTaskToolSpec.STORY_FULL_GENERATE)
-                .description("信息较完整或用户明确要求按现有方向生成/修改故事时，生成完整故事设定")
-                .parameters(schema)
-                .build();
     }
 
     private ToolExecutor buildToolExecutor(AgentContext context, String toolName) {
@@ -141,6 +142,10 @@ public class StoryCreateDialogNode extends LlmNode {
             request.setToolName(toolName);
             request.setArguments(parseArguments(toolExecutionRequest == null ? null : toolExecutionRequest.arguments()));
             ToolCallResult result = executeToolWithSse(context, this.toolRegistry, request);
+            if (StoryTaskToolSpec.STORY_REQUEST_CONFIRMATION.equals(toolName)
+                    || StoryTaskToolSpec.STORY_CONTINUE_GENERATION.equals(toolName)) {
+                suppressRemainingLlmOutput(context);
+            }
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("success", result == null ? null : result.isSuccess());
             payload.put("summary", result == null ? null : result.getSummary());
@@ -164,14 +169,5 @@ public class StoryCreateDialogNode extends LlmNode {
             // ignore invalid tool arguments
         }
         return map;
-    }
-
-    private boolean hasStoryCoreState(AgentContext context) {
-        if (context == null) {
-            return false;
-        }
-        return context.getAttribute("storyCoreResultJson") != null
-                || context.getAttribute("storyCorePresetResultJson") != null
-                || context.getAttribute("storyFullGenerateResultJson") != null;
     }
 }

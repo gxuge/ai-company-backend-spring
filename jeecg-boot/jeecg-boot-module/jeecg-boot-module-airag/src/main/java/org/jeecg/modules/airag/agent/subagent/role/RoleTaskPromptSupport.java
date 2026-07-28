@@ -16,6 +16,7 @@ import java.util.Map;
  */
 public final class RoleTaskPromptSupport {
 
+    private static final String ATTR_TRANSFER_DATA_JSON = "transferDataJson";
     private static final String ATTR_ROLE_CORE_RESULT_JSON = "roleCoreResultJson";
     private static final String ATTR_ROLE_GENERATE_ROLE_RESULT_JSON = "roleGenerateRoleResultJson";
     private static final String ATTR_ROLE_IMAGE_RESULT_JSON = "roleImageResultJson";
@@ -90,7 +91,11 @@ public final class RoleTaskPromptSupport {
     }
 
     private static JSONObject resolveRoleCoreJson(AgentContext context) {
-        JSONObject core = readJson(context, ATTR_ROLE_CORE_RESULT_JSON);
+        JSONObject core = readJson(context, ATTR_TRANSFER_DATA_JSON);
+        if (core != null && !core.isEmpty()) {
+            return core;
+        }
+        core = readJson(context, ATTR_ROLE_CORE_RESULT_JSON);
         if (core != null && !core.isEmpty()) {
             return core;
         }

@@ -21,5 +21,12 @@ class DeepAgentDefinitionRegistryTest {
         Assertions.assertEquals(List.of("story_create_background"), storyBackground.getSkills());
         Assertions.assertEquals(List.of("story_generate_scene"), storyBackground.getTools());
         Assertions.assertEquals(List.of("story_create_background"), storyBackground.getMetadata().get("chain"));
+
+        DeepAgentDefinition story = registry.require("story_task_agent");
+        Assertions.assertEquals(List.of(
+                "story_request_confirmation",
+                "story_continue_generation",
+                "story_generate_scene"
+        ), story.getTools());
     }
 }

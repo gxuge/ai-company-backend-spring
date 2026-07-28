@@ -14,7 +14,6 @@ import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.airag.agent.graph.LlmNodeDefinition;
 import org.jeecg.modules.airag.agent.graph.NodeKind;
 import org.jeecg.modules.airag.agent.graph.NodeResult;
-import org.jeecg.modules.airag.agent.interaction.AgentInteractionEventPublisher;
 import org.jeecg.modules.airag.agent.runtime.AgentConversationMessage;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentEventPublisher;
@@ -58,6 +57,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Slf4j
 @Getter
 public abstract class LlmNode extends BaseAgentNode {
+    private static final String ATTR_SUPPRESS_REMAINING_OUTPUT = "suppressRemainingLlmOutput";
     /**
      * LLM 节点定义。
      */
@@ -104,11 +104,6 @@ public abstract class LlmNode extends BaseAgentNode {
     @Autowired(required = false)
     private AgentControlToolService agentControlToolService;
     /**
-     * Tool 交互事件发布器。
-     */
-    @Autowired(required = false)
-    private AgentInteractionEventPublisher interactionEventPublisher;
-    /**
      * LLM trace sinks.
      */
     @Autowired(required = false)
@@ -141,6 +136,9 @@ public abstract class LlmNode extends BaseAgentNode {
 
     @Override
     public NodeResult execute(AgentContext context) throws Exception {
+        if (context != null) {
+            context.removeAttribute(ATTR_SUPPRESS_REMAINING_OUTPUT);
+        }
         Map<String, String> promptVariables = buildPromptVariables(context);
         if (context != null) {
             context.putAttribute("llmNodeDefinition", this.definition == null ? null : this.definition.toMap());
@@ -190,6 +188,9 @@ public abstract class LlmNode extends BaseAgentNode {
             if (!shouldPublishPartialResponse()) {
                 return;
             }
+            if (shouldSuppressRemainingLlmOutput(context)) {
+                return;
+            }
             String safeDelta = delta == null ? "" : delta;
             this.eventPublisher.publishLlmDelta(context, nodeName(), safeDelta);
         }).onCompleteResponse(response -> {
@@ -197,6 +198,11 @@ public abstract class LlmNode extends BaseAgentNode {
                 return;
             }
             String finalText = response == null || response.aiMessage() == null ? "" : response.aiMessage().text();
+            if (shouldSuppressRemainingLlmOutput(context)) {
+                finalText = this.eventPublisher.readBuffer(
+                        this.eventPublisher.buildLlmBufferKey(context, nodeName())
+                );
+            }
             FinishReason finishReason = response == null ? null : response.finishReason();
             finishReasonRef.set(finishReason == null ? null : finishReason.name());
             TokenUsage tokenUsage = response == null ? null : response.tokenUsage();
@@ -214,7 +220,9 @@ public abstract class LlmNode extends BaseAgentNode {
                     tokenUsage == null ? null : tokenUsage.outputTokenCount(),
                     tokenUsage == null ? null : tokenUsage.totalTokenCount()
             );
-            if (FinishReason.STOP.equals(finishReason) || finishReason == null) {
+            if (FinishReason.STOP.equals(finishReason)
+                    || finishReason == null
+                    || shouldSuppressRemainingLlmOutput(context)) {
                 textRef.set(finalText);
             } else {
                 errorRef.set(new RuntimeException(finalText));
@@ -242,6 +250,19 @@ public abstract class LlmNode extends BaseAgentNode {
         NodeResult nodeResult = parseResult(finalText, context);
         AgentHandoffSupport.attachToNodeResult(nodeResult, context);
         return nodeResult;
+    }
+
+    /**
+     * 标记 Tool 调用后的模型输出不再进入 SSE 和节点结果。
+     */
+    protected void suppressRemainingLlmOutput(AgentContext context) {
+        if (context != null) {
+            context.putAttribute(ATTR_SUPPRESS_REMAINING_OUTPUT, Boolean.TRUE);
+        }
+    }
+
+    private boolean shouldSuppressRemainingLlmOutput(AgentContext context) {
+        return context != null && Boolean.TRUE.equals(context.getAttribute(ATTR_SUPPRESS_REMAINING_OUTPUT));
     }
 
     /**
@@ -353,9 +374,6 @@ public abstract class LlmNode extends BaseAgentNode {
                     content,
                     endPayload
             );
-            if (success && this.interactionEventPublisher != null) {
-                this.interactionEventPublisher.publishRequested(context, result);
-            }
             return result;
         } catch (RuntimeException ex) {
             Map<String, Object> errorPayload = new LinkedHashMap<>(startPayload);

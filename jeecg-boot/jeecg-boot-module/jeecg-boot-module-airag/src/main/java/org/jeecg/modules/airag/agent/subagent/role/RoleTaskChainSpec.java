@@ -30,8 +30,8 @@ public final class RoleTaskChainSpec {
      * 预留的工具顺序。
      */
     public static final List<String> TOOLS = List.of(
-            "role_core_fill",
             "role_request_confirmation",
+            "role_continue_generation",
             "role_generate_role_image",
             "role_generate_role_voice"
     );

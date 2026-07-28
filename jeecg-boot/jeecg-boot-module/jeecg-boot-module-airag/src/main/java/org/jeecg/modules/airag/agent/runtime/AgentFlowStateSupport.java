@@ -24,6 +24,7 @@ public final class AgentFlowStateSupport {
 
     private static final List<String> ROLE_STATE_KEYS = List.of(
             "taskDescription",
+            "transferDataJson",
             "roleCoreResultJson",
             "roleCorePresetResultJson",
             "roleGenerateRoleResultJson",
@@ -33,12 +34,14 @@ public final class AgentFlowStateSupport {
     );
     private static final List<String> STORY_STATE_KEYS = List.of(
             "taskDescription",
+            "transferDataJson",
             "storyCoreResultJson",
             "storyCorePresetResultJson",
             "storyFullGenerateResultJson",
             "storyBackgroundResultJson",
             "storySceneResultJson",
-            "storyConfirmationDecision"
+            "storyConfirmationDecision",
+            "pendingUserInteraction"
     );
 
     private AgentFlowStateSupport() {

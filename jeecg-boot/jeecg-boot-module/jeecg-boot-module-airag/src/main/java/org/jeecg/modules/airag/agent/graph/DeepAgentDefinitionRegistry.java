@@ -105,14 +105,14 @@ public class DeepAgentDefinitionRegistry {
         definition.setSkillTopK(3);
         definition.setSkills(List.of("role_create_dialog", "role_create_image", "role_create_voice"));
         definition.setTools(List.of(
-                "role_core_fill",
                 "role_request_confirmation",
+                "role_continue_generation",
                 "role_generate_role_image",
                 "role_generate_role_voice"
         ));
         definition.setPermissions(List.of(
-                "role_core_fill",
                 "role_request_confirmation",
+                "role_continue_generation",
                 "role_generate_role_image",
                 "role_generate_role_voice"
         ));
@@ -134,11 +134,13 @@ public class DeepAgentDefinitionRegistry {
         definition.setSkillTopK(3);
         definition.setSkills(List.of("story_create_dialog", "story_create_background"));
         definition.setTools(List.of(
-                "story_full_generate",
+                "story_request_confirmation",
+                "story_continue_generation",
                 "story_generate_scene"
         ));
         definition.setPermissions(List.of(
-                "story_full_generate",
+                "story_request_confirmation",
+                "story_continue_generation",
                 "story_generate_scene"
         ));
         definition.setResponseFormat("text");
@@ -146,7 +148,7 @@ public class DeepAgentDefinitionRegistry {
         definition.getMetadata().put("mode", "deep-agents");
         definition.getMetadata().put(
                 "chain",
-                List.of("story_create_dialog", "story_confirmation", "story_create_background")
+                List.of("story_create_dialog", "story_create_background")
         );
         return definition;
     }

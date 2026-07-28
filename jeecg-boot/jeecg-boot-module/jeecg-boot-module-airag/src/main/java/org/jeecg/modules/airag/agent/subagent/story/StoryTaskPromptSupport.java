@@ -18,6 +18,7 @@ import java.util.Map;
  */
 public final class StoryTaskPromptSupport {
 
+    private static final String ATTR_TRANSFER_DATA_JSON = "transferDataJson";
     private static final String ATTR_STORY_CORE_RESULT_JSON = "storyCoreResultJson";
     private static final String ATTR_STORY_CORE_PRESET_RESULT_JSON = "storyCorePresetResultJson";
     private static final String ATTR_STORY_FULL_GENERATE_RESULT_JSON = "storyFullGenerateResultJson";
@@ -89,7 +90,11 @@ public final class StoryTaskPromptSupport {
     }
 
     private static JSONObject resolveStoryCoreJson(AgentContext context) {
-        JSONObject core = readJson(context, ATTR_STORY_CORE_RESULT_JSON);
+        JSONObject core = readJson(context, ATTR_TRANSFER_DATA_JSON);
+        if (core != null && !core.isEmpty()) {
+            return core;
+        }
+        core = readJson(context, ATTR_STORY_CORE_RESULT_JSON);
         if (core != null && !core.isEmpty()) {
             return core;
         }

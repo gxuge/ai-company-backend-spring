@@ -26,6 +26,7 @@ import org.jeecg.modules.airag.llm.entity.AiragMcp;
 import org.jeecg.modules.airag.llm.entity.AiragModel;
 import org.jeecg.modules.airag.llm.mapper.AiragMcpMapper;
 import org.jeecg.modules.airag.llm.mapper.AiragModelMapper;
+import org.jeecg.modules.airag.llm.stream.ImmediateToolTokenStreamAdapter;
 import org.jeecg.config.AiRagConfigBean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -229,7 +230,8 @@ public class AIChatHandler implements IAIChatHandler {
         params = mergeParams(airagModel, params);
         ChatParamAdaptContext adaptContext = chatProviderAdaptService.adapt(airagModel, params);
         chatProviderAdaptService.prepareModelCacheIfNeeded(adaptContext);
-        return llmHandler.chat(messages, params);
+        TokenStream tokenStream = llmHandler.chat(messages, params);
+        return ImmediateToolTokenStreamAdapter.adapt(tokenStream, params.getTools());
     }
 
     /**

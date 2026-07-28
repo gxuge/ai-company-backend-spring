@@ -29,7 +29,8 @@ public final class StoryTaskChainSpec {
      * 故事链路会用到的 tool。
      */
     public static final List<String> TOOLS = List.of(
-            "story_full_generate",
+            "story_request_confirmation",
+            "story_continue_generation",
             "story_generate_scene"
     );
 
@@ -38,7 +39,6 @@ public final class StoryTaskChainSpec {
      */
     public static final List<String> CHAIN = List.of(
             "story_create_dialog",
-            "story_confirmation",
             "story_create_background"
     );
 
