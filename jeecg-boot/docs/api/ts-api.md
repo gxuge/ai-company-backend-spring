@@ -154,6 +154,7 @@ Agent SSE 确认交互说明：
 | POST | `/ts-stories/story-full-generate` | 故事全量生成 |
 | POST | `/ts-stories/story-setting-generate` | 故事设定生成 |
 | POST | `/ts-stories/story--scene-generate` | 故事场景生成 |
+| POST | `/ts-stories/one-click-scene-image` | 故事场景背景图片生成，仅返回原始图片地址，不保存或关联故事 |
 | POST | `/ts-stories/story--outline-generate` | 故事大纲生成 |
 | POST | `/ts-stories/story-full-generate-preset` | 故事全量生成预设版 |
 | GET | `/ts-story-chapters` | 章节分页查询 |
@@ -264,10 +265,13 @@ Agent SSE 确认交互说明：
 - `POST /ts-stories/story-full-generate`
 - `POST /ts-stories/story-setting-generate`
 - `POST /ts-stories/story--scene-generate`
+- `POST /ts-stories/one-click-scene-image`
 - `POST /ts-stories/story--outline-generate`
 - `POST /ts-stories/story-full-generate-preset`
 
 `POST /sys/ts-stories/story-full-generate` 支持可选请求字段 `extraInfo`，并兼容 `extra_info`。该字段映射到 `story_core_fill` 的 `{{extra_info}}`；未传、`null` 或空白字符串时按 `null` 处理。preset 接口因复用 DTO 可以接收该字段，但不会传入 `story_core_fill_preset`。
+
+`POST /sys/ts-stories/one-click-scene-image` 接收 `title/storySetting/sceneSetting/plotOutline/styleName/aspectRatio/referenceImageUrl`。其中 `storySetting` 与 `sceneSetting` 不能同时为空；默认风格为“写实影视级场景概念图”，默认比例为 `9:16`。接口只返回供应商原始 `imageUrl`、`promptCode` 和 `promptVersion`，不导入用户素材，也不更新故事 `sceneImageUrl`。
 
 ### 4.3 聊天生成
 - `POST /ts-chat-sessions/ai-reply`

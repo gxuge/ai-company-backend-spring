@@ -33,6 +33,38 @@ public class ToolCallResult {
      * 扩展载荷。
      */
     private Map<String, Object> payload = new LinkedHashMap<>();
+    /**
+     * 是否已受理为异步任务。
+     */
+    private boolean asynchronous;
+    /**
+     * 异步任务ID。
+     */
+    private String taskId;
+    /**
+     * 对应的 Tool Event ID。
+     */
+    private String eventId;
+    /**
+     * 结果内容类型，例如 image。
+     */
+    private String contentType;
+    /**
+     * 资源业务类型，例如 role_image、story_scene_image。
+     */
+    private String resourceType;
+    /**
+     * 图片地址。
+     */
+    private String imageUrl;
+    /**
+     * Prompt 编码。
+     */
+    private String promptCode;
+    /**
+     * Prompt 版本。
+     */
+    private String promptVersion;
 
     /**
      * 创建成功结果。
@@ -50,6 +82,30 @@ public class ToolCallResult {
     }
 
     /**
+     * 创建扁平图片结果。
+     *
+     * @param summary 摘要
+     * @param resourceType 资源业务类型
+     * @param imageUrl 图片地址
+     * @param promptCode Prompt 编码
+     * @param promptVersion Prompt 版本
+     * @return 图片结果
+     */
+    public static ToolCallResult image(String summary,
+                                       String resourceType,
+                                       String imageUrl,
+                                       String promptCode,
+                                       String promptVersion) {
+        ToolCallResult result = success(summary, null);
+        result.setContentType("image");
+        result.setResourceType(resourceType);
+        result.setImageUrl(imageUrl);
+        result.setPromptCode(promptCode);
+        result.setPromptVersion(promptVersion);
+        return result;
+    }
+
+    /**
      * 创建失败结果。
      *
      * @param errorMessage 错误信息
@@ -60,6 +116,26 @@ public class ToolCallResult {
         result.setSuccess(false);
         result.setErrorMessage(errorMessage);
         result.setSummary(errorMessage);
+        return result;
+    }
+
+    /**
+     * 创建异步任务受理结果。
+     *
+     * @param summary 受理摘要
+     * @param taskId 异步任务ID
+     * @param eventId Tool事件ID
+     * @param data 受理数据
+     * @return 异步受理结果
+     */
+    public static ToolCallResult asyncAccepted(String summary,
+                                               String taskId,
+                                               String eventId,
+                                               Object data) {
+        ToolCallResult result = success(summary, data);
+        result.setAsynchronous(true);
+        result.setTaskId(taskId);
+        result.setEventId(eventId);
         return result;
     }
 }

@@ -6,6 +6,8 @@ import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.aop.TsUserImageAssetOwnershipAspect;
 import org.jeecg.modules.aop.TsUserImageAssetOwnershipAspect.CheckTsUserImageAssetOwnership;
+import org.jeecg.modules.openapi.service.IMiniMaxDemoService;
+import org.jeecg.modules.system.dto.tsuserimageasset.TsUserImageAssetImportDto;
 import org.jeecg.modules.system.dto.tsuserimageasset.TsUserImageAssetQueryDto;
 import org.jeecg.modules.system.dto.tsuserimageasset.TsUserImageAssetSaveDto;
 import org.jeecg.modules.system.entity.TsUserImageAsset;
@@ -17,11 +19,16 @@ import org.jeecg.modules.system.vo.tsuserimageasset.TsUserImageAssetVo;
 import org.jeecg.modules.system.vo.tsuserimageasset.TsUserImageAssetVoConverter;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.util.Date;
+import jakarta.annotation.Resource;
 @Service
 public class TsUserImageAssetServiceImpl extends ServiceImpl<TsUserImageAssetMapper, TsUserImageAsset>
         implements ITsUserImageAssetService {
+    @Resource
+    private IMiniMaxDemoService miniMaxDemoService;
+
     @Override
     public Result<Page<TsUserImageAssetVo>> pageAssets(LoginUser user, TsUserImageAssetQueryDto request) {
         Long userId = Long.valueOf(user.getId());
@@ -53,6 +60,22 @@ public class TsUserImageAssetServiceImpl extends ServiceImpl<TsUserImageAssetMap
         this.save(entity);
 
         return Result.OK("创建成功", TsUserImageAssetVoConverter.fromEntity(entity));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Result<TsUserImageAssetVo> importAsset(LoginUser user, TsUserImageAssetImportDto request) {
+        String persistedUrl = miniMaxDemoService.persistGeneratedImage(request.getSourceImageUrl());
+        TsUserImageAssetSaveDto saveDto = new TsUserImageAssetSaveDto();
+        saveDto.setFileUrl(persistedUrl);
+        saveDto.setThumbnailUrl(persistedUrl);
+        saveDto.setFileName(StringUtils.hasText(request.getFileName())
+                ? request.getFileName().trim()
+                : "ai-image-" + System.currentTimeMillis() + ".png");
+        saveDto.setSourceType(StringUtils.hasText(request.getSourceType())
+                ? request.getSourceType().trim()
+                : "ai_generate");
+        return addAsset(user, saveDto);
     }
     @Override
     @Transactional(rollbackFor = Exception.class)

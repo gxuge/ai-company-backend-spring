@@ -35,6 +35,7 @@ public final class RoleTaskPromptSupport {
         Map<String, String> variables = new LinkedHashMap<>();
         variables.put("user_input", oConvertUtils.getString(context == null ? null : context.getUserInput()));
         variables.put("task_description", oConvertUtils.getString(context == null ? null : context.getAttribute("taskDescription")));
+        variables.put("role_confirmation_decision", RoleConfirmationTransitions.currentDecision(context));
         return variables;
     }
 

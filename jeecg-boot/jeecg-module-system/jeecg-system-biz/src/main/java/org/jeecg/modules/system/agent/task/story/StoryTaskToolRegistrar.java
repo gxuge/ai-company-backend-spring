@@ -11,9 +11,11 @@ import org.jeecg.modules.airag.agent.tool.ToolCallResult;
 import org.jeecg.modules.airag.agent.tool.ToolDefinition;
 import org.jeecg.modules.airag.agent.tool.ToolRegistry;
 import org.jeecg.modules.system.dto.tsstory.TsStoryFullGenerateDto;
+import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneImageGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneGenerateDto;
 import org.jeecg.modules.system.service.ITsStoryGenerateService;
 import org.jeecg.modules.system.vo.tsstory.TsStoryFullGenerateVo;
+import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneImageGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneGenerateVo;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -35,6 +37,7 @@ public class StoryTaskToolRegistrar {
     private static final String ROUTE_STORY_CORE_FILL = "STORY_CORE_FILL";
     private static final String ROUTE_STORY_FULL_GENERATE = "STORY_FULL_GENERATE";
     private static final String ROUTE_STORY_SCENE_GENERATE = "STORY_SCENE_GENERATE";
+    private static final String ROUTE_STORY_SCENE_IMAGE_GENERATE = "STORY_SCENE_IMAGE_GENERATE";
 
     private final ToolRegistry toolRegistry;
     private final ITsStoryGenerateService storyGenerateService;
@@ -49,13 +52,14 @@ public class StoryTaskToolRegistrar {
     }
 
     /**
-     * 容器启动后注册故事生成相关的三个业务工具。
+     * 容器启动后注册故事生成相关业务工具。
      */
     @PostConstruct
     public void registerTools() {
         this.toolRegistry.register(buildStoryFullGenerateTool());
         this.toolRegistry.register(buildStoryFullGeneratePresetTool());
         this.toolRegistry.register(buildStorySceneGenerateTool());
+        this.toolRegistry.register(buildStorySceneImageGenerateTool());
     }
 
     /**
@@ -97,6 +101,20 @@ public class StoryTaskToolRegistrar {
         definition.setDisplayName("故事背景生成");
         definition.setDescription("基于已确认的故事核心生成背景 / 场景设定");
         definition.setExecutor(this::executeStorySceneGenerate);
+        return definition;
+    }
+
+    /**
+     * 构建故事场景背景图片生成工具定义。
+     */
+    private ToolDefinition buildStorySceneImageGenerateTool() {
+        ToolDefinition definition = new ToolDefinition();
+        definition.setName(StoryTaskToolSpec.STORY_GENERATE_SCENE_IMAGE);
+        definition.setRouteKey(ROUTE_STORY_SCENE_IMAGE_GENERATE);
+        definition.setCategory("story_task");
+        definition.setDisplayName("故事场景背景图片生成");
+        definition.setDescription("基于故事设定生成临时场景背景图片，不保存素材或关联故事");
+        definition.setExecutor(this::executeStorySceneImageGenerate);
         return definition;
     }
 
@@ -161,6 +179,29 @@ public class StoryTaskToolRegistrar {
     }
 
     /**
+     * 根据故事与场景设定生成临时背景图片。
+     */
+    private ToolCallResult executeStorySceneImageGenerate(AgentContext context, ToolCallRequest request) {
+        LoginUser user = TaskAgentSupport.buildLoginUser(context);
+        TsStoryOneClickSceneImageGenerateDto dto = buildStorySceneImageRequest(context, request);
+        Map<String, Object> payload = buildCommonPayload(
+                context, request, "scene-image", StoryTaskToolSpec.STORY_GENERATE_SCENE_IMAGE);
+        TsStoryOneClickSceneImageGenerateVo result = this.storyGenerateService.generateStorySceneImage(user, dto);
+        if (context != null) {
+            context.putAttribute("storySceneImageResultJson", JSONObject.toJSONString(result));
+        }
+        ToolCallResult callResult = ToolCallResult.image(
+                "已生成故事场景背景图片",
+                "story_scene_image",
+                result == null ? null : result.getImageUrl(),
+                result == null ? null : result.getPromptCode(),
+                result == null ? null : result.getPromptVersion()
+        );
+        callResult.setPayload(payload);
+        return callResult;
+    }
+
+    /**
      * 从工具参数和提示变量构建完整故事生成请求。
      */
     private TsStoryFullGenerateDto buildStoryRequest(AgentContext context, ToolCallRequest toolRequest) {
@@ -194,6 +235,26 @@ public class StoryTaskToolRegistrar {
         dto.setPlotOutline(firstText(args, promptVariables, "plotOutline", "plot_outline"));
         dto.setStyleHint(firstText(args, promptVariables, "styleHint", "style_hint"));
         dto.setTemplateMode(firstText(args, promptVariables, "templateMode", "template_mode"));
+        dto.normalize();
+        return dto;
+    }
+
+    /**
+     * 从工具参数和提示变量构建故事场景背景图片生成请求。
+     */
+    private TsStoryOneClickSceneImageGenerateDto buildStorySceneImageRequest(
+            AgentContext context, ToolCallRequest toolRequest) {
+        TsStoryOneClickSceneImageGenerateDto dto = new TsStoryOneClickSceneImageGenerateDto();
+        Map<String, Object> args = toolRequest == null ? null : toolRequest.getArguments();
+        Map<String, Object> promptVariables = TaskAgentSupport.readMapAttribute(context, "promptVariables");
+        dto.setTitle(firstText(args, promptVariables, "title"));
+        dto.setStorySetting(firstText(args, promptVariables, "storySetting", "story_setting"));
+        dto.setSiteSetting(firstText(args, promptVariables, "siteSetting", "site_setting"));
+        dto.setPlotOutline(firstText(args, promptVariables, "plotOutline", "plot_outline"));
+        dto.setStyleName(firstText(args, promptVariables, "styleName", "style_name", "styleHint", "style_hint"));
+        dto.setAspectRatio(firstText(args, promptVariables, "aspectRatio", "aspect_ratio"));
+        dto.setReferenceImageUrl(firstText(
+                args, promptVariables, "referenceImageUrl", "reference_image_url"));
         dto.normalize();
         return dto;
     }

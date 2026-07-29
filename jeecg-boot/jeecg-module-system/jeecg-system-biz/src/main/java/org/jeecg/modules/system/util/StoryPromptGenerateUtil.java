@@ -3,6 +3,7 @@ package org.jeecg.modules.system.util;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickOutlineGenerateDto;
+import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneImageGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSettingGenerateDto;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineChapterVo;
@@ -59,7 +60,10 @@ public class StoryPromptGenerateUtil {
         return Map.of(
                 "title", PromptRuntimeUtil.nullableToken(dto.getTitle()),
                 "story_mode", PromptRuntimeUtil.nullableToken(dto.getStoryMode()),
-                "story_setting", PromptRuntimeUtil.nullableToken(dto.getStorySetting()),
+                "story_setting", PromptRuntimeUtil.nullableToken(appendRoleProfiles(
+                        dto.getStorySetting(),
+                        dto.getRoleProfiles()
+                )),
                 "story_intro", PromptRuntimeUtil.nullableToken(dto.getStoryIntro()),
                 "story_background", PromptRuntimeUtil.nullableToken(dto.getStoryBackground()),
                 "scene_setting", PromptRuntimeUtil.nullableToken(dto.getSceneSetting()),
@@ -80,6 +84,33 @@ public class StoryPromptGenerateUtil {
         variables.put("story_background", PromptRuntimeUtil.nullableToken(null));
         variables.put("style_hint", PromptRuntimeUtil.nullableToken(null));
         return variables;
+    }
+
+    private static String appendRoleProfiles(String storySetting, String roleProfiles) {
+        String setting = PromptRuntimeUtil.trimToNull(storySetting);
+        String roles = PromptRuntimeUtil.trimToNull(roleProfiles);
+        if (!StringUtils.hasText(roles)) {
+            return setting;
+        }
+        if (!StringUtils.hasText(setting)) {
+            return "角色列表：\n" + roles;
+        }
+        return setting + "\n\n角色列表：\n" + roles;
+    }
+
+    /**
+     * 构建故事场景背景图片生成的模板变量。
+     */
+    public static Map<String, String> buildSceneImageVars(TsStoryOneClickSceneImageGenerateDto dto) {
+        return Map.of(
+                "title", PromptRuntimeUtil.nullableToken(dto.getTitle()),
+                "story_setting", PromptRuntimeUtil.nullableToken(dto.getStorySetting()),
+                "site_setting", PromptRuntimeUtil.nullableToken(dto.getSiteSetting()),
+                "plot_outline", PromptRuntimeUtil.nullableToken(dto.getPlotOutline()),
+                "style_name", PromptRuntimeUtil.nullableToken(dto.getStyleName()),
+                "aspect_ratio", PromptRuntimeUtil.nullableToken(dto.getAspectRatio()),
+                "reference_image_url", PromptRuntimeUtil.nullableToken(dto.getReferenceImageUrl())
+        );
     }
 
     /**

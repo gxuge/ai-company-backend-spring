@@ -10,17 +10,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 角色确认后继续生成工具契约。
- *
- * <p>负责接收最终角色四字段，并显式请求进入形象和声音节点。</p>
- *
- * @author codex
- * @date 2026/7/17
+ * 完整角色异步生成工具契约。
  */
-public final class RoleContinueGenerationToolContract {
+public final class RoleGenerateCompleteToolContract {
     public static final String TRANSFER_DATA = "transferData";
     public static final String TRANSFER_DATA_JSON = "transferDataJson";
-    public static final String ATTR_CONTINUE_REQUESTED = "roleContinueGenerationRequested";
+    public static final String ATTR_GENERATION_ACCEPTED = "roleGenerateCompleteAccepted";
+    public static final String ATTR_GENERATION_TASK_ID = "roleGenerateCompleteTaskId";
+    public static final String ATTR_GENERATION_EVENT_ID = "roleGenerateCompleteEventId";
 
     private static final List<String> TRANSFER_FIELDS = List.of(
             "roleName",
@@ -30,15 +27,15 @@ public final class RoleContinueGenerationToolContract {
     );
     private static final String TOOL_DESCRIPTION =
             "只有角色名称、性别、职业、角色背景四项内容全部完整，"
-                    + "并且用户明确表示满意且同意继续生成角色形象和声音时才调用。"
-                    + "调用后将强制进入角色形象和声音生成流程。";
+                    + "并且用户明确表示满意时才调用。"
+                    + "该工具会异步创建角色，并显式保存形象资产后建立关联。";
     private static final String INPUT_SCHEMA = """
             {
               "type": "object",
               "properties": {
                 "transferData": {
                   "type": "object",
-                  "description": "传递给后续角色形象和声音节点的最终角色核心数据。",
+                  "description": "用户最终确认的角色核心数据。",
                   "properties": {
                     "roleName": {"type": "string", "description": "最终角色名称。"},
                     "gender": {"type": "string", "description": "最终角色性别。"},
@@ -54,15 +51,15 @@ public final class RoleContinueGenerationToolContract {
             }
             """;
 
-    private RoleContinueGenerationToolContract() {
+    private RoleGenerateCompleteToolContract() {
     }
 
     /**
-     * 构建注入模型的继续生成工具定义。
+     * 构建注入模型的完整角色生成工具定义。
      */
     public static ToolSpecification buildSpecification() {
         JsonObjectSchema transferDataSchema = JsonObjectSchema.builder()
-                .description("传递给后续角色形象和声音节点的最终角色核心数据")
+                .description("用户最终确认的角色核心数据")
                 .addStringProperty("roleName", "最终角色名称")
                 .addStringProperty("gender", "最终角色性别")
                 .addStringProperty("occupation", "最终角色职业或身份")
@@ -76,7 +73,7 @@ public final class RoleContinueGenerationToolContract {
                 .additionalProperties(false)
                 .build();
         return ToolSpecification.builder()
-                .name(RoleTaskToolSpec.ROLE_CONTINUE_GENERATION)
+                .name(RoleTaskToolSpec.ROLE_GENERATE_COMPLETE)
                 .description(TOOL_DESCRIPTION)
                 .parameters(schema)
                 .build();
@@ -109,22 +106,29 @@ public final class RoleContinueGenerationToolContract {
     }
 
     /**
-     * 标记当前对话节点已显式请求继续生成。
+     * 标记完整角色生成任务已经受理。
      */
-    public static void markContinueRequested(AgentContext context) {
-        if (context != null) {
-            context.putAttribute(ATTR_CONTINUE_REQUESTED, Boolean.TRUE);
+    public static void markAccepted(AgentContext context,
+                                    String taskId,
+                                    String eventId,
+                                    String transferDataJson) {
+        if (context == null) {
+            return;
         }
+        context.putAttribute(ATTR_GENERATION_ACCEPTED, Boolean.TRUE);
+        context.putAttribute(ATTR_GENERATION_TASK_ID, taskId);
+        context.putAttribute(ATTR_GENERATION_EVENT_ID, eventId);
+        context.putAttribute(TRANSFER_DATA_JSON, transferDataJson);
     }
 
     /**
-     * 消费继续生成标记。
+     * 消费异步生成任务受理标记。
      */
-    public static boolean consumeContinueRequested(AgentContext context) {
-        if (context == null || !Boolean.TRUE.equals(context.getAttribute(ATTR_CONTINUE_REQUESTED))) {
+    public static boolean consumeAccepted(AgentContext context) {
+        if (context == null || !Boolean.TRUE.equals(context.getAttribute(ATTR_GENERATION_ACCEPTED))) {
             return false;
         }
-        context.removeAttribute(ATTR_CONTINUE_REQUESTED);
+        context.removeAttribute(ATTR_GENERATION_ACCEPTED);
         return true;
     }
 

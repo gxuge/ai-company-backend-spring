@@ -225,6 +225,7 @@ public class TsAgentChatMessageEventService {
         if (jsonData == null || jsonData.isEmpty()) {
             return compact;
         }
+        copyIfPresent(compact, jsonData, "async");
         copyIfPresent(compact, jsonData, "input");
         copyIfPresent(compact, jsonData, "output");
         copyIfPresent(compact, jsonData, "error");

@@ -56,6 +56,7 @@ public class StoryBackgroundTaskSubAgent implements SubAgent {
             Map<String, Object> structuredResult = new LinkedHashMap<>();
             structuredResult.put("storyBackgroundResultJson", context == null ? null : context.getAttribute("storyBackgroundResultJson"));
             structuredResult.put("storySceneResultJson", context == null ? null : context.getAttribute("storySceneResultJson"));
+            structuredResult.put("storySceneImageResultJson", context == null ? null : context.getAttribute("storySceneImageResultJson"));
             structuredResult.put("nodeResult", nodeResult.getData());
             structuredResult.put("nodeContent", nodeResult.getContent());
             return AgentHandoffSupport.buildCompletedHandoffResult(

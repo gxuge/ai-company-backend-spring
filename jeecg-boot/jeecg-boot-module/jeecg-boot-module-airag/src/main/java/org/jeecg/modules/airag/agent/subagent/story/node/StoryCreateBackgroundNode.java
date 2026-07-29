@@ -64,8 +64,14 @@ public class StoryCreateBackgroundNode extends LlmNode {
         definition.setSkillDomain("story");
         definition.setSkillTopK(3);
         definition.setSkills(List.of("story_create_background"));
-        definition.setTools(List.of(StoryTaskToolSpec.STORY_GENERATE_SCENE));
-        definition.setPermissions(List.of(StoryTaskToolSpec.STORY_GENERATE_SCENE));
+        definition.setTools(List.of(
+                StoryTaskToolSpec.STORY_GENERATE_SCENE,
+                StoryTaskToolSpec.STORY_GENERATE_SCENE_IMAGE
+        ));
+        definition.setPermissions(List.of(
+                StoryTaskToolSpec.STORY_GENERATE_SCENE,
+                StoryTaskToolSpec.STORY_GENERATE_SCENE_IMAGE
+        ));
         definition.setResponseFormat("text");
         definition.setUserPromptTemplate("""
                 当前故事核心：
@@ -113,7 +119,12 @@ public class StoryCreateBackgroundNode extends LlmNode {
         if (params.getTools() == null) {
             params.setTools(new LinkedHashMap<>());
         }
-        params.getTools().put(buildStoryBackgroundSpec(), buildToolExecutor(context));
+        params.getTools().put(
+                buildStoryBackgroundSpec(),
+                buildToolExecutor(context, StoryTaskToolSpec.STORY_GENERATE_SCENE));
+        params.getTools().put(
+                buildStorySceneImageSpec(),
+                buildToolExecutor(context, StoryTaskToolSpec.STORY_GENERATE_SCENE_IMAGE));
         return params;
     }
 
@@ -124,6 +135,8 @@ public class StoryCreateBackgroundNode extends LlmNode {
         result.put("stage", "background");
         result.put("storySceneResultJson", oConvertUtils.getString(context == null ? null : context.getAttribute("storySceneResultJson")));
         result.put("storyBackgroundResultJson", oConvertUtils.getString(context == null ? null : context.getAttribute("storyBackgroundResultJson")));
+        result.put("storySceneImageResultJson", oConvertUtils.getString(
+                context == null ? null : context.getAttribute("storySceneImageResultJson")));
         return result;
     }
 
@@ -146,19 +159,54 @@ public class StoryCreateBackgroundNode extends LlmNode {
                 .build();
     }
 
-    private ToolExecutor buildToolExecutor(AgentContext context) {
+    /**
+     * 构建故事场景背景图片生成工具规格。
+     */
+    private ToolSpecification buildStorySceneImageSpec() {
+        JsonObjectSchema schema = JsonObjectSchema.builder()
+                .addStringProperty("title", "故事标题，可为空")
+                .addStringProperty("storySetting", "故事世界观或整体设定")
+                .addStringProperty("siteSetting", "故事主要地点或场景设定")
+                .addStringProperty("plotOutline", "剧情大纲，可为空")
+                .addStringProperty("styleName", "视觉风格名称，可为空")
+                .addStringProperty("aspectRatio", "图片宽高比，默认9:16")
+                .addStringProperty("referenceImageUrl", "参考图片地址，可为空")
+                .build();
+        return ToolSpecification.builder()
+                .name(StoryTaskToolSpec.STORY_GENERATE_SCENE_IMAGE)
+                .description("根据故事与场景设定生成临时背景图片，不保存素材或关联故事")
+                .parameters(schema)
+                .build();
+    }
+
+    /**
+     * 构建指定故事工具的执行器。
+     */
+    private ToolExecutor buildToolExecutor(AgentContext context, String toolName) {
         return (toolExecutionRequest, memoryId) -> {
             ToolCallRequest request = new ToolCallRequest();
-            request.setToolName(StoryTaskToolSpec.STORY_GENERATE_SCENE);
+            request.setToolName(toolName);
             request.setArguments(parseArguments(toolExecutionRequest == null ? null : toolExecutionRequest.arguments()));
             ToolCallResult result = executeToolWithSse(context, this.toolRegistry, request);
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("success", result == null ? null : result.isSuccess());
-            payload.put("summary", result == null ? null : result.getSummary());
-            payload.put("data", result == null ? null : result.getData());
-            payload.put("errorMessage", result == null ? null : result.getErrorMessage());
-            return JSON.toJSONString(payload);
+            return JSON.toJSONString(buildToolResponse(result));
         };
+    }
+
+    private Map<String, Object> buildToolResponse(ToolCallResult result) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("success", result == null ? null : result.isSuccess());
+        response.put("summary", result == null ? null : result.getSummary());
+        if (result != null && "image".equalsIgnoreCase(result.getContentType())) {
+            response.put("contentType", result.getContentType());
+            response.put("resourceType", result.getResourceType());
+            response.put("imageUrl", result.getImageUrl());
+            response.put("promptCode", result.getPromptCode());
+            response.put("promptVersion", result.getPromptVersion());
+        } else {
+            response.put("data", result == null ? null : result.getData());
+        }
+        response.put("errorMessage", result == null ? null : result.getErrorMessage());
+        return response;
     }
 
     private Map<String, Object> parseArguments(String arguments) {

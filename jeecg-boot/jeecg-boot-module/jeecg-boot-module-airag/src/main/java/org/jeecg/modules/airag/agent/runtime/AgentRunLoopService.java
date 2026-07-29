@@ -76,6 +76,9 @@ public class AgentRunLoopService {
             currentAgentCode = this.agentRegistry.isMainAgentCode(targetAgentCode)
                     ? AgentRegistry.MAIN_AGENT_CODE
                     : targetAgentCode;
+            if (AgentHandoffSupport.shouldEndRunAfterHandoff(stepResult)) {
+                return new AgentRunOutcome(stepResult, currentAgentCode, steps);
+            }
         }
 
         AgentResult failed = AgentResult.failed("Agent Handoff次数超过限制");

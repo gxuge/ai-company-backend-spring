@@ -5,9 +5,7 @@ import org.springframework.util.StringUtils;
 
 @Data
 public class TsRoleOneClickImageGenerateDto {
-    /** 角色ID（可选，传入时会校验归属） */
-    private Long roleId;
-    /** 角色名称 */
+    /** 人物名称 */
     private String roleName;
     /** 性别（male/female/unknown/random） */
     private String gender;
@@ -21,8 +19,6 @@ public class TsRoleOneClickImageGenerateDto {
     private String aspectRatio;
     /** 参考图片URL（可选） */
     private String referenceImageUrl;
-    /** 是否异步生成（true=快速受理并后台生成） */
-    private Boolean asyncGenerate;
 
     public void normalize() {
         this.roleName = trimToNull(this.roleName);
@@ -32,9 +28,6 @@ public class TsRoleOneClickImageGenerateDto {
         this.styleName = trimToNull(this.styleName);
         this.aspectRatio = trimToNull(this.aspectRatio);
         this.referenceImageUrl = trimToNull(this.referenceImageUrl);
-        if (this.asyncGenerate == null) {
-            this.asyncGenerate = Boolean.FALSE;
-        }
     }
 
     private static String trimToNull(String value) {

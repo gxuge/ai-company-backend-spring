@@ -294,6 +294,87 @@ class AgentEventPublisherTest {
     }
 
     @Test
+    void shouldUpdateSameEventWhenAsyncToolCompletes() {
+        String eventId = "async-event-1";
+        Map<String, Object> arguments = Map.of(
+                "transferData",
+                Map.of(
+                        "roleName", "林夏",
+                        "gender", "女性",
+                        "occupation", "骑士",
+                        "backgroundStory", "王城守卫"
+                )
+        );
+        Map<String, Object> startPayload = new LinkedHashMap<>();
+        startPayload.put("eventId", eventId);
+        startPayload.put("taskId", "async-task-1");
+        startPayload.put("async", Boolean.TRUE);
+        startPayload.put("toolArguments", arguments);
+
+        this.eventPublisher.publishAsyncToolStart(
+                this.context,
+                eventId,
+                "role_create_dialog",
+                "role_generate_complete",
+                startPayload
+        );
+        AgentContext asyncContext = this.context.fork(this.context.getUserInput());
+        this.eventPublisher.publishAsyncToolEnd(
+                asyncContext,
+                eventId,
+                "role_create_dialog",
+                "role_generate_complete",
+                "完整角色生成完成",
+                Map.of(
+                        "eventId", eventId,
+                        "taskId", "async-task-1",
+                        "async", Boolean.TRUE,
+                        "toolArguments", arguments,
+                        "toolData", Map.of("roleId", 88L)
+                )
+        );
+
+        ArgumentCaptor<Map<String, Object>> pendingDataCaptor = mapCaptor();
+        Mockito.verify(this.eventService).saveEvent(
+                Mockito.eq(eventId),
+                Mockito.eq("10001"),
+                Mockito.eq(1001L),
+                Mockito.isNull(),
+                Mockito.eq("tool"),
+                Mockito.eq("role_generate_complete"),
+                Mockito.eq("role_create_dialog"),
+                Mockito.eq("tool"),
+                Mockito.eq("开始调用 role_generate_complete"),
+                Mockito.eq(2),
+                pendingDataCaptor.capture()
+        );
+        Assertions.assertEquals(Boolean.TRUE, pendingDataCaptor.getValue().get("async"));
+        ArgumentCaptor<Map<String, Object>> completeDataCaptor = mapCaptor();
+        Mockito.verify(this.eventService).updateEventResult(
+                Mockito.eq(eventId),
+                Mockito.eq("完整角色生成完成"),
+                Mockito.eq(1),
+                completeDataCaptor.capture()
+        );
+        Assertions.assertEquals(Boolean.TRUE, completeDataCaptor.getValue().get("async"));
+        Map<String, Object> output = castMap(completeDataCaptor.getValue().get("output"));
+        Assertions.assertEquals(Map.of("roleId", 88L), output.get("result"));
+        Mockito.verify(this.sseConnectionManager).retain("sse-1");
+        Mockito.verify(this.sseConnectionManager).release("sse-1");
+
+        ArgumentCaptor<SsePayload> payloadCaptor = ArgumentCaptor.forClass(SsePayload.class);
+        Mockito.verify(this.sseConnectionManager, Mockito.times(2)).send(
+                Mockito.eq("sse-1"),
+                Mockito.anyString(),
+                payloadCaptor.capture()
+        );
+        Assertions.assertEquals(eventId, payloadCaptor.getAllValues().get(0).getEventId());
+        Assertions.assertEquals(eventId, payloadCaptor.getAllValues().get(1).getEventId());
+        Assertions.assertTrue(payloadCaptor.getAllValues().get(0).getAsync());
+        Assertions.assertTrue(payloadCaptor.getAllValues().get(1).getAsync());
+    }
+
+    @Test
     void shouldExposeRoleConfirmationDataInToolEndSse() {
         Map<String, Object> transferData = Map.of(
                 "roleName", "林夏",
@@ -340,6 +421,71 @@ class AgentEventPublisherTest {
         Assertions.assertEquals("interaction-1", payload.getInteractionId());
         Assertions.assertEquals("你对这版角色满意吗？", payload.getQuestion());
         Assertions.assertEquals(2, payload.getOptions().size());
+    }
+
+    @Test
+    void shouldExposeAndPersistFlatImageToolFields() {
+        Map<String, Object> arguments = Map.of(
+                "roleName", "林夏",
+                "occupation", "骑士"
+        );
+        this.eventPublisher.publishToolStart(
+                this.context,
+                "role_create_image",
+                "role_generate_role_image",
+                Map.of("toolArguments", arguments)
+        );
+        Map<String, Object> endPayload = new LinkedHashMap<>();
+        endPayload.put("toolArguments", arguments);
+        endPayload.put("contentType", "image");
+        endPayload.put("resourceType", "role_image");
+        endPayload.put("imageUrl", "https://example.com/role.png");
+        endPayload.put("promptCode", "role_image_generate");
+        endPayload.put("promptVersion", "v1");
+        this.eventPublisher.publishToolEnd(
+                this.context,
+                "role_create_image",
+                "role_generate_role_image",
+                true,
+                "已生成角色形象",
+                endPayload
+        );
+
+        ArgumentCaptor<Map<String, Object>> dataCaptor = mapCaptor();
+        Mockito.verify(this.eventService).saveEvent(
+                Mockito.anyString(),
+                Mockito.eq("10001"),
+                Mockito.eq(1001L),
+                Mockito.isNull(),
+                Mockito.eq("tool"),
+                Mockito.eq("role_generate_role_image"),
+                Mockito.eq("role_create_image"),
+                Mockito.eq("tool"),
+                Mockito.eq("已生成角色形象"),
+                Mockito.eq(1),
+                dataCaptor.capture()
+        );
+        Map<String, Object> output = castMap(dataCaptor.getValue().get("output"));
+        Assertions.assertEquals("image", output.get("contentType"));
+        Assertions.assertEquals("role_image", output.get("resourceType"));
+        Assertions.assertEquals("https://example.com/role.png", output.get("imageUrl"));
+        Assertions.assertEquals("role_image_generate", output.get("promptCode"));
+        Assertions.assertEquals("v1", output.get("promptVersion"));
+        Assertions.assertFalse(output.containsKey("result"));
+
+        ArgumentCaptor<SsePayload> payloadCaptor = ArgumentCaptor.forClass(SsePayload.class);
+        Mockito.verify(this.sseConnectionManager).send(
+                Mockito.eq("sse-1"),
+                Mockito.eq("tool.end"),
+                payloadCaptor.capture()
+        );
+        SsePayload payload = payloadCaptor.getValue();
+        Assertions.assertEquals("image", payload.getContentType());
+        Assertions.assertEquals("role_image", payload.getResourceType());
+        Assertions.assertEquals("https://example.com/role.png", payload.getImageUrl());
+        Assertions.assertEquals("role_image_generate", payload.getPromptCode());
+        Assertions.assertEquals("v1", payload.getPromptVersion());
+        Assertions.assertNull(payload.getResult());
     }
 
     @Test

@@ -569,6 +569,170 @@ public class AgentEventPublisher {
     }
 
     /**
+     * 发送异步 tool.start，并立即保存运行中事件。
+     *
+     * @param context 运行上下文
+     * @param eventId 预分配事件ID
+     * @param nodeName 节点名
+     * @param toolName 工具名
+     * @param payload 扩展数据
+     */
+    public void publishAsyncToolStart(AgentContext context,
+                                      String eventId,
+                                      String nodeName,
+                                      String toolName,
+                                      Map<String, Object> payload) {
+        CompleteEventState toolState = new CompleteEventState(
+                eventId,
+                System.currentTimeMillis(),
+                buildToolInput(payload)
+        );
+        getToolStates(context).put(buildToolStateKey(nodeName, toolName), toolState);
+        String content = "开始调用 " + safeText(toolName, "Tool");
+        Map<String, Object> dbData = buildEventData(
+                "tool.start",
+                NodeKind.TOOL,
+                nodeName,
+                null,
+                toolName,
+                null,
+                content,
+                2,
+                payload
+        );
+        Map<String, Object> completeData = buildPendingToolData(toolState);
+        completeData.put("async", Boolean.TRUE);
+        fillContextFields(completeData, context);
+        this.eventService.saveEvent(
+                eventId,
+                context.getMessageId(),
+                context.getSessionId(),
+                context.getAgentSessionId(),
+                "tool",
+                safeText(toolName, nodeName),
+                nodeName,
+                NodeKind.TOOL.name().toLowerCase(),
+                summarize(content),
+                2,
+                completeData
+        );
+        recordEventTrail(context, dbData);
+        this.sseConnectionManager.retain(context.getSseConnectionKey());
+        Map<String, Object> sseData = buildCompactToolEventData("tool.start", toolName, content, 2, payload, null);
+        sendOnlyCompact(context, "tool.start", NodeKind.TOOL, nodeName, content, 2, sseData);
+    }
+
+    /**
+     * 完成异步 Tool，并更新开始时保存的同一条事件。
+     *
+     * @param context 运行上下文
+     * @param eventId 事件ID
+     * @param nodeName 节点名
+     * @param toolName 工具名
+     * @param content 结果摘要
+     * @param payload 结果载荷
+     */
+    public void publishAsyncToolEnd(AgentContext context,
+                                    String eventId,
+                                    String nodeName,
+                                    String toolName,
+                                    String content,
+                                    Map<String, Object> payload) {
+        String summary = safeText(summarize(content), "调用完成 " + safeText(toolName, "Tool"));
+        try {
+            CompleteEventState state = removeToolState(context, nodeName, toolName);
+            Map<String, Object> completeData = buildCompleteToolData(true, content, payload, state);
+            completeData.put("async", Boolean.TRUE);
+            fillContextFields(completeData, context);
+            this.eventService.updateEventResult(eventId, summary, 1, completeData);
+
+            Map<String, Object> dbData = buildEventData(
+                    "tool.end",
+                    NodeKind.TOOL,
+                    nodeName,
+                    null,
+                    toolName,
+                    null,
+                    summary,
+                    1,
+                    payload
+            );
+            recordEventTrail(context, dbData);
+            Map<String, Object> sseData = buildCompactToolEventData(
+                    "tool.end",
+                    toolName,
+                    summary,
+                    1,
+                    payload,
+                    content
+            );
+            sendOnlyCompact(context, "tool.end", NodeKind.TOOL, nodeName, summary, 1, sseData);
+        } finally {
+            this.sseConnectionManager.release(context == null ? null : context.getSseConnectionKey());
+        }
+    }
+
+    /**
+     * 结束失败的异步 Tool，并更新开始时保存的同一条事件。
+     *
+     * @param context 运行上下文
+     * @param eventId 事件ID
+     * @param nodeName 节点名
+     * @param toolName 工具名
+     * @param error 失败原因
+     * @param payload 错误载荷
+     */
+    public void publishAsyncToolError(AgentContext context,
+                                      String eventId,
+                                      String nodeName,
+                                      String toolName,
+                                      Throwable error,
+                                      Map<String, Object> payload) {
+        String message = error == null ? "Tool step failed" : safeText(error.getMessage(), "Tool step failed");
+        try {
+            CompleteEventState state = removeToolState(context, nodeName, toolName);
+            state.setError(buildErrorData(
+                    error == null ? "TOOL_EXECUTION_ERROR" : error.getClass().getSimpleName(),
+                    message
+            ));
+            Map<String, Object> errorPayload = new LinkedHashMap<>();
+            if (payload != null) {
+                errorPayload.putAll(payload);
+            }
+            errorPayload.put("errorCode", error == null ? "TOOL_EXECUTION_ERROR" : error.getClass().getSimpleName());
+            errorPayload.put("errorMessage", message);
+            Map<String, Object> completeData = buildCompleteToolData(false, message, errorPayload, state);
+            completeData.put("async", Boolean.TRUE);
+            fillContextFields(completeData, context);
+            this.eventService.updateEventResult(eventId, summarize(message), 0, completeData);
+
+            Map<String, Object> dbData = buildEventData(
+                    "tool.error",
+                    NodeKind.TOOL,
+                    nodeName,
+                    null,
+                    toolName,
+                    null,
+                    message,
+                    0,
+                    errorPayload
+            );
+            recordEventTrail(context, dbData);
+            Map<String, Object> sseData = buildCompactToolEventData(
+                    "tool.error",
+                    toolName,
+                    message,
+                    0,
+                    errorPayload,
+                    null
+            );
+            sendOnlyCompact(context, "tool.error", NodeKind.TOOL, nodeName, message, 0, sseData);
+        } finally {
+            this.sseConnectionManager.release(context == null ? null : context.getSseConnectionKey());
+        }
+    }
+
+    /**
      * 发送 tool.error，并暂存完整 Tool 事件的错误信息。
      *
      * @param context 运行上下文
@@ -1076,9 +1240,14 @@ public class AgentEventPublisher {
 
         if (success) {
             Map<String, Object> output = new LinkedHashMap<>();
-            Object result = firstValue(payload, "toolData", "resultJson", "structuredResult", "result", "toolPayload");
-            output.put("result", result == null ? content : result);
-            output.put("summary", content);
+            if (isImageToolPayload(payload)) {
+                appendImageFields(output, payload);
+                output.put("summary", content);
+            } else {
+                Object result = firstValue(payload, "toolData", "resultJson", "structuredResult", "result", "toolPayload");
+                output.put("result", result == null ? content : result);
+                output.put("summary", content);
+            }
             complete.put("output", output);
         } else {
             complete.put("output", null);
@@ -1096,6 +1265,18 @@ public class AgentEventPublisher {
         Map<String, Object> metrics = new LinkedHashMap<>();
         metrics.put("toolCallId", state.eventId());
         metrics.put("durationMs", elapsedMillis(state.startedAt()));
+        complete.put("metrics", metrics);
+        return complete;
+    }
+
+    private Map<String, Object> buildPendingToolData(CompleteEventState state) {
+        Map<String, Object> complete = new LinkedHashMap<>();
+        complete.put("input", new LinkedHashMap<>(state.input()));
+        complete.put("output", null);
+        complete.put("error", null);
+        Map<String, Object> metrics = new LinkedHashMap<>();
+        metrics.put("toolCallId", state.eventId());
+        metrics.put("startedAt", state.startedAt());
         complete.put("metrics", metrics);
         return complete;
     }
@@ -1424,7 +1605,14 @@ public class AgentEventPublisher {
                 }
             }
             payload.setToolName(stringValue(data.get("toolName")));
+            payload.setEventId(stringValue(data.get("eventId")));
+            payload.setTaskId(stringValue(data.get("taskId")));
+            payload.setAsync(booleanValue(data.get("async")));
             payload.setContentType(stringValue(data.get("contentType")));
+            payload.setResourceType(stringValue(data.get("resourceType")));
+            payload.setImageUrl(stringValue(data.get("imageUrl")));
+            payload.setPromptCode(stringValue(data.get("promptCode")));
+            payload.setPromptVersion(stringValue(data.get("promptVersion")));
             payload.setResult(data.get("result"));
             payload.setError(stringValue(data.get("error")));
             payload.setQuestion(stringValue(data.get("question")));
@@ -1462,6 +1650,11 @@ public class AgentEventPublisher {
                                                           String rawContent) {
         Map<String, Object> data = new LinkedHashMap<>();
         putString(data, "toolName", toolName);
+        putString(data, "eventId", stringValue(payload == null ? null : payload.get("eventId")));
+        putString(data, "taskId", stringValue(payload == null ? null : payload.get("taskId")));
+        if (payload != null && payload.get("async") != null) {
+            data.put("async", booleanValue(payload.get("async")));
+        }
         if ("tool.start".equals(eventName)) {
             putString(data, "contentType", "progress");
         } else if ("tool.error".equals(eventName)) {
@@ -1473,15 +1666,35 @@ public class AgentEventPublisher {
         } else if (status != null) {
             data.put("status", status);
             appendToolInteraction(data, payload);
-            putString(data, "contentType", data.containsKey("options")
+            String contentType = data.containsKey("options")
                     ? "options"
-                    : resolveToolContentType(payload, rawContent));
-            String preview = buildToolResultPreview(payload, rawContent);
-            if (!sameText(preview, content)) {
-                putString(data, "result", preview);
+                    : resolveToolContentType(payload, rawContent);
+            putString(data, "contentType", contentType);
+            if ("image".equalsIgnoreCase(contentType)) {
+                appendImageFields(data, payload);
+            } else {
+                String preview = buildToolResultPreview(payload, rawContent);
+                if (!sameText(preview, content)) {
+                    putString(data, "result", preview);
+                }
             }
         }
         return data;
+    }
+
+    private boolean isImageToolPayload(Map<String, Object> payload) {
+        return "image".equalsIgnoreCase(stringValue(payload == null ? null : payload.get("contentType")));
+    }
+
+    private void appendImageFields(Map<String, Object> target, Map<String, Object> payload) {
+        if (target == null || payload == null) {
+            return;
+        }
+        putString(target, "contentType", stringValue(payload.get("contentType")));
+        putString(target, "resourceType", stringValue(payload.get("resourceType")));
+        putString(target, "imageUrl", stringValue(payload.get("imageUrl")));
+        putString(target, "promptCode", stringValue(payload.get("promptCode")));
+        putString(target, "promptVersion", stringValue(payload.get("promptVersion")));
     }
 
     private void appendToolInteraction(Map<String, Object> target, Map<String, Object> payload) {
@@ -1585,6 +1798,10 @@ public class AgentEventPublisher {
                 return "json";
             }
             return "text";
+        }
+        String explicitContentType = stringValue(payload.get("contentType"));
+        if (explicitContentType != null) {
+            return explicitContentType;
         }
         if (hasAnyKey(payload, "imageUrl", "imageUrls", "image_urls", "snapshotKey")) {
             return "image";
@@ -1813,6 +2030,14 @@ public class AgentEventPublisher {
         }
         String text = String.valueOf(value).trim();
         return text.isEmpty() ? null : text;
+    }
+
+    private Boolean booleanValue(Object value) {
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        String text = stringValue(value);
+        return text == null ? null : Boolean.valueOf(text);
     }
 
     /**

@@ -14,7 +14,7 @@ import org.jeecg.modules.airag.agent.runtime.AgentModelResolver;
 import org.jeecg.modules.airag.agent.skill.model.SkillLoadResult;
 import org.jeecg.modules.airag.agent.subagent.story.StoryTaskPromptSupport;
 import org.jeecg.modules.airag.agent.subagent.story.tool.StoryConfirmationToolContract;
-import org.jeecg.modules.airag.agent.subagent.story.tool.StoryContinueGenerationToolContract;
+import org.jeecg.modules.airag.agent.subagent.story.tool.StoryGenerateCompleteToolContract;
 import org.jeecg.modules.airag.agent.subagent.story.tool.StoryTaskToolSpec;
 import org.jeecg.modules.airag.agent.tool.ToolCallRequest;
 import org.jeecg.modules.airag.agent.tool.ToolCallResult;
@@ -68,18 +68,15 @@ public class StoryCreateDialogNode extends LlmNode {
         definition.setSkills(List.of("story_create_dialog"));
         definition.setTools(List.of(
                 StoryTaskToolSpec.STORY_REQUEST_CONFIRMATION,
-                StoryTaskToolSpec.STORY_CONTINUE_GENERATION
+                StoryTaskToolSpec.STORY_GENERATE_COMPLETE
         ));
         definition.setPermissions(List.of(
                 StoryTaskToolSpec.STORY_REQUEST_CONFIRMATION,
-                StoryTaskToolSpec.STORY_CONTINUE_GENERATION
+                StoryTaskToolSpec.STORY_GENERATE_COMPLETE
         ));
         definition.setResponseFormat("text");
         definition.setConversationHistoryEnabled(true);
         definition.setUserPromptTemplate("""
-                主 Agent 初始委托（仅作为任务背景）：
-                {{task_description}}
-
                 本轮用户最新输入（请结合上面的历史对话优先处理）：
                 {{user_input}}
                 """);
@@ -112,10 +109,10 @@ public class StoryCreateDialogNode extends LlmNode {
         result.setContent(finalText);
         result.put("stage", "dialog");
         String transferDataJson = oConvertUtils.getString(
-                context == null ? null : context.getAttribute(StoryContinueGenerationToolContract.TRANSFER_DATA_JSON)
+                context == null ? null : context.getAttribute(StoryGenerateCompleteToolContract.TRANSFER_DATA_JSON)
         );
         result.put("hasTransferDataState", oConvertUtils.isNotEmpty(transferDataJson));
-        result.put(StoryContinueGenerationToolContract.TRANSFER_DATA_JSON, transferDataJson);
+        result.put(StoryGenerateCompleteToolContract.TRANSFER_DATA_JSON, transferDataJson);
         return result;
     }
 
@@ -128,9 +125,9 @@ public class StoryCreateDialogNode extends LlmNode {
                 )
         );
         tools.put(
-                StoryContinueGenerationToolContract.buildSpecification(),
+                StoryGenerateCompleteToolContract.buildSpecification(),
                 ImmediateToolExecutor.wrap(
-                        buildToolExecutor(context, StoryTaskToolSpec.STORY_CONTINUE_GENERATION)
+                        buildToolExecutor(context, StoryTaskToolSpec.STORY_GENERATE_COMPLETE)
                 )
         );
         return tools;
@@ -143,7 +140,7 @@ public class StoryCreateDialogNode extends LlmNode {
             request.setArguments(parseArguments(toolExecutionRequest == null ? null : toolExecutionRequest.arguments()));
             ToolCallResult result = executeToolWithSse(context, this.toolRegistry, request);
             if (StoryTaskToolSpec.STORY_REQUEST_CONFIRMATION.equals(toolName)
-                    || StoryTaskToolSpec.STORY_CONTINUE_GENERATION.equals(toolName)) {
+                    || StoryTaskToolSpec.STORY_GENERATE_COMPLETE.equals(toolName)) {
                 suppressRemainingLlmOutput(context);
             }
             Map<String, Object> payload = new LinkedHashMap<>();

@@ -30,6 +30,7 @@ public final class AgentFlowStateSupport {
             "roleGenerateRoleResultJson",
             "roleImageResultJson",
             "roleVoiceResultJson",
+            "roleConfirmationDecision",
             "pendingUserInteraction"
     );
     private static final List<String> STORY_STATE_KEYS = List.of(

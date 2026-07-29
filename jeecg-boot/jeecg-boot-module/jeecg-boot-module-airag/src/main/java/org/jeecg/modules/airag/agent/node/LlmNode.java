@@ -10,6 +10,7 @@ import dev.langchain4j.model.output.TokenUsage;
 import dev.langchain4j.service.TokenStream;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.jeecg.common.util.UUIDGenerator;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.airag.agent.graph.LlmNodeDefinition;
 import org.jeecg.modules.airag.agent.graph.NodeKind;
@@ -355,9 +356,22 @@ public abstract class LlmNode extends BaseAgentNode {
                                                 ToolRegistry toolRegistry,
                                                 ToolCallRequest request) {
         String toolName = request == null ? null : request.getToolName();
+        boolean asynchronous = request != null
+                && Boolean.TRUE.equals(toolRegistry.getDefinition(toolName).getAsynchronous());
         Map<String, Object> startPayload = new LinkedHashMap<>();
         startPayload.put("toolArguments", request == null ? null : request.getArguments());
-        this.eventPublisher.publishToolStart(context, nodeName(), toolName, startPayload);
+        if (asynchronous) {
+            String eventId = UUIDGenerator.generate();
+            String taskId = UUIDGenerator.generate();
+            request.setEventId(eventId);
+            request.setTaskId(taskId);
+            startPayload.put("eventId", eventId);
+            startPayload.put("taskId", taskId);
+            startPayload.put("async", Boolean.TRUE);
+            this.eventPublisher.publishAsyncToolStart(context, eventId, nodeName(), toolName, startPayload);
+        } else {
+            this.eventPublisher.publishToolStart(context, nodeName(), toolName, startPayload);
+        }
         try {
             ToolCallResult result = toolRegistry.execute(context, request);
             Map<String, Object> endPayload = buildToolSsePayload(request, result);
@@ -365,6 +379,20 @@ public abstract class LlmNode extends BaseAgentNode {
             String content = result == null ? "Tool 返回为空" : result.getSummary();
             if (!success && oConvertUtils.isEmpty(content) && result != null) {
                 content = result.getErrorMessage();
+            }
+            if (asynchronous && result != null && result.isAsynchronous()) {
+                return result;
+            }
+            if (asynchronous) {
+                this.eventPublisher.publishAsyncToolEnd(
+                        context,
+                        request.getEventId(),
+                        nodeName(),
+                        toolName,
+                        content,
+                        endPayload
+                );
+                return result;
             }
             this.eventPublisher.publishToolEnd(
                     context,
@@ -378,6 +406,17 @@ public abstract class LlmNode extends BaseAgentNode {
         } catch (RuntimeException ex) {
             Map<String, Object> errorPayload = new LinkedHashMap<>(startPayload);
             errorPayload.put("errorMessage", ex.getMessage());
+            if (asynchronous) {
+                this.eventPublisher.publishAsyncToolError(
+                        context,
+                        request.getEventId(),
+                        nodeName(),
+                        toolName,
+                        ex,
+                        errorPayload
+                );
+                throw ex;
+            }
             this.eventPublisher.publishToolError(context, nodeName(), toolName, ex, errorPayload);
             this.eventPublisher.publishToolEnd(
                     context,
@@ -397,6 +436,14 @@ public abstract class LlmNode extends BaseAgentNode {
         payload.put("toolData", result == null ? null : result.getData());
         payload.put("toolPayload", result == null ? null : result.getPayload());
         payload.put("errorMessage", result == null ? null : result.getErrorMessage());
+        payload.put("eventId", request == null ? null : request.getEventId());
+        payload.put("taskId", request == null ? null : request.getTaskId());
+        payload.put("async", result != null && result.isAsynchronous());
+        payload.put("contentType", result == null ? null : result.getContentType());
+        payload.put("resourceType", result == null ? null : result.getResourceType());
+        payload.put("imageUrl", result == null ? null : result.getImageUrl());
+        payload.put("promptCode", result == null ? null : result.getPromptCode());
+        payload.put("promptVersion", result == null ? null : result.getPromptVersion());
         return payload;
     }
 

@@ -27,6 +27,9 @@ import java.util.Map;
 @Service
 public class MiniMaxMediaServiceImpl implements IMiniMaxMediaService {
     private static final int LOG_MAX_LEN = 800;
+    private static final String DEFAULT_IMAGE_ASPECT_RATIO = "3:4";
+    private static final List<String> SUPPORTED_IMAGE_ASPECT_RATIOS =
+            List.of("1:1", "16:9", "4:3", "3:2", "2:3", "3:4", "9:16", "21:9");
 
     private final RestClient miniMaxRestClient;
     private final MiniMaxDemoConfigBean config;
@@ -149,7 +152,7 @@ public class MiniMaxMediaServiceImpl implements IMiniMaxMediaService {
         Map<String, Object> req = new LinkedHashMap<>();
         req.put("model", config.getImageModel());
         req.put("prompt", prompt);
-        req.put("aspect_ratio", config.getImageAspectRatio());
+        req.put("aspect_ratio", normalizeImageAspectRatio(config.getImageAspectRatio()));
         req.put("response_format", "url");
         if (StringUtils.hasText(referenceImageUrl)) {
             req.put("subject_reference", List.of(Map.of(
@@ -201,6 +204,16 @@ public class MiniMaxMediaServiceImpl implements IMiniMaxMediaService {
             }
         }
         return result;
+    }
+
+    private String normalizeImageAspectRatio(String aspectRatio) {
+        String normalized = StringUtils.hasText(aspectRatio) ? aspectRatio.trim() : null;
+        if (SUPPORTED_IMAGE_ASPECT_RATIOS.contains(normalized)) {
+            return normalized;
+        }
+        log.warn("Invalid MiniMax image aspect ratio '{}', fallback to '{}'. Supported values={}",
+                aspectRatio, DEFAULT_IMAGE_ASPECT_RATIO, SUPPORTED_IMAGE_ASPECT_RATIOS);
+        return DEFAULT_IMAGE_ASPECT_RATIO;
     }
 
     @SuppressWarnings("unchecked")

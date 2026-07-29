@@ -5,8 +5,10 @@ import org.jeecg.modules.airag.agent.subagent.story.tool.StoryTaskToolSpec;
 import org.jeecg.modules.airag.agent.tool.ToolCallRequest;
 import org.jeecg.modules.airag.agent.tool.ToolRegistry;
 import org.jeecg.modules.system.dto.tsstory.TsStoryFullGenerateDto;
+import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneImageGenerateDto;
 import org.jeecg.modules.system.service.ITsStoryGenerateService;
 import org.jeecg.modules.system.vo.tsstory.TsStoryFullGenerateVo;
+import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneImageGenerateVo;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -22,10 +24,14 @@ class StoryTaskToolRegistrarTest {
         ITsStoryGenerateService generateService = Mockito.mock(ITsStoryGenerateService.class);
         Mockito.when(generateService.generateStoryFull(Mockito.any(), Mockito.any()))
                 .thenReturn(new TsStoryFullGenerateVo());
+        TsStoryOneClickSceneImageGenerateVo sceneImageResult = new TsStoryOneClickSceneImageGenerateVo();
+        sceneImageResult.setImageUrl("https://example.com/scene.jpeg");
+        Mockito.when(generateService.generateStorySceneImage(Mockito.any(), Mockito.any()))
+                .thenReturn(sceneImageResult);
         StoryTaskToolRegistrar registrar = new StoryTaskToolRegistrar(toolRegistry, generateService);
         registrar.registerTools();
 
-        Assertions.assertEquals(3, toolRegistry.listDefinitions().size());
+        Assertions.assertEquals(4, toolRegistry.listDefinitions().size());
         Assertions.assertTrue(toolRegistry.listDefinitions().stream()
                 .noneMatch(definition -> "story_confirmation_decision".equals(definition.getName())));
         Assertions.assertTrue(toolRegistry.listDefinitions().stream()
@@ -45,5 +51,21 @@ class StoryTaskToolRegistrarTest {
         Assertions.assertNotNull(context.getAttribute("storyCoreResultJson"));
         Assertions.assertNull(context.getAttribute("storyFullGenerateResult"));
         Assertions.assertNull(context.getAttribute("storyCoreResult"));
+
+        ToolCallRequest imageRequest = new ToolCallRequest();
+        imageRequest.setToolName(StoryTaskToolSpec.STORY_GENERATE_SCENE_IMAGE);
+        imageRequest.setArguments(Map.of(
+                "story_setting", "被海雾笼罩的群岛世界",
+                "site_setting", "午夜的废弃灯塔"
+        ));
+        toolRegistry.execute(context, imageRequest);
+
+        ArgumentCaptor<TsStoryOneClickSceneImageGenerateDto> imageDtoCaptor =
+                ArgumentCaptor.forClass(TsStoryOneClickSceneImageGenerateDto.class);
+        Mockito.verify(generateService).generateStorySceneImage(Mockito.any(), imageDtoCaptor.capture());
+        Assertions.assertEquals("被海雾笼罩的群岛世界", imageDtoCaptor.getValue().getStorySetting());
+        Assertions.assertEquals("午夜的废弃灯塔", imageDtoCaptor.getValue().getSiteSetting());
+        Assertions.assertEquals("9:16", imageDtoCaptor.getValue().getAspectRatio());
+        Assertions.assertNotNull(context.getAttribute("storySceneImageResultJson"));
     }
 }

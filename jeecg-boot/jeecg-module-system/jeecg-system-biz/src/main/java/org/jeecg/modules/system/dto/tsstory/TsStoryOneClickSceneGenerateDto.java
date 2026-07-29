@@ -24,6 +24,8 @@ public class TsStoryOneClickSceneGenerateDto {
     private String plotOutline;
     /** Optional style hint. */
     private String styleHint;
+    /** Confirmed role profiles serialized as JSON. */
+    private String roleProfiles;
     /** 模板模式：core（默认）/site_setting_optimize（仅优化场景设定） */
     private String templateMode;
 
@@ -36,6 +38,7 @@ public class TsStoryOneClickSceneGenerateDto {
         this.sceneSetting = trimToNull(this.sceneSetting);
         this.plotOutline = trimToNull(this.plotOutline);
         this.styleHint = trimToNull(this.styleHint);
+        this.roleProfiles = trimToNull(this.roleProfiles);
         this.templateMode = normalizeTemplateMode(this.templateMode);
     }
 

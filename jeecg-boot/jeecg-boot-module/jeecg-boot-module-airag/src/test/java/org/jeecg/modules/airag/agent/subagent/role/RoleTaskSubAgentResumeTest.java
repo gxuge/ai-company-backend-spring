@@ -3,13 +3,12 @@ package org.jeecg.modules.airag.agent.subagent.role;
 import org.jeecg.modules.airag.agent.graph.NodeResult;
 import org.jeecg.modules.airag.agent.interaction.UserInteractionSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
+import org.jeecg.modules.airag.agent.runtime.AgentHandoffSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentRegistry;
 import org.jeecg.modules.airag.agent.runtime.AgentResult;
 import org.jeecg.modules.airag.agent.runtime.NodeRunner;
 import org.jeecg.modules.airag.agent.subagent.role.node.RoleCreateDialogNode;
-import org.jeecg.modules.airag.agent.subagent.role.node.RoleCreateImageNode;
-import org.jeecg.modules.airag.agent.subagent.role.node.RoleCreateVoiceNode;
-import org.jeecg.modules.airag.agent.subagent.role.tool.RoleContinueGenerationToolContract;
+import org.jeecg.modules.airag.agent.subagent.role.tool.RoleGenerateCompleteToolContract;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,45 +20,14 @@ import java.util.Map;
 class RoleTaskSubAgentResumeTest {
     private NodeRunner nodeRunner;
     private RoleCreateDialogNode dialogNode;
-    private RoleCreateImageNode imageNode;
-    private RoleCreateVoiceNode voiceNode;
     private RoleTaskSubAgent subAgent;
 
     @BeforeEach
     void setUp() {
         this.nodeRunner = Mockito.mock(NodeRunner.class);
         this.dialogNode = Mockito.mock(RoleCreateDialogNode.class);
-        this.imageNode = Mockito.mock(RoleCreateImageNode.class);
-        this.voiceNode = Mockito.mock(RoleCreateVoiceNode.class);
         Mockito.when(this.dialogNode.nodeName()).thenReturn("role_create_dialog");
-        Mockito.when(this.imageNode.nodeName()).thenReturn("role_create_image");
-        Mockito.when(this.voiceNode.nodeName()).thenReturn("role_create_voice");
-        this.subAgent = new RoleTaskSubAgent(
-                this.nodeRunner,
-                this.dialogNode,
-                this.imageNode,
-                this.voiceNode
-        );
-    }
-
-    @Test
-    void shouldResumeAtVoiceWithoutRepeatingEarlierNodes() {
-        AgentContext context = new AgentContext();
-        context.setActiveStage("voice");
-        context.setResumeNodeName("role_create_voice");
-        context.putAttribute("roleCoreResultJson", "{\"name\":\"林夏\"}");
-        context.putAttribute("roleImageResultJson", "{\"url\":\"image\"}");
-        NodeResult voiceResult = NodeResult.success("声音已生成");
-        Mockito.when(this.nodeRunner.run(context, this.voiceNode)).thenReturn(voiceResult);
-
-        AgentResult result = this.subAgent.execute(context);
-
-        Assertions.assertEquals(AgentResult.Status.HANDOFF, result.getStatus());
-        Assertions.assertEquals(AgentRegistry.MAIN_AGENT_CODE, result.getHandoffTargetAgentCode());
-        Assertions.assertEquals(Boolean.TRUE, result.getData().get("completed"));
-        Mockito.verify(this.nodeRunner).run(context, this.voiceNode);
-        Mockito.verify(this.nodeRunner, Mockito.never()).run(context, this.dialogNode);
-        Mockito.verify(this.nodeRunner, Mockito.never()).run(context, this.imageNode);
+        this.subAgent = new RoleTaskSubAgent(this.nodeRunner, this.dialogNode);
     }
 
     @Test
@@ -77,23 +45,6 @@ class RoleTaskSubAgentResumeTest {
     }
 
     @Test
-    void shouldContinueDialogWhenRoleCoreExistsWithoutExplicitConfirmationTool() {
-        AgentContext context = new AgentContext();
-        context.setActiveStage("confirmation");
-        context.putAttribute("roleCoreResultJson", "{\"name\":\"林夏\"}");
-        NodeResult dialogResult = NodeResult.success("我们再完善一下她的经历。");
-        Mockito.when(this.nodeRunner.run(context, this.dialogNode)).thenReturn(dialogResult);
-
-        AgentResult result = this.subAgent.execute(context);
-
-        Assertions.assertEquals(AgentResult.Status.WAITING_USER, result.getStatus());
-        Assertions.assertEquals("dialog", result.getData().get("stage"));
-        Mockito.verify(this.nodeRunner).run(context, this.dialogNode);
-        Mockito.verify(this.nodeRunner, Mockito.never()).run(context, this.imageNode);
-        Mockito.verify(this.nodeRunner, Mockito.never()).run(context, this.voiceNode);
-    }
-
-    @Test
     void shouldWaitForUserWhenConfirmationToolCreatedPendingInteraction() {
         AgentContext context = new AgentContext();
         Map<String, Object> interaction = createPendingConfirmation(context);
@@ -105,37 +56,14 @@ class RoleTaskSubAgentResumeTest {
         Assertions.assertEquals(interaction.get("interactionId"), result.getData().get("interactionId"));
         Assertions.assertEquals(interaction.get("options"), result.getData().get("options"));
         Assertions.assertEquals("这版喜欢吗？✨", result.getContent());
-        Assertions.assertFalse(result.getData().containsKey("summary"));
         Mockito.verifyNoInteractions(this.nodeRunner);
     }
 
     @Test
-    void shouldTreatAcceptedConfirmationAsOrdinaryDialogInput() {
+    void shouldTreatConfirmationReplyAsOrdinaryDialogInput() {
         AgentContext context = new AgentContext();
-        Map<String, Object> interaction = createPendingConfirmation(context);
-        context.setUserInput("喜欢，继续✨");
-        context.putAttribute("interactionId", interaction.get("interactionId"));
-        context.putAttribute("optionValue", RoleConfirmationTransitions.ACCEPT_AND_CONTINUE);
-        NodeResult dialogResult = NodeResult.success("好的，我来继续确认最终设定。");
-        Mockito.when(this.nodeRunner.run(context, this.dialogNode)).thenReturn(dialogResult);
-
-        AgentResult result = this.subAgent.execute(context);
-
-        Assertions.assertEquals(AgentResult.Status.WAITING_USER, result.getStatus());
-        Mockito.verify(this.nodeRunner).run(context, this.dialogNode);
-        Mockito.verify(this.nodeRunner, Mockito.never()).run(context, this.imageNode);
-        Mockito.verify(this.nodeRunner, Mockito.never()).run(context, this.voiceNode);
-        Assertions.assertNull(context.getAttribute("pendingUserInteraction"));
-        Assertions.assertNull(context.getAttribute("optionValue"));
-    }
-
-    @Test
-    void shouldTreatRevisionSelectionAsOrdinaryDialogInput() {
-        AgentContext context = new AgentContext();
-        Map<String, Object> interaction = createPendingConfirmation(context);
+        createPendingConfirmation(context);
         context.setUserInput("再改改吧～");
-        context.putAttribute("interactionId", interaction.get("interactionId"));
-        context.putAttribute("optionValue", RoleConfirmationTransitions.REGENERATE);
         NodeResult dialogResult = NodeResult.success("好的，我重新生成一版角色。");
         Mockito.when(this.nodeRunner.run(context, this.dialogNode)).thenReturn(dialogResult);
 
@@ -144,31 +72,107 @@ class RoleTaskSubAgentResumeTest {
         Assertions.assertEquals(AgentResult.Status.WAITING_USER, result.getStatus());
         Assertions.assertEquals("dialog", result.getData().get("stage"));
         Mockito.verify(this.nodeRunner).run(context, this.dialogNode);
-        Mockito.verify(this.nodeRunner, Mockito.never()).run(context, this.imageNode);
-        Mockito.verify(this.nodeRunner, Mockito.never()).run(context, this.voiceNode);
+        Assertions.assertNull(context.getAttribute("pendingUserInteraction"));
+        Assertions.assertEquals(
+                RoleConfirmationTransitions.DECISION_NONE,
+                RoleTaskPromptSupport.baseVariables(context).get("role_confirmation_decision")
+        );
     }
 
     @Test
-    void shouldContinueWithImageAndVoiceWhenContinueToolIsCalled() {
+    void shouldInjectAcceptedConfirmationDecisionIntoDialogPrompt() {
         AgentContext context = new AgentContext();
-        NodeResult dialogResult = NodeResult.success("");
-        NodeResult imageResult = NodeResult.success("形象已生成");
-        NodeResult voiceResult = NodeResult.success("声音已生成");
+        Map<String, Object> interaction = createPendingConfirmation(context);
+        context.setUserInput("喜欢，继续✨");
+        context.putAttribute(
+                UserInteractionSupport.ATTR_INTERACTION_ID,
+                interaction.get("interactionId")
+        );
+        context.putAttribute(
+                UserInteractionSupport.ATTR_OPTION_VALUE,
+                RoleConfirmationTransitions.ACCEPT_AND_CONTINUE
+        );
         Mockito.when(this.nodeRunner.run(context, this.dialogNode)).thenAnswer(invocation -> {
-            RoleContinueGenerationToolContract.markContinueRequested(context);
+            Assertions.assertEquals(
+                    RoleConfirmationTransitions.DECISION_ACCEPTED,
+                    RoleTaskPromptSupport.baseVariables(context).get("role_confirmation_decision")
+            );
+            return NodeResult.success("好的，开始生成完整角色。");
+        });
+
+        AgentResult result = this.subAgent.execute(context);
+
+        Assertions.assertEquals(AgentResult.Status.WAITING_USER, result.getStatus());
+        Assertions.assertEquals(
+                RoleConfirmationTransitions.DECISION_ACCEPTED,
+                context.getAttribute(RoleConfirmationTransitions.ATTR_CONFIRMATION_DECISION)
+        );
+        Assertions.assertFalse(result.getData().containsKey(
+                RoleConfirmationTransitions.ATTR_CONFIRMATION_DECISION
+        ));
+        Assertions.assertNull(context.getAttribute(UserInteractionSupport.ATTR_OPTION_VALUE));
+    }
+
+    @Test
+    void shouldInjectRevisionRequestedDecisionIntoDialogPrompt() {
+        AgentContext context = new AgentContext();
+        Map<String, Object> interaction = createPendingConfirmation(context);
+        context.setUserInput("再改改吧～");
+        context.putAttribute(
+                UserInteractionSupport.ATTR_INTERACTION_ID,
+                interaction.get("interactionId")
+        );
+        context.putAttribute(
+                UserInteractionSupport.ATTR_OPTION_VALUE,
+                RoleConfirmationTransitions.REGENERATE
+        );
+        Mockito.when(this.nodeRunner.run(context, this.dialogNode)).thenReturn(
+                NodeResult.success("当然可以，想调整哪里呢？")
+        );
+
+        this.subAgent.execute(context);
+
+        Assertions.assertEquals(
+                RoleConfirmationTransitions.DECISION_REVISION_REQUESTED,
+                RoleTaskPromptSupport.baseVariables(context).get("role_confirmation_decision")
+        );
+    }
+
+    @Test
+    void shouldNaturallyHandoffWhenCompleteGenerationIsAccepted() {
+        AgentContext context = new AgentContext();
+        RoleConfirmationTransitions.setDecision(
+                context,
+                RoleConfirmationTransitions.DECISION_ACCEPTED
+        );
+        NodeResult dialogResult = NodeResult.success("");
+        Mockito.when(this.nodeRunner.run(context, this.dialogNode)).thenAnswer(invocation -> {
+            RoleGenerateCompleteToolContract.markAccepted(
+                    context,
+                    "task-1",
+                    "event-1",
+                    "{\"roleName\":\"林夏\"}"
+            );
             return dialogResult;
         });
-        Mockito.when(this.nodeRunner.run(context, this.imageNode)).thenReturn(imageResult);
-        Mockito.when(this.nodeRunner.run(context, this.voiceNode)).thenReturn(voiceResult);
 
         AgentResult result = this.subAgent.execute(context);
 
         Assertions.assertEquals(AgentResult.Status.HANDOFF, result.getStatus());
+        Assertions.assertEquals(AgentRegistry.MAIN_AGENT_CODE, result.getHandoffTargetAgentCode());
+        Assertions.assertEquals("running", result.getData().get("generationStatus"));
+        Assertions.assertEquals(Boolean.TRUE, result.getData().get(
+                AgentHandoffSupport.DATA_END_RUN_AFTER_HANDOFF
+        ));
+        Map<?, ?> handoffPayload = (Map<?, ?>) result.getStructuredResult();
+        Map<?, ?> generationResult = (Map<?, ?>) handoffPayload.get("result");
+        Assertions.assertEquals("task-1", generationResult.get("taskId"));
         Mockito.verify(this.nodeRunner).run(context, this.dialogNode);
-        Mockito.verify(this.nodeRunner).run(context, this.imageNode);
-        Mockito.verify(this.nodeRunner).run(context, this.voiceNode);
         Assertions.assertNull(context.getAttribute(
-                RoleContinueGenerationToolContract.ATTR_CONTINUE_REQUESTED
+                RoleGenerateCompleteToolContract.ATTR_GENERATION_ACCEPTED
+        ));
+        Assertions.assertNull(context.getAttribute(
+                RoleConfirmationTransitions.ATTR_CONFIRMATION_DECISION
         ));
     }
 

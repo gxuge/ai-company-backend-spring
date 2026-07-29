@@ -14,7 +14,7 @@ import org.jeecg.modules.airag.agent.runtime.AgentModelResolver;
 import org.jeecg.modules.airag.agent.skill.model.SkillLoadResult;
 import org.jeecg.modules.airag.agent.subagent.role.RoleTaskPromptSupport;
 import org.jeecg.modules.airag.agent.subagent.role.tool.RoleConfirmationToolContract;
-import org.jeecg.modules.airag.agent.subagent.role.tool.RoleContinueGenerationToolContract;
+import org.jeecg.modules.airag.agent.subagent.role.tool.RoleGenerateCompleteToolContract;
 import org.jeecg.modules.airag.agent.subagent.role.tool.RoleTaskToolSpec;
 import org.jeecg.modules.airag.agent.tool.ToolCallRequest;
 import org.jeecg.modules.airag.agent.tool.ToolCallResult;
@@ -68,18 +68,15 @@ public class RoleCreateDialogNode extends LlmNode {
         definition.setSkills(List.of("role_create_dialog"));
         definition.setTools(List.of(
                 RoleTaskToolSpec.ROLE_REQUEST_CONFIRMATION,
-                RoleTaskToolSpec.ROLE_CONTINUE_GENERATION
+                RoleTaskToolSpec.ROLE_GENERATE_COMPLETE
         ));
         definition.setPermissions(List.of(
                 RoleTaskToolSpec.ROLE_REQUEST_CONFIRMATION,
-                RoleTaskToolSpec.ROLE_CONTINUE_GENERATION
+                RoleTaskToolSpec.ROLE_GENERATE_COMPLETE
         ));
         definition.setResponseFormat("text");
         definition.setConversationHistoryEnabled(true);
         definition.setUserPromptTemplate("""
-                主 Agent 初始委托（仅作为任务背景）：
-                {{task_description}}
-
                 本轮用户最新输入（请结合上面的历史对话优先处理）：
                 {{user_input}}
                 """);
@@ -112,10 +109,10 @@ public class RoleCreateDialogNode extends LlmNode {
         result.setContent(finalText);
         result.put("stage", "dialog");
         String transferDataJson = oConvertUtils.getString(
-                context == null ? null : context.getAttribute(RoleContinueGenerationToolContract.TRANSFER_DATA_JSON)
+                context == null ? null : context.getAttribute(RoleGenerateCompleteToolContract.TRANSFER_DATA_JSON)
         );
         result.put("hasTransferDataState", oConvertUtils.isNotEmpty(transferDataJson));
-        result.put(RoleContinueGenerationToolContract.TRANSFER_DATA_JSON, transferDataJson);
+        result.put(RoleGenerateCompleteToolContract.TRANSFER_DATA_JSON, transferDataJson);
         return result;
     }
 
@@ -128,9 +125,9 @@ public class RoleCreateDialogNode extends LlmNode {
                 )
         );
         tools.put(
-                RoleContinueGenerationToolContract.buildSpecification(),
+                RoleGenerateCompleteToolContract.buildSpecification(),
                 ImmediateToolExecutor.wrap(
-                        buildToolExecutor(context, RoleTaskToolSpec.ROLE_CONTINUE_GENERATION)
+                        buildToolExecutor(context, RoleTaskToolSpec.ROLE_GENERATE_COMPLETE)
                 )
         );
         return tools;
@@ -143,7 +140,7 @@ public class RoleCreateDialogNode extends LlmNode {
             request.setArguments(parseArguments(toolExecutionRequest == null ? null : toolExecutionRequest.arguments()));
             ToolCallResult result = executeToolWithSse(context, this.toolRegistry, request);
             if (RoleTaskToolSpec.ROLE_REQUEST_CONFIRMATION.equals(toolName)
-                    || RoleTaskToolSpec.ROLE_CONTINUE_GENERATION.equals(toolName)) {
+                    || RoleTaskToolSpec.ROLE_GENERATE_COMPLETE.equals(toolName)) {
                 suppressRemainingLlmOutput(context);
             }
             Map<String, Object> payload = new LinkedHashMap<>();

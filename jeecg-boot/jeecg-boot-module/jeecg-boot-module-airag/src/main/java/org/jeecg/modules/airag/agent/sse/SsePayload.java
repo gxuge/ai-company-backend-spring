@@ -42,9 +42,37 @@ public class SsePayload {
      */
     private String toolName;
     /**
+     * Tool事件ID。
+     */
+    private String eventId;
+    /**
+     * 异步任务ID。
+     */
+    private String taskId;
+    /**
+     * 是否为异步Tool。
+     */
+    private Boolean async;
+    /**
      * 内容类型。
      */
     private String contentType;
+    /**
+     * 资源业务类型。
+     */
+    private String resourceType;
+    /**
+     * 图片地址。
+     */
+    private String imageUrl;
+    /**
+     * Prompt 编码。
+     */
+    private String promptCode;
+    /**
+     * Prompt 版本。
+     */
+    private String promptVersion;
     /**
      * 工具结果预览。
      */

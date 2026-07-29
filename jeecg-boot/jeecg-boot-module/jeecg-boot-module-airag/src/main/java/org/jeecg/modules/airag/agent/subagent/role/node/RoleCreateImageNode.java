@@ -138,13 +138,21 @@ public class RoleCreateImageNode extends LlmNode {
             request.setToolName(RoleTaskToolSpec.ROLE_GENERATE_ROLE_IMAGE);
             request.setArguments(parseArguments(toolExecutionRequest == null ? null : toolExecutionRequest.arguments()));
             ToolCallResult result = executeToolWithSse(context, this.toolRegistry, request);
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("success", result == null ? null : result.isSuccess());
-            payload.put("summary", result == null ? null : result.getSummary());
-            payload.put("data", result == null ? null : result.getData());
-            payload.put("errorMessage", result == null ? null : result.getErrorMessage());
-            return JSON.toJSONString(payload);
+            return JSON.toJSONString(buildToolResponse(result));
         };
+    }
+
+    private Map<String, Object> buildToolResponse(ToolCallResult result) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("success", result == null ? null : result.isSuccess());
+        response.put("summary", result == null ? null : result.getSummary());
+        response.put("contentType", result == null ? null : result.getContentType());
+        response.put("resourceType", result == null ? null : result.getResourceType());
+        response.put("imageUrl", result == null ? null : result.getImageUrl());
+        response.put("promptCode", result == null ? null : result.getPromptCode());
+        response.put("promptVersion", result == null ? null : result.getPromptVersion());
+        response.put("errorMessage", result == null ? null : result.getErrorMessage());
+        return response;
     }
 
     private Map<String, Object> parseArguments(String arguments) {

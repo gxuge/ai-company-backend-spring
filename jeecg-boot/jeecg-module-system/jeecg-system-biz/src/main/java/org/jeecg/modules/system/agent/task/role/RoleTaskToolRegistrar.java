@@ -229,7 +229,6 @@ public class RoleTaskToolRegistrar {
         TsRoleOneClickImageGenerateDto dto = new TsRoleOneClickImageGenerateDto();
         Map<String, Object> args = request == null ? null : request.getArguments();
         Map<String, Object> promptVariables = TaskAgentSupport.readMapAttribute(context, "promptVariables");
-        dto.setRoleId(firstLong(args, promptVariables, "roleId", "role_id"));
         dto.setRoleName(firstText(args, promptVariables, "roleName", "role_name"));
         dto.setGender(firstText(args, promptVariables, "gender"));
         dto.setOccupation(firstText(args, promptVariables, "occupation"));
@@ -237,13 +236,16 @@ public class RoleTaskToolRegistrar {
         dto.setStyleName(firstText(args, promptVariables, "styleName", "style_name"));
         dto.setAspectRatio(firstText(args, promptVariables, "aspectRatio", "aspect_ratio"));
         dto.setReferenceImageUrl(firstText(args, promptVariables, "referenceImageUrl", "reference_image_url"));
-        dto.setAsyncGenerate(Boolean.FALSE);
         dto.normalize();
         TsRoleOneClickImageGenerateVo result = this.roleGenerateService.generateRoleImage(user, dto);
-        ToolCallResult callResult = ToolCallResult.success("已生成角色形象", result);
+        ToolCallResult callResult = ToolCallResult.image(
+                "已生成角色形象",
+                "role_image",
+                result == null ? null : result.getImageUrl(),
+                result == null ? null : result.getPromptCode(),
+                result == null ? null : result.getPromptVersion()
+        );
         Map<String, Object> payload = buildCommonPayload(context, request, "role_image", RoleTaskToolSpec.ROLE_GENERATE_ROLE_IMAGE);
-        payload.put("result", result);
-        payload.put("resultJson", JSONObject.toJSONString(result));
         if (context != null) {
             String resultJson = JSONObject.toJSONString(result);
             context.putAttribute("roleImageResultJson", resultJson);

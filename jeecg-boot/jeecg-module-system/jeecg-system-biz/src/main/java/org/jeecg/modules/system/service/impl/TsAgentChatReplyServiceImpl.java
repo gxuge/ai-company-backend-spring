@@ -164,8 +164,7 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         } catch (Exception ex) {
             log.error("Agent流式回复执行失败，sessionId={}, userMessageId={}", runtime.session.getId(), runtime.userMessage.getId(), ex);
         } finally {
-            completeEmitter(emitter);
-            this.sseConnectionManager.remove(connectionKey);
+            this.sseConnectionManager.finishRun(connectionKey);
         }
     }
 

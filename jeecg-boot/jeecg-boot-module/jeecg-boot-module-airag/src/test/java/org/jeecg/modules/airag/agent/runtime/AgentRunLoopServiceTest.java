@@ -97,6 +97,28 @@ class AgentRunLoopServiceTest {
     }
 
     @Test
+    void shouldStopCurrentRunAfterTerminalHandoffToMainAgent() {
+        AgentContext context = new AgentContext();
+        AgentResult handoff = AgentHandoffSupport.buildTerminalCompletedHandoffResult(
+                context,
+                "role_task_agent",
+                "异步生成任务已开始",
+                null
+        );
+        Mockito.when(this.agentRegistry.normalizeStartingAgentCode("role_task_agent"))
+                .thenReturn("role_task_agent");
+        Mockito.when(this.agentRuntimeService.execute(this.roleAgent, context)).thenReturn(handoff);
+
+        AgentRunOutcome outcome = this.runLoopService.run("role_task_agent", context);
+
+        Assertions.assertSame(handoff, outcome.getResult());
+        Assertions.assertEquals(AgentRegistry.MAIN_AGENT_CODE, outcome.getLastAgentCode());
+        Assertions.assertEquals(1, outcome.getSteps().size());
+        Mockito.verify(this.contextPreparer).applyHandoff(context, handoff);
+        Mockito.verify(this.agentRuntimeService, Mockito.never()).execute(this.mainAgent, context);
+    }
+
+    @Test
     void shouldFailWhenHandoffTargetDoesNotExist() {
         AgentContext context = new AgentContext();
         AgentResult handoff = AgentResult.handoffTo("missing_agent", "未知任务");

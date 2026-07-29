@@ -9,6 +9,7 @@ import org.jeecg.modules.aop.TsStoryOwnershipAspect;
 import org.jeecg.modules.aop.TsStoryOwnershipAspect.CheckTsStoryOwnership;
 import org.jeecg.modules.system.dto.tsstory.TsStoryFullGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickOutlineGenerateDto;
+import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneImageGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSettingGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryQueryDto;
@@ -28,6 +29,7 @@ import org.jeecg.modules.system.service.ITsStoryGenerateService;
 import org.jeecg.modules.system.service.ITsStoryService;
 import org.jeecg.modules.system.vo.tsstory.TsStoryFullGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineGenerateVo;
+import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneImageGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSettingGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryVo;
@@ -234,6 +236,15 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
     @Override
     public Result<TsStoryOneClickSceneGenerateVo> generateStoryScene(LoginUser user, TsStoryOneClickSceneGenerateDto request) {
         return Result.OK(tsStoryGenerateService.generateStoryScene(user, request));
+    }
+
+    /**
+     * 生成临时故事场景背景图片，不保存素材或关联故事。
+     */
+    @Override
+    public Result<TsStoryOneClickSceneImageGenerateVo> generateStorySceneImage(
+            LoginUser user, TsStoryOneClickSceneImageGenerateDto request) {
+        return Result.OK(tsStoryGenerateService.generateStorySceneImage(user, request));
     }
 
     @Override

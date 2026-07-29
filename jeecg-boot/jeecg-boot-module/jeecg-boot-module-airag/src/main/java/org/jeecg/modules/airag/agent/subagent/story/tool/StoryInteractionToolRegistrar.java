@@ -3,6 +3,7 @@ package org.jeecg.modules.airag.agent.subagent.story.tool;
 import jakarta.annotation.PostConstruct;
 import org.jeecg.modules.airag.agent.interaction.UserInteractionSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
+import org.jeecg.modules.airag.agent.subagent.story.StoryConfirmationTransitions;
 import org.jeecg.modules.airag.agent.tool.ToolCallRequest;
 import org.jeecg.modules.airag.agent.tool.ToolCallResult;
 import org.jeecg.modules.airag.agent.tool.ToolDefinition;
@@ -58,11 +59,11 @@ public class StoryInteractionToolRegistrar {
         List<Map<String, String>> options = List.of(
                 Map.of(
                         "label", displayCopy.get(StoryConfirmationToolContract.CONFIRM_LABEL),
-                        "value", "ACCEPT_AND_CONTINUE"
+                        "value", StoryConfirmationTransitions.ACCEPT_AND_CONTINUE
                 ),
                 Map.of(
                         "label", displayCopy.get(StoryConfirmationToolContract.REVISE_LABEL),
-                        "value", "REGENERATE"
+                        "value", StoryConfirmationTransitions.REGENERATE
                 )
         );
         String sourceNode = context == null ? null : context.getCurrentNodeName();
@@ -76,6 +77,7 @@ public class StoryInteractionToolRegistrar {
                 null,
                 options
         );
+        StoryConfirmationTransitions.setDecision(context, StoryConfirmationTransitions.DECISION_NONE);
         ToolCallResult result = ToolCallResult.success(question, interaction);
         result.setPayload(new LinkedHashMap<>(interaction));
         return result;

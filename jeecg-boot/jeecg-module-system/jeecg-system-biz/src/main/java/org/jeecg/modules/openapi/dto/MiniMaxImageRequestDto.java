@@ -21,9 +21,17 @@ public class MiniMaxImageRequestDto {
      */
     private String referenceImageUrl;
 
+    /**
+     * 是否将生成结果上传到自有存储。
+     */
+    private Boolean uploadGeneratedMedia;
+
     public void normalize() {
         this.prompt = trimToNull(this.prompt);
         this.referenceImageUrl = trimToNull(this.referenceImageUrl);
+        if (this.uploadGeneratedMedia == null) {
+            this.uploadGeneratedMedia = Boolean.FALSE;
+        }
     }
 
     private static String trimToNull(String value) {

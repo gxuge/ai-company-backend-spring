@@ -1,6 +1,7 @@
 package org.jeecg.modules.airag.agent.subagent.story.tool;
 
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
+import org.jeecg.modules.airag.agent.subagent.story.StoryConfirmationTransitions;
 import org.jeecg.modules.airag.agent.tool.ToolCallRequest;
 import org.jeecg.modules.airag.agent.tool.ToolCallResult;
 import org.jeecg.modules.airag.agent.tool.ToolRegistry;
@@ -43,5 +44,9 @@ class StoryInteractionToolRegistrarTest {
         ), interaction.get("options"));
         Assertions.assertEquals(interaction, context.getAttribute("pendingUserInteraction"));
         Assertions.assertNull(context.getAttribute("transferDataJson"));
+        Assertions.assertEquals(
+                StoryConfirmationTransitions.DECISION_NONE,
+                context.getAttribute(StoryConfirmationTransitions.ATTR_CONFIRMATION_DECISION)
+        );
     }
 }

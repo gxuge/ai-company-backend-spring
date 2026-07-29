@@ -6,6 +6,10 @@
 `type` 推荐值：`feat`、`fix`、`refactor`、`breaking`、`security`、`docs`
 
 ## 记录
+- [2026-07-29] [fix] [agent-runtime] 角色/故事确认选项映射为仅供模型判断的 `NONE/ACCEPTED/REVISION_REQUESTED` 隐藏状态，支持跨轮恢复并注入 Skill Prompt，不写入消息、SSE 或 Agent Event
+- [2026-07-29] [fix] [agent-runtime] 角色/故事创建对话节点停止在 USER Prompt 重复注入主 Agent 初始委托；`task_description` 仅保留在 Skill/System 中，USER 只表达本轮最新输入
+- [2026-07-29] [refactor] [agent-runtime] 角色形象与故事场景图片 Tool 统一为扁平媒体协议；SSE 顶层及事件 `output` 直接提供 `contentType/resourceType/imageUrl/promptCode/promptVersion`，不再嵌套 `result`
+- [2026-07-29] [feat] [ts-story] 新增 `POST /sys/ts-stories/one-click-scene-image` 和 `story_generate_scene_image` Tool；使用 `story_scene_image_generate::v1` 生成临时故事背景原图，不自动入库或关联故事
 - [2026-07-17] [refactor] [agent-runtime] 角色确认拆分为展示型 `role_request_confirmation` 与推进型 `role_continue_generation`；按钮文案按普通用户输入处理，只有后者携带四项角色数据并进入形象、声音生成
 - [2026-07-17] [refactor] [agent-runtime] 角色/故事确认工具移除 `summary` 入参和 SSE 字段，确认型 `tool.end` 仅保留问题、选项与交互控制字段
 - [2026-07-14] [feat] [agent-runtime] Agent 会话新增活动节点、阶段和白名单流程快照；角色/故事子 Agent 可跨消息从具体节点续跑，完成后显式 Handoff 回主 Agent

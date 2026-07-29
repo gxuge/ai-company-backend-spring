@@ -8,11 +8,15 @@ import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.airag.app.entity.AiragApp;
 import org.jeecg.modules.airag.app.mapper.AiragAppMapper;
 import org.jeecg.modules.openapi.config.PromptChatConfigBean;
+import org.jeecg.modules.openapi.dto.MiniMaxImageRequestDto;
+import org.jeecg.modules.openapi.service.IMiniMaxDemoService;
 import org.jeecg.modules.openapi.service.IPromptChatService;
 import org.jeecg.modules.openapi.service.PromptRenderService;
+import org.jeecg.modules.openapi.vo.MiniMaxImageResponseVo;
 import org.jeecg.modules.openapi.vo.PromptRenderedSectionsVo;
 import org.jeecg.modules.system.dto.tsstory.TsStoryFullGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickOutlineGenerateDto;
+import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneImageGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSettingGenerateDto;
 import org.jeecg.modules.system.entity.TsPreset;
@@ -29,6 +33,7 @@ import org.jeecg.modules.system.vo.tsstory.TsStoryFullGeneratePresetTagVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryFullGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineChapterVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineGenerateVo;
+import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneImageGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSettingGenerateVo;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -57,6 +62,10 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     private static final String ENDPOINT_STORY_OUTLINE_GENERATE = "/sys/ts-stories/story--outline-generate";
     private static final String ENDPOINT_STORY_FULL_GENERATE = "/sys/ts-stories/story-full-generate";
     private static final String ENDPOINT_STORY_FULL_GENERATE_PRESET = "/sys/ts-stories/story-full-generate-preset";
+    private static final String PROMPT_CODE_STORY_SCENE = "story_scene_generate";
+    private static final String PROMPT_VERSION_STORY_SCENE = "v1";
+    private static final String PROMPT_CODE_STORY_SCENE_IMAGE = "story_scene_image_generate";
+    private static final String PROMPT_VERSION_STORY_SCENE_IMAGE = "v1";
     private static final String PROMPT_VERSION_V2 = "v2";
     private static final String PROMPT_CODE_STORY_FULL = "story_core_fill";
     private static final String PROMPT_CODE_STORY_SETTING_OPTIMIZE = "story_setting_optimize";
@@ -80,6 +89,8 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     private IPromptChatService promptChatService;
     @Resource
     private PromptRenderService promptRenderService;
+    @Resource
+    private IMiniMaxDemoService miniMaxDemoService;
     @Resource
     private RedisTemplate<String, Object> redisTemplate;
     @Resource
@@ -193,7 +204,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         boolean siteSettingOptimizeMode = dto.isSiteSettingOptimizeMode();
         PromptTemplateRef templateRef = siteSettingOptimizeMode
                 ? new PromptTemplateRef(PROMPT_CODE_STORY_SITE_SETTING_OPTIMIZE, PROMPT_VERSION_V2)
-                : resolvePromptTemplateRef(TemplateScene.SCENE);
+                : new PromptTemplateRef(PROMPT_CODE_STORY_SCENE, PROMPT_VERSION_STORY_SCENE);
 
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
                 templateRef.code(), templateRef.version(),
@@ -279,6 +290,89 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         vo.setRenderedPrompt(renderedPrompt);
         vo.setSnapshotKey(snapshotKey);
         return vo;
+    }
+
+    /**
+     * 生成临时故事场景背景图片，仅返回供应商原始图片地址。
+     */
+    @Override
+    public TsStoryOneClickSceneImageGenerateVo generateStorySceneImage(
+            LoginUser user, TsStoryOneClickSceneImageGenerateDto request) {
+        TsStoryOneClickSceneImageGenerateDto dto =
+                request == null ? new TsStoryOneClickSceneImageGenerateDto() : request;
+        dto.normalize();
+        if (!dto.hasSceneContext()) {
+            throw new JeecgBootBizTipException("storySetting和siteSetting不能同时为空");
+        }
+
+        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
+                PROMPT_CODE_STORY_SCENE_IMAGE,
+                PROMPT_VERSION_STORY_SCENE_IMAGE,
+                StoryPromptGenerateUtil.buildSceneImageVars(dto));
+        JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, "scene-image");
+        String visualPrompt = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("visual_prompt")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("visualPrompt"))
+        );
+        if (!StringUtils.hasText(visualPrompt)) {
+            throw new JeecgBootBizTipException("模型未返回visual_prompt，无法生成故事场景背景图片");
+        }
+
+        String styleName = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("style_name")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("styleName")),
+                dto.getStyleName()
+        );
+        String aspectRatio = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("aspect_ratio")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("aspectRatio")),
+                dto.getAspectRatio()
+        );
+
+        MiniMaxImageRequestDto imageRequest = new MiniMaxImageRequestDto();
+        imageRequest.setPrompt(composeSceneImagePrompt(visualPrompt, styleName, aspectRatio));
+        imageRequest.setReferenceImageUrl(dto.getReferenceImageUrl());
+        imageRequest.setUploadGeneratedMedia(Boolean.FALSE);
+        MiniMaxImageResponseVo imageResponse = miniMaxDemoService.image(imageRequest);
+        String imageUrl = firstOriginalImageUrl(imageResponse);
+        if (!StringUtils.hasText(imageUrl)) {
+            throw new JeecgBootBizTipException("故事场景背景图片生成失败，未返回图片地址");
+        }
+
+        TsStoryOneClickSceneImageGenerateVo vo = new TsStoryOneClickSceneImageGenerateVo();
+        vo.setImageUrl(imageUrl);
+        vo.setPromptCode(PROMPT_CODE_STORY_SCENE_IMAGE);
+        vo.setPromptVersion(PROMPT_VERSION_STORY_SCENE_IMAGE);
+        return vo;
+    }
+
+    /**
+     * 拼装传给图片模型的场景提示词。
+     */
+    private String composeSceneImagePrompt(String visualPrompt, String styleName, String aspectRatio) {
+        StringBuilder builder = new StringBuilder("visual_prompt: ").append(visualPrompt.trim());
+        if (StringUtils.hasText(styleName)) {
+            builder.append('\n').append("style_name: ").append(styleName.trim());
+        }
+        if (StringUtils.hasText(aspectRatio)) {
+            builder.append('\n').append("aspect_ratio: ").append(aspectRatio.trim());
+        }
+        return builder.toString();
+    }
+
+    /**
+     * 从生图响应中读取首个供应商原始图片地址。
+     */
+    private String firstOriginalImageUrl(MiniMaxImageResponseVo imageResponse) {
+        if (imageResponse == null || imageResponse.getOriginalImageUrls() == null) {
+            return null;
+        }
+        for (String url : imageResponse.getOriginalImageUrls()) {
+            if (StringUtils.hasText(url)) {
+                return url.trim();
+            }
+        }
+        return null;
     }
 
     /**

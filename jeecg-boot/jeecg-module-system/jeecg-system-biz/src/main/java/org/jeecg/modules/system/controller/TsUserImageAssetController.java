@@ -9,6 +9,7 @@ import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.system.dto.tsuserimageasset.TsUserImageAssetQueryDto;
+import org.jeecg.modules.system.dto.tsuserimageasset.TsUserImageAssetImportDto;
 import org.jeecg.modules.system.dto.tsuserimageasset.TsUserImageAssetSaveDto;
 import org.jeecg.modules.system.service.ITsUserImageAssetService;
 import org.jeecg.modules.system.vo.tsuserimageasset.TsUserImageAssetVo;
@@ -47,6 +48,12 @@ public class TsUserImageAssetController {
     public Result<TsUserImageAssetVo> createAsset(
             @Validated(TsUserImageAssetSaveDto.Create.class) @RequestBody TsUserImageAssetSaveDto request) {
         return tsUserImageAssetService.addAsset(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
+    }
+    @Operation(summary = "转存远程图片并创建用户图片素材")
+    @PostMapping("/ts-user-image-assets/import")
+    public Result<TsUserImageAssetVo> importAsset(@Validated @RequestBody TsUserImageAssetImportDto request) {
+        return tsUserImageAssetService.importAsset(
+                ((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
     }
     @Operation(summary = "编辑用户图片素材")
     @PutMapping("/ts-user-image-assets")

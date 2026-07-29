@@ -21,9 +21,7 @@ public final class RoleTaskChainSpec {
      * 预留的 skill 顺序。
      */
     public static final List<String> SKILLS = List.of(
-            "role_create_dialog",
-            "role_create_image",
-            "role_create_voice"
+            "role_create_dialog"
     );
 
     /**
@@ -31,9 +29,7 @@ public final class RoleTaskChainSpec {
      */
     public static final List<String> TOOLS = List.of(
             "role_request_confirmation",
-            "role_continue_generation",
-            "role_generate_role_image",
-            "role_generate_role_voice"
+            "role_generate_complete"
     );
 
     /**
@@ -41,8 +37,7 @@ public final class RoleTaskChainSpec {
      */
     public static final List<String> CHAIN = List.of(
             "role_create_dialog",
-            "role_create_image",
-            "role_create_voice"
+            "role_generate_complete"
     );
 
     private RoleTaskChainSpec() {

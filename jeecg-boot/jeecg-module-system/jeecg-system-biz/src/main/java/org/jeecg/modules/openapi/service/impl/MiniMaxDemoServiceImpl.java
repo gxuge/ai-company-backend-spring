@@ -143,12 +143,28 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
                 : miniMaxMediaService.generateImage(requestDto.getPrompt());
         MiniMaxImageResponseVo responseVo = new MiniMaxImageResponseVo();
         responseVo.setOriginalImageUrls(imageUrls);
-        if (miniMaxDemoConfig.isUploadGeneratedMedia()) {
+        if (Boolean.TRUE.equals(requestDto.getUploadGeneratedMedia())) {
             responseVo.setImageUrls(uploadGeneratedImages(imageUrls));
         } else {
             responseVo.setImageUrls(imageUrls);
         }
         return responseVo;
+    }
+
+    @Override
+    public String persistGeneratedImage(String sourceImageUrl) {
+        if (!StringUtils.hasText(sourceImageUrl)) {
+            throw new JeecgBootBizTipException("sourceImageUrl不能为空");
+        }
+        try {
+            byte[] imageBytes = downloadBytes(sourceImageUrl.trim());
+            String extension = guessImageExtension(sourceImageUrl);
+            return uploadBinary(imageBytes, miniMaxDemoConfig.getImageUploadBizPath(), extension);
+        } catch (JeecgBootBizTipException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new JeecgBootBizTipException("保存生成图片失败: " + e.getMessage());
+        }
     }
 
     /**

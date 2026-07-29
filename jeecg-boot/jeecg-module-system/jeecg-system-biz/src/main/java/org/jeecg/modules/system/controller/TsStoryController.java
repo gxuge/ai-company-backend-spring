@@ -10,6 +10,7 @@ import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.system.dto.tsstory.TsStoryFullGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickOutlineGenerateDto;
+import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneImageGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSettingGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryQueryDto;
@@ -17,6 +18,7 @@ import org.jeecg.modules.system.dto.tsstory.TsStorySaveDto;
 import org.jeecg.modules.system.service.ITsStoryService;
 import org.jeecg.modules.system.vo.tsstory.TsStoryFullGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineGenerateVo;
+import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneImageGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSettingGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryVo;
@@ -75,6 +77,14 @@ public class TsStoryController {
     @PostMapping("/ts-stories/story--scene-generate")
     public Result<TsStoryOneClickSceneGenerateVo> generateStoryScene(@RequestBody TsStoryOneClickSceneGenerateDto request) {
         return tsStoryService.generateStoryScene(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
+    }
+
+    @Operation(summary = "Story scene background image generate")
+    @PostMapping("/ts-stories/one-click-scene-image")
+    public Result<TsStoryOneClickSceneImageGenerateVo> generateStorySceneImage(
+            @RequestBody TsStoryOneClickSceneImageGenerateDto request) {
+        return tsStoryService.generateStorySceneImage(
+                ((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
     }
 
     @Operation(summary = "Story outline generate")

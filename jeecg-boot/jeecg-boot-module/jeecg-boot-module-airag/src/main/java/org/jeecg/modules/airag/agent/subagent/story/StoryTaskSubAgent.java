@@ -9,9 +9,8 @@ import org.jeecg.modules.airag.agent.runtime.AgentFlowStateSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentHandoffSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentResult;
 import org.jeecg.modules.airag.agent.runtime.NodeRunner;
-import org.jeecg.modules.airag.agent.subagent.story.node.StoryCreateBackgroundNode;
 import org.jeecg.modules.airag.agent.subagent.story.node.StoryCreateDialogNode;
-import org.jeecg.modules.airag.agent.subagent.story.tool.StoryContinueGenerationToolContract;
+import org.jeecg.modules.airag.agent.subagent.story.tool.StoryGenerateCompleteToolContract;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -20,7 +19,7 @@ import java.util.Map;
 /**
  * 故事子 Agent。
  *
- * <p>故事对话节点通过 Tool 展示确认，用户明确同意后由继续生成 Tool 进入背景 / 场景阶段。</p>
+ * <p>故事对话节点通过 Tool 展示确认，用户明确同意后提交完整故事异步生成任务。</p>
  *
  * @author codex
  * @date 2026/7/11
@@ -29,18 +28,14 @@ import java.util.Map;
 public class StoryTaskSubAgent implements SubAgent {
     private static final String STAGE_DIALOG = "dialog";
     private static final String STAGE_CONFIRMATION = "confirmation";
-    private static final String STAGE_BACKGROUND = "background";
 
     private final NodeRunner nodeRunner;
     private final StoryCreateDialogNode storyCreateDialogNode;
-    private final StoryCreateBackgroundNode storyCreateBackgroundNode;
 
     public StoryTaskSubAgent(NodeRunner nodeRunner,
-                             StoryCreateDialogNode storyCreateDialogNode,
-                             StoryCreateBackgroundNode storyCreateBackgroundNode) {
+                             StoryCreateDialogNode storyCreateDialogNode) {
         this.nodeRunner = nodeRunner;
         this.storyCreateDialogNode = storyCreateDialogNode;
-        this.storyCreateBackgroundNode = storyCreateBackgroundNode;
     }
 
     @Override
@@ -64,10 +59,6 @@ public class StoryTaskSubAgent implements SubAgent {
                 }
             }
 
-            String stage = resolveStage(context);
-            if (STAGE_BACKGROUND.equals(stage)) {
-                return continueWithBackground(context, chainData);
-            }
             return continueWithDialog(context, chainData);
         } catch (Exception ex) {
             AgentResult result = AgentResult.failed(ex.getMessage());
@@ -79,13 +70,18 @@ public class StoryTaskSubAgent implements SubAgent {
     }
 
     /**
-     * 处理 Tool 创建的展示交互；用户回复后只清理交互并重新进入故事对话。
+     * 处理 Tool 创建的展示交互；将选项映射为内部确认状态后重新进入故事对话。
      */
     private AgentResult handlePendingInteraction(AgentContext context,
                                                  Map<String, Object> chainData,
                                                  Map<String, Object> pendingInteraction) {
-        if (context == null || !oConvertUtils.isNotEmpty(context.getUserInput())) {
+        String selectedValue = UserInteractionSupport.resolveSelectedValue(context, pendingInteraction);
+        if ((context == null || !oConvertUtils.isNotEmpty(context.getUserInput()))
+                && !oConvertUtils.isNotEmpty(selectedValue)) {
             return waitingInteraction(context, chainData, pendingInteraction);
+        }
+        if (oConvertUtils.isNotEmpty(selectedValue)) {
+            StoryConfirmationTransitions.applySelectedValue(context, selectedValue);
         }
         UserInteractionSupport.clear(context);
         return null;
@@ -102,8 +98,8 @@ public class StoryTaskSubAgent implements SubAgent {
         if (dialogHandoff != null) {
             return dialogHandoff;
         }
-        if (StoryContinueGenerationToolContract.consumeContinueRequested(context)) {
-            return continueWithBackground(context, chainData);
+        if (StoryGenerateCompleteToolContract.consumeAccepted(context)) {
+            return completeAfterGenerationAccepted(context, chainData);
         }
 
         Map<String, Object> pendingInteraction = UserInteractionSupport.getPending(context);
@@ -118,27 +114,15 @@ public class StoryTaskSubAgent implements SubAgent {
         );
     }
 
-    private AgentResult continueWithBackground(AgentContext context, Map<String, Object> chainData) {
-        markStage(context, STAGE_BACKGROUND, this.storyCreateBackgroundNode.nodeName());
-        NodeResult backgroundResult = this.nodeRunner.run(context, this.storyCreateBackgroundNode);
-        storeNodeResult(context, "storyBackgroundNodeResult", backgroundResult);
-        AgentResult backgroundHandoff = handoffIfNeeded(context, backgroundResult, chainData, "background");
-        if (backgroundHandoff != null) {
-            return backgroundHandoff;
-        }
-
-        String content = backgroundResult == null ? null : backgroundResult.getContent();
-        if (!oConvertUtils.isNotEmpty(content) && context != null) {
-            content = context.getLatestContent();
-        }
-        if (!oConvertUtils.isNotEmpty(content)) {
-            content = "故事已生成完成";
-        }
+    private AgentResult completeAfterGenerationAccepted(AgentContext context,
+                                                        Map<String, Object> chainData) {
+        String content = "完整故事生成任务已开始";
         if (context != null) {
             context.putAttribute("storyTaskStage", "done");
         }
-        Object structuredResult = buildStructuredResult(context, backgroundResult);
-        AgentResult result = AgentHandoffSupport.buildCompletedHandoffResult(
+        StoryConfirmationTransitions.clearDecision(context);
+        Object structuredResult = buildStructuredResult(context);
+        AgentResult result = AgentHandoffSupport.buildTerminalCompletedHandoffResult(
                 context,
                 subAgentName(),
                 content,
@@ -146,7 +130,7 @@ public class StoryTaskSubAgent implements SubAgent {
         );
         result.getData().putAll(chainData);
         result.getData().put("stage", "done");
-        result.getData().put("background", backgroundResult == null ? null : backgroundResult.getData());
+        result.getData().put("generationStatus", "running");
         return result;
     }
 
@@ -186,25 +170,6 @@ public class StoryTaskSubAgent implements SubAgent {
         copyInteractionField(result, interaction, "suspendRun");
         AgentFlowStateSupport.attachResumeData(result, context);
         return result;
-    }
-
-    private String resolveStage(AgentContext context) {
-        if (context == null) {
-            return STAGE_DIALOG;
-        }
-        String stage = oConvertUtils.getString(context.getActiveStage());
-        if (!oConvertUtils.isNotEmpty(stage)) {
-            stage = oConvertUtils.getString(context.getAttribute("storyTaskStage"));
-        }
-        if (!oConvertUtils.isNotEmpty(stage)
-                && this.storyCreateBackgroundNode.nodeName().equalsIgnoreCase(
-                oConvertUtils.getString(context.getResumeNodeName()))) {
-            return STAGE_BACKGROUND;
-        }
-        if (!oConvertUtils.isNotEmpty(stage) || STAGE_CONFIRMATION.equalsIgnoreCase(stage)) {
-            return STAGE_DIALOG;
-        }
-        return stage.trim().toLowerCase();
     }
 
     private void markStage(AgentContext context, String stage, String resumeNodeName) {
@@ -260,21 +225,22 @@ public class StoryTaskSubAgent implements SubAgent {
         }
     }
 
-    private Map<String, Object> buildStructuredResult(AgentContext context, Object backgroundResult) {
+    private Map<String, Object> buildStructuredResult(AgentContext context) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("storyCoreResultJson", context == null ? null : context.getAttribute("storyCoreResultJson"));
         result.put(
-                StoryContinueGenerationToolContract.TRANSFER_DATA_JSON,
-                context == null ? null : context.getAttribute(StoryContinueGenerationToolContract.TRANSFER_DATA_JSON)
+                StoryGenerateCompleteToolContract.TRANSFER_DATA_JSON,
+                context == null ? null : context.getAttribute(StoryGenerateCompleteToolContract.TRANSFER_DATA_JSON)
         );
-        result.put("storyBackgroundResultJson", context == null ? null : context.getAttribute("storyBackgroundResultJson"));
-        result.put("storySceneResultJson", context == null ? null : context.getAttribute("storySceneResultJson"));
-        if (backgroundResult instanceof NodeResult backgroundNodeResult) {
-            result.put("backgroundResult", backgroundNodeResult.getData());
-            result.put("backgroundContent", backgroundNodeResult.getContent());
-        } else {
-            result.put("backgroundResult", backgroundResult);
-        }
+        result.put(
+                "taskId",
+                context == null ? null : context.getAttribute(StoryGenerateCompleteToolContract.ATTR_GENERATION_TASK_ID)
+        );
+        result.put(
+                "eventId",
+                context == null ? null : context.getAttribute(StoryGenerateCompleteToolContract.ATTR_GENERATION_EVENT_ID)
+        );
+        result.put("status", "running");
         return result;
     }
 }

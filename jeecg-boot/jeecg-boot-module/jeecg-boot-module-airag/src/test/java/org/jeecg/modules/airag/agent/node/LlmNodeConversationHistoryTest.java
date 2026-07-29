@@ -8,9 +8,12 @@ import org.jeecg.modules.airag.agent.graph.LlmNodeDefinition;
 import org.jeecg.modules.airag.agent.graph.NodeResult;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentConversationMessage;
+import org.jeecg.modules.airag.agent.subagent.role.node.RoleCreateDialogNode;
+import org.jeecg.modules.airag.agent.subagent.story.node.StoryCreateDialogNode;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 
@@ -98,6 +101,25 @@ class LlmNodeConversationHistoryTest {
 
         Assertions.assertEquals(3, childMessages.size());
         Assertions.assertEquals("用户原始输入", ((UserMessage) childMessages.get(1)).singleText());
+    }
+
+    @Test
+    void shouldKeepTaskDescriptionOnlyInDialogSystemSkill() throws Exception {
+        for (Class<?> nodeType : List.of(RoleCreateDialogNode.class, StoryCreateDialogNode.class)) {
+            LlmNodeDefinition definition = readDefinition(nodeType);
+            String userPrompt = definition.getUserPromptTemplate();
+
+            Assertions.assertNotNull(userPrompt);
+            Assertions.assertTrue(userPrompt.contains("{{user_input}}"));
+            Assertions.assertFalse(userPrompt.contains("{{task_description}}"));
+            Assertions.assertFalse(userPrompt.contains("主 Agent 初始委托"));
+        }
+    }
+
+    private static LlmNodeDefinition readDefinition(Class<?> nodeType) throws Exception {
+        Method method = nodeType.getDeclaredMethod("buildDefinition");
+        method.setAccessible(true);
+        return (LlmNodeDefinition) method.invoke(null);
     }
 
     private static class TestLlmNode extends LlmNode {

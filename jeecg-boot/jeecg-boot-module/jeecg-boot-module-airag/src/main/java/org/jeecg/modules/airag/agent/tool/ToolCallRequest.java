@@ -21,4 +21,12 @@ public class ToolCallRequest {
      * 入参集合。
      */
     private Map<String, Object> arguments = new LinkedHashMap<>();
+    /**
+     * 当前 Tool Event ID。
+     */
+    private String eventId;
+    /**
+     * 异步任务ID。
+     */
+    private String taskId;
 }

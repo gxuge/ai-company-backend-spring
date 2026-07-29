@@ -79,6 +79,7 @@ public class RoleInteractionToolRegistrar {
                 null,
                 options
         );
+        RoleConfirmationTransitions.setDecision(context, RoleConfirmationTransitions.DECISION_NONE);
         ToolCallResult result = ToolCallResult.success(question, interaction);
         result.setPayload(new LinkedHashMap<>(interaction));
         return result;

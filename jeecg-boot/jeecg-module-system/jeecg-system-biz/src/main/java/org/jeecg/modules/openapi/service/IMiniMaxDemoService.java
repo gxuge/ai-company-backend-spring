@@ -35,4 +35,12 @@ public interface IMiniMaxDemoService {
      * @return 文生图响应
      */
     MiniMaxImageResponseVo image(MiniMaxImageRequestDto requestDto);
+
+    /**
+     * 将指定的远程生成图片转存到自有存储。
+     *
+     * @param sourceImageUrl 远程图片地址
+     * @return 自有存储图片地址
+     */
+    String persistGeneratedImage(String sourceImageUrl);
 }

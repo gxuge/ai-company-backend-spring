@@ -25,13 +25,17 @@ public final class StoryTaskToolSpec {
      */
     public static final String STORY_REQUEST_CONFIRMATION = "story_request_confirmation";
     /**
-     * 用户确认满意后显式继续生成故事背景与场景。
+     * 用户确认满意后异步生成并保存完整故事。
      */
-    public static final String STORY_CONTINUE_GENERATION = "story_continue_generation";
+    public static final String STORY_GENERATE_COMPLETE = "story_generate_complete";
     /**
      * 故事背景 / 场景生成工具。
      */
     public static final String STORY_GENERATE_SCENE = "story_generate_scene";
+    /**
+     * 故事场景背景图片生成工具。
+     */
+    public static final String STORY_GENERATE_SCENE_IMAGE = "story_generate_scene_image";
 
     /**
      * 当前故事链路的预留工具列表。
@@ -40,8 +44,9 @@ public final class StoryTaskToolSpec {
             STORY_FULL_GENERATE_PRESET,
             STORY_FULL_GENERATE,
             STORY_REQUEST_CONFIRMATION,
-            STORY_CONTINUE_GENERATION,
-            STORY_GENERATE_SCENE
+            STORY_GENERATE_COMPLETE,
+            STORY_GENERATE_SCENE,
+            STORY_GENERATE_SCENE_IMAGE
     );
 
     private StoryTaskToolSpec() {

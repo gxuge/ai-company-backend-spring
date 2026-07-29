@@ -21,8 +21,7 @@ public final class StoryTaskChainSpec {
      * 故事链路会用到的 skill。
      */
     public static final List<String> SKILLS = List.of(
-            "story_create_dialog",
-            "story_create_background"
+            "story_create_dialog"
     );
 
     /**
@@ -30,8 +29,7 @@ public final class StoryTaskChainSpec {
      */
     public static final List<String> TOOLS = List.of(
             "story_request_confirmation",
-            "story_continue_generation",
-            "story_generate_scene"
+            "story_generate_complete"
     );
 
     /**
@@ -39,7 +37,7 @@ public final class StoryTaskChainSpec {
      */
     public static final List<String> CHAIN = List.of(
             "story_create_dialog",
-            "story_create_background"
+            "story_generate_complete"
     );
 
     private StoryTaskChainSpec() {

@@ -46,4 +46,10 @@ public class ToolDefinition {
      * 是否可重试。
      */
     private Boolean retryable;
+    /**
+     * 是否为异步完成工具。
+     *
+     * <p>异步工具受理后立即返回，但 tool.end/tool.error 由后台任务稍后发布。</p>
+     */
+    private Boolean asynchronous;
 }

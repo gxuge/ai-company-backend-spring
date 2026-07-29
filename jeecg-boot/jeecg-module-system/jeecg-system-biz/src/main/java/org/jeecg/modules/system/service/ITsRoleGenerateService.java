@@ -2,6 +2,7 @@ package org.jeecg.modules.system.service;
 
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateImageByPromptDto;
+import org.jeecg.modules.system.dto.tsrole.TsRoleConfirmedGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateRoleDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateImagePromptByTemplateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateTextByTemplateDto;
@@ -46,6 +47,11 @@ public interface ITsRoleGenerateService {
      * 生成完整角色（设定+形象+声音）。
      */
     TsRoleGenerateRoleVo generateRole(LoginUser user, TsRoleGenerateRoleDto request);
+
+    /**
+     * 使用用户已确认的四个核心字段生成并保存完整角色。
+     */
+    TsRoleGenerateRoleVo generateConfirmedRole(LoginUser user, TsRoleConfirmedGenerateDto request);
 
     /**
      * 直接调用生图模型生成角色形象。

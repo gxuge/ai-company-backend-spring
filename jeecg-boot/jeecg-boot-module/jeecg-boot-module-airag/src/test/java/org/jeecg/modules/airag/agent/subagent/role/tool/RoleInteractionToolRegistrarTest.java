@@ -1,6 +1,7 @@
 package org.jeecg.modules.airag.agent.subagent.role.tool;
 
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
+import org.jeecg.modules.airag.agent.subagent.role.RoleConfirmationTransitions;
 import org.jeecg.modules.airag.agent.tool.ToolCallRequest;
 import org.jeecg.modules.airag.agent.tool.ToolCallResult;
 import org.jeecg.modules.airag.agent.tool.ToolRegistry;
@@ -44,5 +45,9 @@ class RoleInteractionToolRegistrarTest {
         Assertions.assertFalse(String.valueOf(interaction.get("options")).contains("MODIFY"));
         Assertions.assertEquals(interaction, context.getAttribute("pendingUserInteraction"));
         Assertions.assertNull(context.getAttribute("transferDataJson"));
+        Assertions.assertEquals(
+                RoleConfirmationTransitions.DECISION_NONE,
+                context.getAttribute(RoleConfirmationTransitions.ATTR_CONFIRMATION_DECISION)
+        );
     }
 }

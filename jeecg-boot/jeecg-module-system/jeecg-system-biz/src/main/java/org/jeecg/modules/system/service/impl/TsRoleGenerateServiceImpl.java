@@ -15,6 +15,7 @@ import org.jeecg.modules.openapi.service.PromptRenderService;
 import org.jeecg.modules.openapi.vo.MiniMaxImageResponseVo;
 import org.jeecg.modules.openapi.vo.PromptRenderedSectionsVo;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateImageByPromptDto;
+import org.jeecg.modules.system.dto.tsrole.TsRoleConfirmedGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateRoleDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateImagePromptByTemplateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateTextByTemplateDto;
@@ -23,10 +24,9 @@ import org.jeecg.modules.system.dto.tsrole.ImageGenerateRuntimeResult;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickImageGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickSettingGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickVoiceGenerateDto;
-import org.jeecg.modules.system.dto.tsuserimageasset.TsUserImageAssetSaveDto;
+import org.jeecg.modules.system.dto.tsuserimageasset.TsUserImageAssetImportDto;
 import org.jeecg.modules.system.entity.TsPreset;
 import org.jeecg.modules.system.entity.TsPresetTag;
-import org.jeecg.modules.system.entity.TsRoleImageGenerateRecord;
 import org.jeecg.modules.system.entity.TsRole;
 import org.jeecg.modules.system.entity.TsTag;
 import org.jeecg.modules.system.entity.TsUserVoiceConfig;
@@ -35,7 +35,6 @@ import org.jeecg.modules.system.entity.TsVoiceProfileTag;
 import org.jeecg.modules.system.entity.TsVoiceTag;
 import org.jeecg.modules.system.mapper.TsPresetMapper;
 import org.jeecg.modules.system.mapper.TsPresetTagMapper;
-import org.jeecg.modules.system.mapper.TsRoleImageGenerateRecordMapper;
 import org.jeecg.modules.system.mapper.TsRoleMapper;
 import org.jeecg.modules.system.mapper.TsTagMapper;
 import org.jeecg.modules.system.mapper.TsUserVoiceConfigMapper;
@@ -69,7 +68,6 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.concurrent.CompletableFuture;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -109,11 +107,6 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
     private static final int IMAGE_NEGATIVE_PROMPT_TEMPLATE_MAX_LENGTH = 80;
     private static final String DEFAULT_IMAGE_PROMPT_STYLE = "写实风";
     private static final String DEFAULT_PREVIEW_TEXT = "你好呀，很高兴认识你。";
-    private static final String IMAGE_GENERATE_STATUS_PENDING = "pending";
-    private static final String IMAGE_GENERATE_STATUS_RUNNING = "running";
-    private static final String IMAGE_GENERATE_STATUS_SUCCESS = "success";
-    private static final String IMAGE_GENERATE_STATUS_FAILED = "failed";
-    private static final int IMAGE_FAIL_REASON_MAX_LENGTH = 500;
     private static final int VOICE_CANDIDATE_LIMIT = 20;
     private static final BigDecimal DEFAULT_VOICE_PITCH_PERCENT = BigDecimal.ZERO;
     private static final BigDecimal DEFAULT_VOICE_SPEED_RATE = new BigDecimal("1.00");
@@ -162,8 +155,6 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
     private TsUserVoiceConfigMapper tsUserVoiceConfigMapper;
     @Resource
     private TsRoleMapper tsRoleMapper;
-    @Resource
-    private TsRoleImageGenerateRecordMapper tsRoleImageGenerateRecordMapper;
     @Resource
     private RedisTemplate<String, Object> redisTemplate;
 
@@ -271,54 +262,13 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
     }
 
     /**
-     * 一键生成角色形象。
-     * 可无条件生成；若传入角色设定字段则作为上下文参与提示词构建。
+     * 生成临时人物形象，仅返回模型供应商原始图片地址。
      */
     @Override
     public TsRoleOneClickImageGenerateVo generateRoleImage(LoginUser user, TsRoleOneClickImageGenerateDto request) {
         TsRoleOneClickImageGenerateDto dto = request == null ? new TsRoleOneClickImageGenerateDto() : request;
         dto.normalize();
-
-        TsRole role = null;
-        if (dto.getRoleId() != null) {
-            role = tsRoleMapper.selectOwned(dto.getRoleId(), user.getId());
-            if (role == null) {
-                throw new JeecgBootException("角色不存在或无权访问");
-            }
-        }
-
-        // 仅在绑定角色时支持异步任务受理，避免出现无记录可轮询的场景。
-        boolean asyncGenerate = Boolean.TRUE.equals(dto.getAsyncGenerate()) && role != null;
-        if (asyncGenerate) {
-            return submitAsyncImageGenerateTask(user, dto, role);
-        }
-        return generateRoleImageSynchronously(user, dto, role);
-    }
-
-    private TsRoleOneClickImageGenerateVo submitAsyncImageGenerateTask(LoginUser user, TsRoleOneClickImageGenerateDto dto, TsRole role) {
-        TsRoleImageGenerateRecord record = createPendingImageGenerateRecord(user.getId(), role.getId(), dto);
-        Long recordId = record.getId();
-        CompletableFuture.runAsync(() -> processAsyncImageGenerateTask(user, dto, role.getId(), recordId))
-                .exceptionally(ex -> {
-                    log.error("提交异步角色生图任务失败 roleId={}, recordId={}", role.getId(), recordId, ex);
-                    return null;
-                });
-
-        TsRoleOneClickImageGenerateVo vo = new TsRoleOneClickImageGenerateVo();
-        vo.setAccepted(Boolean.TRUE);
-        vo.setGenerateStatus(IMAGE_GENERATE_STATUS_PENDING);
-        vo.setGenerateRecordId(recordId);
-        vo.setPromptCode(PROMPT_CODE_IMAGE);
-        vo.setPromptVersion(PROMPT_VERSION);
-        return vo;
-    }
-
-    private TsRoleOneClickImageGenerateVo generateRoleImageSynchronously(LoginUser user, TsRoleOneClickImageGenerateDto dto, TsRole role) {
         ImageGenerateRuntimeResult runtime = executeImageGenerate(user, dto);
-        if (role != null) {
-            createSuccessImageGenerateRecord(user.getId(), role.getId(), dto, runtime);
-            updateRoleAvatar(role.getId(), runtime.getImageUrl());
-        }
 
         JSONObject snapshot = new JSONObject();
         snapshot.put("type", "image");
@@ -327,7 +277,6 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         snapshot.put("promptRendered", runtime.getRenderedPrompt());
         snapshot.put("imagePrompt", runtime.getImagePrompt());
         snapshot.put("resultImageUrl", runtime.getImageUrl());
-        snapshot.put("assetId", runtime.getAssetId());
         String snapshotKey = RoleGenerateSnapshotUtil.saveSnapshot(redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS,
                 "image", user.getId(), snapshot);
 
@@ -360,11 +309,12 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         MiniMaxImageRequestDto imageRequest = new MiniMaxImageRequestDto();
         imageRequest.setPrompt(imagePrompt);
         imageRequest.setReferenceImageUrl(dto.getReferenceImageUrl());
+        imageRequest.setUploadGeneratedMedia(Boolean.FALSE);
         MiniMaxImageResponseVo imageResponse = miniMaxDemoService.image(imageRequest);
 
         String imageUrl = null;
-        if (imageResponse != null && imageResponse.getImageUrls() != null) {
-            for (String url : imageResponse.getImageUrls()) {
+        if (imageResponse != null && imageResponse.getOriginalImageUrls() != null) {
+            for (String url : imageResponse.getOriginalImageUrls()) {
                 if (StringUtils.hasText(url)) {
                     imageUrl = url.trim();
                     break;
@@ -375,20 +325,11 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
             throw new JeecgBootException("形象生成失败，未返回图片地址");
         }
 
-        TsUserImageAssetSaveDto saveAsset = new TsUserImageAssetSaveDto();
-        saveAsset.setFileUrl(imageUrl);
-        saveAsset.setThumbnailUrl(imageUrl);
-        saveAsset.setFileName("role-image-" + System.currentTimeMillis() + ".png");
-        saveAsset.setSourceType("ai_generate");
-        Result<TsUserImageAssetVo> assetResult = tsUserImageAssetService.addAsset(user, saveAsset);
-        Long assetId = assetResult.getResult() == null ? null : assetResult.getResult().getId();
-
         ImageGenerateRuntimeResult runtime = new ImageGenerateRuntimeResult();
         runtime.setRenderedPrompt(renderedPrompt);
         runtime.setModelJson(modelJson);
         runtime.setImagePrompt(imagePrompt);
         runtime.setImageUrl(imageUrl);
-        runtime.setAssetId(assetId);
         return runtime;
     }
 
@@ -467,100 +408,6 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
             builder.append("风格：").append(normalizedStyle);
         }
         return builder.toString();
-    }
-
-    private void processAsyncImageGenerateTask(LoginUser user, TsRoleOneClickImageGenerateDto dto, Long roleId, Long recordId) {
-        markImageGenerateRunning(recordId);
-        try {
-            ImageGenerateRuntimeResult runtime = executeImageGenerate(user, dto);
-            markImageGenerateSuccess(recordId, runtime);
-            updateRoleAvatar(roleId, runtime.getImageUrl());
-        }
-        catch (Exception ex) {
-            markImageGenerateFailed(recordId, ex);
-            log.error("异步角色生图失败 roleId={}, recordId={}", roleId, recordId, ex);
-        }
-    }
-
-    private TsRoleImageGenerateRecord createPendingImageGenerateRecord(String userId, Long roleId, TsRoleOneClickImageGenerateDto dto) {
-        Date now = new Date();
-        TsRoleImageGenerateRecord record = new TsRoleImageGenerateRecord();
-        record.setRoleId(roleId);
-        record.setUserId(userId);
-        record.setStyleName(dto.getStyleName());
-        record.setSourceProfileUrl(dto.getReferenceImageUrl());
-        record.setGenerateStatus(IMAGE_GENERATE_STATUS_PENDING);
-        record.setCreatedAt(now);
-        record.setUpdatedAt(now);
-        tsRoleImageGenerateRecordMapper.insert(record);
-        return record;
-    }
-
-    private Long createSuccessImageGenerateRecord(String userId, Long roleId, TsRoleOneClickImageGenerateDto dto, ImageGenerateRuntimeResult runtime) {
-        Date now = new Date();
-        TsRoleImageGenerateRecord record = new TsRoleImageGenerateRecord();
-        record.setRoleId(roleId);
-        record.setUserId(userId);
-        record.setPromptText(runtime.getImagePrompt());
-        record.setStyleName(dto.getStyleName());
-        record.setSourceProfileUrl(dto.getReferenceImageUrl());
-        record.setGenerateStatus(IMAGE_GENERATE_STATUS_SUCCESS);
-        record.setResultAssetId(runtime.getAssetId());
-        record.setResultImageUrl(runtime.getImageUrl());
-        record.setExtJson(runtime.getModelJson() == null ? null : runtime.getModelJson().toJSONString());
-        record.setCreatedAt(now);
-        record.setUpdatedAt(now);
-        tsRoleImageGenerateRecordMapper.insert(record);
-        return record.getId();
-    }
-
-    private void markImageGenerateRunning(Long recordId) {
-        TsRoleImageGenerateRecord update = new TsRoleImageGenerateRecord();
-        update.setId(recordId);
-        update.setGenerateStatus(IMAGE_GENERATE_STATUS_RUNNING);
-        update.setUpdatedAt(new Date());
-        tsRoleImageGenerateRecordMapper.updateById(update);
-    }
-
-    private void markImageGenerateSuccess(Long recordId, ImageGenerateRuntimeResult runtime) {
-        TsRoleImageGenerateRecord update = new TsRoleImageGenerateRecord();
-        update.setId(recordId);
-        update.setPromptText(runtime.getImagePrompt());
-        update.setGenerateStatus(IMAGE_GENERATE_STATUS_SUCCESS);
-        update.setResultAssetId(runtime.getAssetId());
-        update.setResultImageUrl(runtime.getImageUrl());
-        update.setFailReason(null);
-        update.setExtJson(runtime.getModelJson() == null ? null : runtime.getModelJson().toJSONString());
-        update.setUpdatedAt(new Date());
-        tsRoleImageGenerateRecordMapper.updateById(update);
-    }
-
-    private void markImageGenerateFailed(Long recordId, Exception ex) {
-        TsRoleImageGenerateRecord update = new TsRoleImageGenerateRecord();
-        update.setId(recordId);
-        update.setGenerateStatus(IMAGE_GENERATE_STATUS_FAILED);
-        update.setFailReason(trimFailureReason(ex));
-        update.setUpdatedAt(new Date());
-        tsRoleImageGenerateRecordMapper.updateById(update);
-    }
-
-    private void updateRoleAvatar(Long roleId, String imageUrl) {
-        TsRole roleUpdate = new TsRole();
-        roleUpdate.setId(roleId);
-        roleUpdate.setAvatarUrl(imageUrl);
-        roleUpdate.setUpdatedAt(new Date());
-        tsRoleMapper.updateById(roleUpdate);
-    }
-
-    private String trimFailureReason(Exception ex) {
-        String message = ex == null ? null : PromptRuntimeUtil.trimToNull(ex.getMessage());
-        if (!StringUtils.hasText(message)) {
-            return "形象生成失败";
-        }
-        if (message.length() <= IMAGE_FAIL_REASON_MAX_LENGTH) {
-            return message;
-        }
-        return message.substring(0, IMAGE_FAIL_REASON_MAX_LENGTH);
     }
 
     /**
@@ -1039,7 +886,6 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         tsRoleMapper.insert(role);
 
         TsRoleOneClickImageGenerateDto imageRequest = new TsRoleOneClickImageGenerateDto();
-        imageRequest.setRoleId(role.getId());
         imageRequest.setRoleName(roleName);
         imageRequest.setGender(gender);
         imageRequest.setOccupation(occupation);
@@ -1048,6 +894,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         imageRequest.setAspectRatio(null);
         imageRequest.setReferenceImageUrl(null);
         TsRoleOneClickImageGenerateVo imageResult = generateRoleImage(user, imageRequest);
+        persistAndAttachRoleImage(user, role, imageResult);
 
         TsRoleOneClickVoiceGenerateDto voiceRequest = new TsRoleOneClickVoiceGenerateDto();
         voiceRequest.setRoleId(role.getId());
@@ -1099,6 +946,111 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         vo.setRenderedPrompt(renderedPrompt);
         vo.setSnapshotKey(snapshotKey);
         return vo;
+    }
+
+    /**
+     * 使用已经确认的四个角色字段生成完整角色，不再重新生成核心设定。
+     */
+    @Override
+    public TsRoleGenerateRoleVo generateConfirmedRole(LoginUser user, TsRoleConfirmedGenerateDto request) {
+        TsRoleConfirmedGenerateDto dto = request == null ? new TsRoleConfirmedGenerateDto() : request;
+        dto.normalize();
+        requireConfirmedRoleFields(dto);
+
+        TsRole role = new TsRole();
+        role.setUserId(user.getId());
+        role.setRoleName(dto.getRoleName());
+        role.setGender(dto.getGender());
+        role.setOccupation(dto.getOccupation());
+        role.setBackgroundStory(dto.getBackgroundStory());
+        role.setStatus(1);
+        role.setIsPublic(0);
+        role.setBasicAiGenerated(1);
+        role.setAdvancedAiGenerated(1);
+        role.setCreatedAt(new Date());
+        role.setUpdatedAt(new Date());
+        tsRoleMapper.insert(role);
+
+        String generationGender = normalizeConfirmedGenerationGender(dto.getGender());
+        TsRoleOneClickImageGenerateDto imageRequest = new TsRoleOneClickImageGenerateDto();
+        imageRequest.setRoleName(dto.getRoleName());
+        imageRequest.setGender(generationGender);
+        imageRequest.setOccupation(dto.getOccupation());
+        imageRequest.setBackgroundStory(dto.getBackgroundStory());
+        TsRoleOneClickImageGenerateVo imageResult = generateRoleImage(user, imageRequest);
+        persistAndAttachRoleImage(user, role, imageResult);
+
+        TsRoleOneClickVoiceGenerateDto voiceRequest = new TsRoleOneClickVoiceGenerateDto();
+        voiceRequest.setRoleId(role.getId());
+        voiceRequest.setRoleName(dto.getRoleName());
+        voiceRequest.setGender(generationGender);
+        voiceRequest.setOccupation(dto.getOccupation());
+        voiceRequest.setBackgroundStory(dto.getBackgroundStory());
+        TsRoleOneClickVoiceGenerateVo voiceResult = generateRoleVoice(user, voiceRequest);
+
+        TsRoleOneClickSettingGenerateVo settingResult = new TsRoleOneClickSettingGenerateVo();
+        settingResult.setRoleName(dto.getRoleName());
+        settingResult.setGender(dto.getGender());
+        settingResult.setOccupation(dto.getOccupation());
+        settingResult.setBackgroundStory(dto.getBackgroundStory());
+
+        TsRoleGenerateRoleVo result = new TsRoleGenerateRoleVo();
+        result.setRoleId(role.getId());
+        result.setSettingResult(settingResult);
+        result.setImageResult(imageResult);
+        result.setVoiceResult(voiceResult);
+        return result;
+    }
+
+    private void persistAndAttachRoleImage(LoginUser user,
+                                           TsRole role,
+                                           TsRoleOneClickImageGenerateVo imageResult) {
+        if (role == null || imageResult == null || !StringUtils.hasText(imageResult.getImageUrl())) {
+            throw new JeecgBootException("角色形象生成失败，无法保存并关联角色");
+        }
+        TsUserImageAssetImportDto importDto = new TsUserImageAssetImportDto();
+        importDto.setSourceImageUrl(imageResult.getImageUrl());
+        importDto.setFileName("role-image-" + System.currentTimeMillis() + ".png");
+        importDto.setSourceType("ai_generate");
+        Result<TsUserImageAssetVo> assetResult = tsUserImageAssetService.importAsset(user, importDto);
+        TsUserImageAssetVo asset = assetResult == null ? null : assetResult.getResult();
+        if (asset == null || !StringUtils.hasText(asset.getFileUrl())) {
+            throw new JeecgBootException("角色形象保存失败，未返回永久图片地址");
+        }
+
+        String persistedImageUrl = asset.getFileUrl().trim();
+        TsRole roleUpdate = new TsRole();
+        roleUpdate.setId(role.getId());
+        roleUpdate.setAvatarUrl(persistedImageUrl);
+        roleUpdate.setUpdatedAt(new Date());
+        tsRoleMapper.updateById(roleUpdate);
+        role.setAvatarUrl(persistedImageUrl);
+        imageResult.setImageUrl(persistedImageUrl);
+    }
+
+    private void requireConfirmedRoleFields(TsRoleConfirmedGenerateDto dto) {
+        if (dto == null
+                || !StringUtils.hasText(dto.getRoleName())
+                || !StringUtils.hasText(dto.getGender())
+                || !StringUtils.hasText(dto.getOccupation())
+                || !StringUtils.hasText(dto.getBackgroundStory())) {
+            throw new IllegalArgumentException("角色名称、性别、职业和角色背景不能为空");
+        }
+    }
+
+    private String normalizeConfirmedGenerationGender(String gender) {
+        String normalized = PromptRuntimeUtil.trimToNull(gender);
+        if (!StringUtils.hasText(normalized)) {
+            return "unknown";
+        }
+        String lower = normalized.toLowerCase();
+        if ("male".equals(lower) || normalized.contains("男")) {
+            return "male";
+        }
+        if ("female".equals(lower) || normalized.contains("女")) {
+            return "female";
+        }
+        return "unknown";
     }
 
     /**

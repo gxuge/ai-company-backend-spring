@@ -46,6 +46,7 @@ public final class StoryTaskPromptSupport {
         }
         variables.putIfAbsent("user_input", oConvertUtils.getString(context == null ? null : context.getUserInput()));
         variables.putIfAbsent("task_description", oConvertUtils.getString(context == null ? null : context.getAttribute("taskDescription")));
+        variables.put("story_confirmation_decision", StoryConfirmationTransitions.currentDecision(context));
         return variables;
     }
 

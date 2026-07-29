@@ -17,16 +17,34 @@ class DeepAgentDefinitionRegistryTest {
         Assertions.assertEquals(List.of("role_generate_role_image"), roleImage.getTools());
         Assertions.assertEquals(List.of("role_create_image"), roleImage.getMetadata().get("chain"));
 
+        DeepAgentDefinition role = registry.require("role_task_agent");
+        Assertions.assertEquals(List.of("role_create_dialog"), role.getSkills());
+        Assertions.assertEquals(List.of(
+                "role_request_confirmation",
+                "role_generate_complete"
+        ), role.getTools());
+        Assertions.assertEquals(
+                List.of("role_create_dialog", "role_generate_complete"),
+                role.getMetadata().get("chain")
+        );
+
         DeepAgentDefinition storyBackground = registry.require("story_background_task_agent");
         Assertions.assertEquals(List.of("story_create_background"), storyBackground.getSkills());
-        Assertions.assertEquals(List.of("story_generate_scene"), storyBackground.getTools());
+        Assertions.assertEquals(List.of(
+                "story_generate_scene",
+                "story_generate_scene_image"
+        ), storyBackground.getTools());
         Assertions.assertEquals(List.of("story_create_background"), storyBackground.getMetadata().get("chain"));
 
         DeepAgentDefinition story = registry.require("story_task_agent");
+        Assertions.assertEquals(List.of("story_create_dialog"), story.getSkills());
         Assertions.assertEquals(List.of(
                 "story_request_confirmation",
-                "story_continue_generation",
-                "story_generate_scene"
+                "story_generate_complete"
         ), story.getTools());
+        Assertions.assertEquals(
+                List.of("story_create_dialog", "story_generate_complete"),
+                story.getMetadata().get("chain")
+        );
     }
 }

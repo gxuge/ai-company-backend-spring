@@ -13,7 +13,6 @@ import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateRoleDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateImagePromptByTemplateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateTextByTemplateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleImagePromptOptimizeDto;
-import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickImageGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickSettingGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickVoiceGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleQueryDto;
@@ -24,7 +23,6 @@ import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateImageByPromptVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateImagePromptByTemplateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateTextByTemplateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleImagePromptOptimizeVo;
-import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickImageGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickSettingGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickVoiceGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleVo;
@@ -76,11 +74,6 @@ public class TsRoleController {
     @PostMapping("/ts-roles/one-click-setting-preset")
     public Result<TsRoleOneClickSettingGenerateVo> generateRoleSettingPreset(@RequestBody TsRoleOneClickSettingGenerateDto request) {
         return tsRoleService.generateRoleSettingPreset(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
-    }
-    @Operation(summary = "Role one-click image generate")
-    @PostMapping("/ts-roles/one-click-image")
-    public Result<TsRoleOneClickImageGenerateVo> generateRoleImage(@RequestBody TsRoleOneClickImageGenerateDto request) {
-        return tsRoleService.generateRoleImage(((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
     }
     @Operation(summary = "Role one-click voice generate")
     @PostMapping("/ts-roles/one-click-voice")

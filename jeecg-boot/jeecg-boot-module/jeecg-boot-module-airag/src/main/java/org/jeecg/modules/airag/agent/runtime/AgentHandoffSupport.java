@@ -25,6 +25,10 @@ public final class AgentHandoffSupport {
      * 上下文中的交还报告字段。
      */
     public static final String ATTR_HANDOFF_TO_MAIN = "agentHandoffToMain";
+    /**
+     * Handoff 后结束当前顶层 Run，不在同一轮执行目标 Agent。
+     */
+    public static final String DATA_END_RUN_AFTER_HANDOFF = "endRunAfterHandoff";
 
     private AgentHandoffSupport() {
     }
@@ -159,6 +163,27 @@ public final class AgentHandoffSupport {
         result.getData().putAll(payload);
         result.getHandoffContext().put("handoffReport", payload);
         return result;
+    }
+
+    /**
+     * 子 Agent 完成职责后切回主 Agent，但不在当前 Run 继续执行主 Agent。
+     */
+    public static AgentResult buildTerminalCompletedHandoffResult(AgentContext context,
+                                                                  String subAgentName,
+                                                                  String content,
+                                                                  Object structuredResult) {
+        AgentResult result = buildCompletedHandoffResult(context, subAgentName, content, structuredResult);
+        result.getData().put(DATA_END_RUN_AFTER_HANDOFF, Boolean.TRUE);
+        return result;
+    }
+
+    /**
+     * 判断 Handoff 后是否应结束当前顶层 Run。
+     */
+    public static boolean shouldEndRunAfterHandoff(AgentResult result) {
+        return result != null
+                && result.getData() != null
+                && Boolean.TRUE.equals(result.getData().get(DATA_END_RUN_AFTER_HANDOFF));
     }
 
     /**
