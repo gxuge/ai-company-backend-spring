@@ -40,7 +40,7 @@ public class TsAgentDeepAgentsMainNode extends LlmNode {
                                      ObjectProvider<DeepAgentTaskToolService> deepAgentTaskToolServiceProvider) {
         super(
                 "ts_agent_deep_agents_main",
-                "DeepAgents 主代理",
+                "DeepAgents Main Agent",
                 buildDefinition(),
                 promptTemplateService,
                 modelResolver,
@@ -52,8 +52,8 @@ public class TsAgentDeepAgentsMainNode extends LlmNode {
 
     private static LlmNodeDefinition buildDefinition() {
         LlmNodeDefinition definition = new LlmNodeDefinition();
-        definition.setName("DeepAgents 主代理");
-        definition.setDescription("负责理解用户目标、读取技能索引、必要时通过 task 委托子 Agent，并输出最终回复。");
+        definition.setName("DeepAgents Main Agent");
+        definition.setDescription("Understands the user's goal, reads the skill index, delegates to a sub-agent through task when needed, and produces the final response.");
         definition.setSkillDomain("chat");
         definition.setSkillTopK(5);
         definition.setSkills(java.util.Collections.emptyList());
@@ -62,19 +62,19 @@ public class TsAgentDeepAgentsMainNode extends LlmNode {
         definition.setResponseFormat("text");
         definition.setConversationHistoryEnabled(true);
         definition.setUserPromptTemplate("""
-                当前用户输入：
+                Current user input:
                 {{user_input}}
 
-                会话摘要：
+                Conversation summary:
                 {{session_summary}}
 
-                已确认信息：
+                Confirmed information:
                 {{confirmed_fields_json}}
 
-                缺失信息：
+                Missing information:
                 {{missing_fields_json}}
 
-                子 Agent 交还报告：
+                Sub-agent handoff report:
                 {{handoff_report_json}}
                 """);
         return definition;

@@ -1,6 +1,8 @@
 package org.jeecg.modules.airag.agent.runtime;
 
 import lombok.Data;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorSupport;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -95,6 +97,17 @@ public class AgentResult {
         result.setStatus(Status.FAILED);
         result.setContent(content);
         return result;
+    }
+
+    /**
+     * 创建带稳定错误码的失败结果。
+     *
+     * @param errorCode 错误码
+     * @param errorArgs 错误参数
+     * @return 结果对象
+     */
+    public static AgentResult failed(AgentErrorCode errorCode, Map<String, Object> errorArgs) {
+        return AgentErrorSupport.failed(errorCode, errorArgs);
     }
 
     /**

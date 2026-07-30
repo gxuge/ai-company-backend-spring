@@ -31,6 +31,12 @@ public class ToolDefinition {
      */
     private String category;
     /**
+     * 预期输出内容类型。
+     *
+     * <p>用于在 tool.start 阶段提前告知前端如何展示加载占位。</p>
+     */
+    private String contentType;
+    /**
      * 输入结构。
      */
     private String inputSchema;

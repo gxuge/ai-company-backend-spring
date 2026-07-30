@@ -57,7 +57,7 @@ public class RoleCreateImageNode extends LlmNode {
     private static LlmNodeDefinition buildDefinition() {
         LlmNodeDefinition definition = new LlmNodeDefinition();
         definition.setName("角色形象生成");
-        definition.setDescription("基于已确认的角色核心设定，生成适合继续出图的形象描述。");
+        definition.setDescription("通过自然对话收集或补全角色的外貌特征、服装造型和气质风格，并生成角色形象图片。");
         definition.setSkillDomain("role");
         definition.setSkillTopK(3);
         definition.setSkills(List.of("role_create_image"));
@@ -65,23 +65,8 @@ public class RoleCreateImageNode extends LlmNode {
         definition.setPermissions(List.of(RoleTaskToolSpec.ROLE_GENERATE_ROLE_IMAGE));
         definition.setResponseFormat("text");
         definition.setUserPromptTemplate("""
-                当前角色核心：
-                {{role_core_result_json}}
-
-                角色名称：
-                {{role_name}}
-
-                性别：
-                {{gender}}
-
-                职业：
-                {{occupation}}
-
-                背景故事：
-                {{background_story}}
-
-                开场白：
-                {{greeting}}
+                本轮输入：
+                {{user_input}}
                 """);
         definition.getMetadata().put("flow", "create-role");
         definition.getMetadata().put("stage", "image");
@@ -90,9 +75,7 @@ public class RoleCreateImageNode extends LlmNode {
 
     @Override
     protected Map<String, String> buildPromptVariables(AgentContext context) {
-        Map<String, String> variables = RoleTaskPromptSupport.baseVariables(context);
-        RoleTaskPromptSupport.appendRoleImageVariables(variables, context);
-        return variables;
+        return RoleTaskPromptSupport.baseVariables(context);
     }
 
     @Override
@@ -116,18 +99,15 @@ public class RoleCreateImageNode extends LlmNode {
 
     private ToolSpecification buildRoleImageSpec() {
         JsonObjectSchema schema = JsonObjectSchema.builder()
-                .addStringProperty("roleId", "已有角色 ID，可为空")
-                .addStringProperty("roleName", "角色名称，可为空")
-                .addStringProperty("gender", "角色性别，可为空")
-                .addStringProperty("occupation", "角色职业或身份，可为空")
-                .addStringProperty("backgroundStory", "角色背景、外观要求或本次生成任务描述")
-                .addStringProperty("styleName", "期望的画面风格，可为空")
-                .addStringProperty("aspectRatio", "期望的画面比例，可为空")
+                .addStringProperty(
+                        "imageDescription",
+                        "完整的中文角色形象描述，必须包含外貌特征、服装造型和气质风格")
                 .addStringProperty("referenceImageUrl", "参考图地址，可为空")
+                .required("imageDescription")
                 .build();
         return ToolSpecification.builder()
                 .name(RoleTaskToolSpec.ROLE_GENERATE_ROLE_IMAGE)
-                .description("根据本次任务描述和已有角色设定生成角色形象")
+                .description("根据完整角色形象描述生成角色图片，参考图可选")
                 .parameters(schema)
                 .build();
     }

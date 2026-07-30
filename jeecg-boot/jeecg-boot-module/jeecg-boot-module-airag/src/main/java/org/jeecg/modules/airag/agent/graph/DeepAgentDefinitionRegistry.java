@@ -54,7 +54,7 @@ public class DeepAgentDefinitionRegistry {
      * @return 定义
      */
     public DeepAgentDefinition require(String name) {
-        return find(name).orElseThrow(() -> new IllegalStateException("未找到 Deep Agent 定义: " + name));
+        return find(name).orElseThrow(() -> new IllegalStateException("Deep Agent definition not found: " + name));
     }
 
     /**
@@ -82,7 +82,7 @@ public class DeepAgentDefinitionRegistry {
      */
     public String describeAvailableDeepAgents() {
         if (this.registry.isEmpty()) {
-            return "无";
+            return "None";
         }
         return this.registry.values().stream()
                 .map(this::describe)
@@ -100,7 +100,11 @@ public class DeepAgentDefinitionRegistry {
     private DeepAgentDefinition buildRoleDefinition() {
         DeepAgentDefinition definition = new DeepAgentDefinition();
         definition.setName("role_task_agent");
-        definition.setDescription("创建角色对话子 Agent，确认后异步生成并保存完整角色。");
+        definition.setDescription(
+                "Creates complete roles. Use when the user asks to create, design, or refine a role, "
+                        + "or asks AI to decide role details. Gather the role name, gender, occupation, "
+                        + "and background story through conversation, then generate the complete role after confirmation. "
+                        + "Do not use for image-only or voice-only requests.");
         definition.setSkillDomain("role");
         definition.setSkillTopK(3);
         definition.setSkills(List.of("role_create_dialog"));
@@ -125,7 +129,11 @@ public class DeepAgentDefinitionRegistry {
     private DeepAgentDefinition buildStoryDefinition() {
         DeepAgentDefinition definition = new DeepAgentDefinition();
         definition.setName("story_task_agent");
-        definition.setDescription("创建故事对话子 Agent，确认后异步生成角色、故事后续内容并保存完整故事。");
+        definition.setDescription(
+                "Creates complete stories. Use when the user asks to create, write, or refine a story, "
+                        + "or asks AI to decide story details. Gather the title, world setting, scene setting, "
+                        + "plot outline, and role information through conversation, then generate the complete story after confirmation. "
+                        + "Do not use for background-image-only requests.");
         definition.setSkillDomain("story");
         definition.setSkillTopK(3);
         definition.setSkills(List.of("story_create_dialog"));
@@ -150,7 +158,11 @@ public class DeepAgentDefinitionRegistry {
     private DeepAgentDefinition buildRoleImageDefinition() {
         DeepAgentDefinition definition = new DeepAgentDefinition();
         definition.setName("role_image_task_agent");
-        definition.setDescription("根据用户提供的角色外观、身份或已有角色设定，直接生成角色形象。");
+        definition.setDescription(
+                "Creates role images. Use for role appearance design, portraits, avatars, full-body images, "
+                        + "or other role image requests. If appearance details are incomplete, gather appearance, "
+                        + "clothing, and overall presence through conversation before generating the image. "
+                        + "Do not use for complete role creation or voice-only requests.");
         definition.setSkillDomain("role");
         definition.setSkillTopK(1);
         definition.setSkills(List.of("role_create_image"));
@@ -166,18 +178,16 @@ public class DeepAgentDefinitionRegistry {
     private DeepAgentDefinition buildStoryBackgroundDefinition() {
         DeepAgentDefinition definition = new DeepAgentDefinition();
         definition.setName("story_background_task_agent");
-        definition.setDescription("根据用户提供的故事方向或已有故事设定，直接生成故事背景与场景。");
+        definition.setDescription(
+                "Creates story scene background images. Use for story backgrounds, scene images, environment concept art, "
+                        + "or other background image requests. If scene details are incomplete, gather the core location, "
+                        + "atmosphere, and key features through conversation before generating the image. "
+                        + "Do not use for complete story creation.");
         definition.setSkillDomain("story");
         definition.setSkillTopK(1);
         definition.setSkills(List.of("story_create_background"));
-        definition.setTools(List.of(
-                "story_generate_scene",
-                "story_generate_scene_image"
-        ));
-        definition.setPermissions(List.of(
-                "story_generate_scene",
-                "story_generate_scene_image"
-        ));
+        definition.setTools(List.of("story_generate_scene_image"));
+        definition.setPermissions(List.of("story_generate_scene_image"));
         definition.setResponseFormat("text");
         definition.getMetadata().put("flow", "create-story-background");
         definition.getMetadata().put("mode", "deep-agents");
@@ -190,12 +200,12 @@ public class DeepAgentDefinitionRegistry {
      */
     private String describe(DeepAgentDefinition definition) {
         if (definition == null) {
-            return "未命名 Deep Agent";
+            return "Unnamed Deep Agent";
         }
         StringBuilder builder = new StringBuilder();
         builder.append(definition.getName());
         if (definition.getDescription() != null && !definition.getDescription().isBlank()) {
-            builder.append("：").append(definition.getDescription());
+            builder.append(": ").append(definition.getDescription());
         }
         if (definition.getSkills() != null && !definition.getSkills().isEmpty()) {
             builder.append(" | skills=").append(definition.getSkills());

@@ -418,6 +418,51 @@
 - Session、Message、Event Controller 已拆分，原 Session/Message 路由保持兼容。
 - 新事件分页与详情接口按当前登录用户、会话和消息归属过滤。
 
+### 任务 ID
+`20260730-unified-draft-crud`
+
+### 背景
+- 角色草稿与故事草稿当前依赖正式业务表的状态字段，草稿保存会污染正式角色、故事数据。
+- 草稿箱只需要按类型展示摘要并恢复完整页面快照，角色与故事可以共用统一资源。
+
+### 目标
+- 新增统一草稿表 `ts_draft`，通过 `draft_type=role/story` 区分业务类型。
+- 新增 `/sys/ts-drafts` 标准增删改查，列表和详情均返回完整 `content` 对象。
+- 所有接口必须按当前登录用户进行归属过滤，删除采用软删除。
+
+### 范围
+- 范围内：Entity、DTO/PO/VO、Mapper/XML、Service、Controller、归属 AOP、数据库迁移、测试和文档。
+- 范围外：本轮不修改角色/故事正式保存接口，不接入前端页面，不实现草稿发布为正式数据的聚合接口。
+
+### 执行步骤
+1. 新增统一草稿模型、数据库表和类型约束。
+2. 实现分页、详情、新增、编辑、删除以及用户归属校验。
+3. 补充 JSON 快照转换测试、Mapper XML 校验和模块编译。
+4. 更新 API 文档、ADR、变更记录和验证证据。
+
+### 进度
+- [x] 步骤 1：规则、现有 CRUD 分层和数据库风格分析
+- [x] 步骤 2：草稿模型与 CRUD 实现
+- [x] 步骤 3：数据库迁移与测试
+- [x] 步骤 4：文档和验证证据回写
+
+### 风险与回滚
+- 风险：`content_json` 可能较大，当前前端固定按 20 条分页读取；草稿量增长后再评估摘要列。
+- 风险：旧前端仍调用角色/故事正式保存接口，需要后续单独切换到草稿接口。
+- 回滚：回退草稿模块代码并执行 `DROP TABLE ts_draft`；草稿表与正式业务表无外键，不影响角色、故事数据。
+
+### 验证记录
+- 跨模块编译：`mvn -pl jeecg-module-system/jeecg-system-biz -am -DskipTests compile`，结果 `BUILD SUCCESS`。
+- 定向测试：JUnit Platform Launcher 执行 `TsDraftModelTest`，3 条成功、0 条失败。
+- Mapper XML：PowerShell XML 解析通过；归属 SQL、软删除条件和显式排序检查通过。
+- 格式检查：目标文件 `git diff --check` 通过，API 文档和 Mapper XML 已按原文件规范保持 UTF-8 BOM 与 CRLF。
+- 测试限制：完整 Maven `test` 被仓库既有 `AiragPromptTemplateServiceTest.java:77` 类型错误阻塞，与本次草稿接口无关。
+
+### 结果
+- 新增统一草稿表和 `/sys/ts-drafts` 增删改查接口，`role/story` 共用同一资源。
+- 列表、详情及写接口均返回完整 `content` JSON 对象，不重复维护 `cardData`。
+- 查询、详情、更新和删除均按当前登录用户过滤，删除采用软删除。
+
 ### 节点来源扩展（2026-07-14）
 - 目标：事件表增加 `node_name/node_type`，正式助手消息增加 `source_node_name/source_event_id`。
 - 规则：最后一个成功且返回非空正文的节点作为助手消息来源；Gate 返回追问时 Gate 即为来源节点。

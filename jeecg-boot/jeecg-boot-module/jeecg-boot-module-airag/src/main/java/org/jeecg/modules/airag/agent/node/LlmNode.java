@@ -27,6 +27,7 @@ import org.jeecg.modules.airag.agent.skill.runtime.SkillRuntimeService;
 import org.jeecg.modules.airag.agent.skill.tool.SkillTools;
 import org.jeecg.modules.airag.agent.tool.ToolCallRequest;
 import org.jeecg.modules.airag.agent.tool.ToolCallResult;
+import org.jeecg.modules.airag.agent.tool.ToolDefinition;
 import org.jeecg.modules.airag.agent.tool.ToolRegistry;
 import org.jeecg.modules.airag.agent.tool.control.AgentControlToolService;
 import org.jeecg.modules.airag.agent.trace.AgentLlmTraceRequest;
@@ -356,10 +357,14 @@ public abstract class LlmNode extends BaseAgentNode {
                                                 ToolRegistry toolRegistry,
                                                 ToolCallRequest request) {
         String toolName = request == null ? null : request.getToolName();
-        boolean asynchronous = request != null
-                && Boolean.TRUE.equals(toolRegistry.getDefinition(toolName).getAsynchronous());
+        ToolDefinition toolDefinition = request == null ? null : toolRegistry.getDefinition(toolName);
+        boolean asynchronous = toolDefinition != null
+                && Boolean.TRUE.equals(toolDefinition.getAsynchronous());
         Map<String, Object> startPayload = new LinkedHashMap<>();
         startPayload.put("toolArguments", request == null ? null : request.getArguments());
+        if (toolDefinition != null && oConvertUtils.isNotEmpty(toolDefinition.getContentType())) {
+            startPayload.put("contentType", toolDefinition.getContentType());
+        }
         if (asynchronous) {
             String eventId = UUIDGenerator.generate();
             String taskId = UUIDGenerator.generate();
@@ -376,7 +381,7 @@ public abstract class LlmNode extends BaseAgentNode {
             ToolCallResult result = toolRegistry.execute(context, request);
             Map<String, Object> endPayload = buildToolSsePayload(request, result);
             boolean success = result != null && result.isSuccess();
-            String content = result == null ? "Tool 返回为空" : result.getSummary();
+            String content = result == null ? "Tool returned no result" : result.getSummary();
             if (!success && oConvertUtils.isEmpty(content) && result != null) {
                 content = result.getErrorMessage();
             }

@@ -1,12 +1,14 @@
 package org.jeecg.common.api.vo;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import org.jeecg.common.constant.CommonConstant;
 
 import java.io.Serializable;
+import java.util.Map;
 
 /**
  *   接口返回数据格式
@@ -31,6 +33,26 @@ public class Result<T> implements Serializable {
 	 */
 	@Schema(description = "返回处理消息")
 	private String message = "";
+
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = "成功消息码")
+	private String messageCode;
+
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = "错误码")
+	private String errorCode;
+
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = "错误分类")
+	private String errorCategory;
+
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@Schema(description = "是否建议重试")
+	private Boolean retryable;
+
+	@JsonInclude(JsonInclude.Include.NON_EMPTY)
+	@Schema(description = "错误消息参数")
+	private Map<String, Object> errorArgs;
 
 	/**
 	 * 返回代码

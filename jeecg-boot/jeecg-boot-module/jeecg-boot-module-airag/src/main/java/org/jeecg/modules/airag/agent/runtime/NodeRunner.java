@@ -1,6 +1,8 @@
 package org.jeecg.modules.airag.agent.runtime;
 
 import lombok.extern.slf4j.Slf4j;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorException;
 import org.jeecg.modules.airag.agent.graph.AgentNode;
 import org.jeecg.modules.airag.agent.graph.LlmNodeDefinition;
 import org.jeecg.modules.airag.agent.graph.NodeKind;
@@ -27,6 +29,14 @@ import java.util.Map;
 @Component
 @Slf4j
 public class NodeRunner {
+    /**
+     * 所有 Agent LLM 节点统一注入的回复语言 Skill。
+     */
+    private static final String AGENT_RESPONSE_LANGUAGE_SKILL = "agent_response_language";
+    /**
+     * 所有子 Agent LLM 节点统一注入的回复风格 Skill。
+     */
+    private static final String SUB_AGENT_RESPONSE_STYLE_SKILL = "subagent_response_style";
     /**
      * 事件发布器。
      */
@@ -67,7 +77,10 @@ public class NodeRunner {
         if (node.kind() == NodeKind.TOOL) {
             return runToolNode(context, (ToolNode) node);
         }
-        throw new IllegalArgumentException("不支持的节点类型：" + node.kind());
+        throw new AgentErrorException(
+                AgentErrorCode.RUNTIME_NODE_TYPE_UNSUPPORTED,
+                Map.of("nodeKind", String.valueOf(node.kind()))
+        );
     }
 
     /**
@@ -113,9 +126,13 @@ public class NodeRunner {
             return;
         }
         LlmNodeDefinition definition = node.getDefinition();
-        List<String> skillCodes = definition.getSkills();
-        if (skillCodes == null || skillCodes.isEmpty()) {
-            return;
+        List<String> skillCodes = new ArrayList<>();
+        skillCodes.add(AGENT_RESPONSE_LANGUAGE_SKILL);
+        if (isSubAgentContext(context)) {
+            skillCodes.add(SUB_AGENT_RESPONSE_STYLE_SKILL);
+        }
+        if (definition.getSkills() != null) {
+            skillCodes.addAll(definition.getSkills());
         }
         List<String> loadedSkillCodes = new ArrayList<>();
         StringBuilder prompt = new StringBuilder();
@@ -137,8 +154,41 @@ public class NodeRunner {
                 log.warn("加载节点 Skill 失败，nodeName={}, skillCode={}", node.nodeName(), skillCode, ex);
             }
         }
+        if (loadedSkillCodes.contains(AGENT_RESPONSE_LANGUAGE_SKILL)) {
+            appendPrompt(prompt, AgentResponseLanguageSupport.buildInstruction(context));
+        }
         context.putAttribute("loadedNodeSkillCodes", loadedSkillCodes);
         context.putAttribute("nodeSkillPrompt", prompt.toString().trim());
+    }
+
+    /**
+     * 追加一段节点系统提示词。
+     *
+     * @param prompt 提示词容器
+     * @param content 追加内容
+     */
+    private void appendPrompt(StringBuilder prompt, String content) {
+        if (prompt == null || !StringUtils.hasText(content)) {
+            return;
+        }
+        if (prompt.length() > 0) {
+            prompt.append("\n\n");
+        }
+        prompt.append(content.trim());
+    }
+
+    /**
+     * 判断当前 LLM 节点是否运行在子 Agent 上下文。
+     */
+    private boolean isSubAgentContext(AgentContext context) {
+        if (context == null) {
+            return false;
+        }
+        if (context.getAttribute("subAgentDefinition") != null) {
+            return true;
+        }
+        Object subAgentName = context.getAttribute("taskSubAgentName");
+        return subAgentName != null && StringUtils.hasText(String.valueOf(subAgentName));
     }
 
     /**

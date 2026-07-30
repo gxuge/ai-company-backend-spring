@@ -27,6 +27,8 @@ import org.jeecg.modules.system.mapper.TsPresetTagMapper;
 import org.jeecg.modules.system.mapper.TsTagMapper;
 import org.jeecg.modules.system.service.ITsStoryGenerateService;
 import org.jeecg.modules.system.util.PromptRuntimeUtil;
+import org.jeecg.modules.system.util.TsPromptLanguageInjector;
+import org.jeecg.modules.system.util.TsResponseLanguageSupport;
 import org.jeecg.modules.system.util.StoryGenerateSnapshotUtil;
 import org.jeecg.modules.system.util.StoryPromptGenerateUtil;
 import org.jeecg.modules.system.vo.tsstory.TsStoryFullGeneratePresetTagVo;
@@ -121,6 +123,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
                 templateRef.code(), templateRef.version(),
                 settingOptimizeMode ? StoryPromptGenerateUtil.buildSettingOptimizeVars(dto) : StoryPromptGenerateUtil.buildSettingVars(dto));
+        TsPromptLanguageInjector.inject(promptSections);
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson;
         boolean generated = true;
@@ -147,7 +150,13 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         String title = settingOptimizeMode ? null : PromptRuntimeUtil.firstNonBlank(
                 PromptRuntimeUtil.trimToNull(modelJson.getString("title")),
                 dto.getTitle(),
-                "Original Story " + System.currentTimeMillis());
+                TsResponseLanguageSupport.text(
+                        "原创故事 ",
+                        "原創故事 ",
+                        "Original Story ",
+                        "オリジナルストーリー ",
+                        "قصة أصلية "
+                ) + System.currentTimeMillis());
         String storyIntro = settingOptimizeMode ? null : PromptRuntimeUtil.firstNonBlank(
                 PromptRuntimeUtil.trimToNull(modelJson.getString("story_intro")),
                 dto.getStoryIntro());
@@ -209,6 +218,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
                 templateRef.code(), templateRef.version(),
                 siteSettingOptimizeMode ? StoryPromptGenerateUtil.buildSceneOptimizeVars(dto) : StoryPromptGenerateUtil.buildSceneVars(dto));
+        TsPromptLanguageInjector.inject(promptSections);
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson;
         boolean generated = true;
@@ -229,17 +239,35 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
                     PromptRuntimeUtil.trimToNull(modelJson.getString("scene_summary")),
                     PromptRuntimeUtil.trimToNull(modelJson.getString("scene_desc")),
                     dto.getSceneSetting(),
-                    "这是一个等待你继续完善的场景。");
+                    TsResponseLanguageSupport.text(
+                            "这是一个等待你继续完善的场景。",
+                            "這是一個等待你繼續完善的場景。",
+                            "This scene is ready for further refinement.",
+                            "このシーンは、さらに詳細を追加できます。",
+                            "هذا المشهد جاهز لإضافة المزيد من التفاصيل."
+                    ));
         } else {
             String sceneNameSnapshot = PromptRuntimeUtil.firstNonBlank(
                     PromptRuntimeUtil.trimToNull(modelJson.getString("scene_name_snapshot")),
                     PromptRuntimeUtil.trimToNull(modelJson.getString("scene_name")),
                     dto.getSceneSetting(),
-                    "未命名场景");
+                    TsResponseLanguageSupport.text(
+                            "未命名场景",
+                            "未命名場景",
+                            "Untitled Scene",
+                            "無題のシーン",
+                            "مشهد بلا عنوان"
+                    ));
             sceneSummary = PromptRuntimeUtil.firstNonBlank(
                     PromptRuntimeUtil.trimToNull(modelJson.getString("scene_summary")),
                     PromptRuntimeUtil.trimToNull(modelJson.getString("scene_desc")),
-                    "这是一个等待你继续完善的场景。");
+                    TsResponseLanguageSupport.text(
+                            "这是一个等待你继续完善的场景。",
+                            "這是一個等待你繼續完善的場景。",
+                            "This scene is ready for further refinement.",
+                            "このシーンは、さらに詳細を追加できます。",
+                            "هذا المشهد جاهز لإضافة المزيد من التفاصيل."
+                    ));
             List<String> sceneElements = StoryPromptGenerateUtil.parseStringList(modelJson.get("scene_elements"));
             JSONObject snapshot = new JSONObject();
             snapshot.put("type", "scene-setting");
@@ -302,7 +330,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
                 request == null ? new TsStoryOneClickSceneImageGenerateDto() : request;
         dto.normalize();
         if (!dto.hasSceneContext()) {
-            throw new JeecgBootBizTipException("storySetting和siteSetting不能同时为空");
+            throw new JeecgBootBizTipException("故事场景描述不能为空");
         }
 
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
@@ -390,6 +418,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
                 templateRef.code(), templateRef.version(),
                 chapterMode ? StoryPromptGenerateUtil.buildOutlineVars(dto) : StoryPromptGenerateUtil.buildOutlineOptimizeVars(dto));
+        TsPromptLanguageInjector.inject(promptSections);
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson;
         try {
@@ -449,6 +478,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
 
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
                 PROMPT_CODE_STORY_FULL, PROMPT_VERSION_V2, buildStoryFullVars(dto));
+        TsPromptLanguageInjector.inject(promptSections);
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, "story-full-generate");
 
@@ -500,6 +530,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
                 PROMPT_CODE_STORY_FULL_PRESET, PROMPT_VERSION_STORY_FULL_PRESET,
                 buildStoryFullPresetVars(dto, preset, tagsByType)
         );
+        TsPromptLanguageInjector.inject(promptSections);
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, "story-full-generate-preset");
 

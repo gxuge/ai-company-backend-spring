@@ -2,6 +2,7 @@ package org.jeecg.modules.airag.agent.runtime;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
 import org.jeecg.modules.airag.agent.graph.Agent;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -49,7 +50,10 @@ public class AgentRunLoopService {
         for (int stepIndex = 1; stepIndex <= MAX_AGENT_STEPS; stepIndex++) {
             Optional<Agent> agentOptional = this.agentRegistry.find(currentAgentCode);
             if (agentOptional.isEmpty()) {
-                AgentResult failed = AgentResult.failed("未找到Agent：" + currentAgentCode);
+                AgentResult failed = AgentResult.failed(
+                        AgentErrorCode.RUNTIME_AGENT_NOT_FOUND,
+                        Map.of("agentCode", currentAgentCode)
+                );
                 failed.getData().put("missingAgentCode", currentAgentCode);
                 return new AgentRunOutcome(failed, currentAgentCode, steps);
             }
@@ -65,7 +69,13 @@ public class AgentRunLoopService {
 
             String targetAgentCode = this.agentRegistry.normalizeCode(stepResult.getHandoffTargetAgentCode());
             if (!StringUtils.hasText(targetAgentCode) || !this.agentRegistry.exists(targetAgentCode)) {
-                AgentResult failed = AgentResult.failed("Handoff目标Agent不存在：" + targetAgentCode);
+                AgentResult failed = AgentResult.failed(
+                        AgentErrorCode.RUNTIME_HANDOFF_TARGET_NOT_FOUND,
+                        Map.of(
+                                "sourceAgentCode", currentAgentCode,
+                                "targetAgentCode", targetAgentCode == null ? "" : targetAgentCode
+                        )
+                );
                 failed.getData().put("sourceAgentCode", currentAgentCode);
                 failed.getData().put("targetAgentCode", targetAgentCode);
                 return new AgentRunOutcome(failed, currentAgentCode, steps);
@@ -81,7 +91,10 @@ public class AgentRunLoopService {
             }
         }
 
-        AgentResult failed = AgentResult.failed("Agent Handoff次数超过限制");
+        AgentResult failed = AgentResult.failed(
+                AgentErrorCode.RUNTIME_HANDOFF_LIMIT_EXCEEDED,
+                Map.of("maxAgentSteps", MAX_AGENT_STEPS)
+        );
         String lastExecutedAgentCode = steps.isEmpty()
                 ? currentAgentCode
                 : steps.get(steps.size() - 1).getAgentCode();

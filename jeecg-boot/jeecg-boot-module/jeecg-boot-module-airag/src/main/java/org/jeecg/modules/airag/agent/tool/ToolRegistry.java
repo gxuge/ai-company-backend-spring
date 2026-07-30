@@ -3,8 +3,9 @@ package org.jeecg.modules.airag.agent.tool;
 import lombok.extern.slf4j.Slf4j;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import org.jeecg.common.exception.JeecgBootBizTipException;
 import org.jeecg.common.util.AssertUtils;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorException;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.trace.AgentToolTraceContextBridge;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -59,7 +60,10 @@ public class ToolRegistry {
     public ToolDefinition getDefinition(String toolName) {
         ToolDefinition definition = this.toolDefinitions.get(toolName);
         if (definition == null) {
-            throw new JeecgBootBizTipException("未找到工具定义：" + toolName);
+            throw new AgentErrorException(
+                    AgentErrorCode.TOOL_COMMON_NOT_FOUND,
+                    Map.of("toolName", toolName == null ? "" : toolName)
+            );
         }
         return definition;
     }
@@ -134,8 +138,15 @@ public class ToolRegistry {
      * @return 工具结果
      */
     public ToolCallResult execute(AgentContext context, ToolCallRequest request) {
-        AssertUtils.assertNotEmpty("工具请求不能为空", request);
-        AssertUtils.assertNotEmpty("工具名称不能为空", request.getToolName());
+        if (request == null) {
+            throw new AgentErrorException(AgentErrorCode.TOOL_COMMON_REQUEST_INVALID);
+        }
+        if (request.getToolName() == null || request.getToolName().isBlank()) {
+            throw new AgentErrorException(
+                    AgentErrorCode.TOOL_COMMON_REQUEST_INVALID,
+                    Map.of("field", "toolName")
+            );
+        }
         ToolDefinition definition = getDefinition(request.getToolName());
         AgentToolTraceContextBridge.Scope scope = openTraceScope(context, request.getToolName());
         try {

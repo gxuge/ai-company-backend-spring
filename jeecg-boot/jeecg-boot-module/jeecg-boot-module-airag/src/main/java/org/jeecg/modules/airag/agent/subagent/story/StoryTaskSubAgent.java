@@ -1,6 +1,8 @@
 package org.jeecg.modules.airag.agent.subagent.story;
 
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorSupport;
 import org.jeecg.modules.airag.agent.graph.NodeResult;
 import org.jeecg.modules.airag.agent.graph.SubAgent;
 import org.jeecg.modules.airag.agent.interaction.UserInteractionSupport;
@@ -61,7 +63,11 @@ public class StoryTaskSubAgent implements SubAgent {
 
             return continueWithDialog(context, chainData);
         } catch (Exception ex) {
-            AgentResult result = AgentResult.failed(ex.getMessage());
+            AgentResult result = AgentErrorSupport.failed(
+                    AgentErrorCode.RUNTIME_SUBAGENT_EXECUTION_FAILED,
+                    Map.of("subAgentName", subAgentName())
+            );
+            AgentErrorSupport.attach(result, ex, AgentErrorCode.RUNTIME_SUBAGENT_EXECUTION_FAILED);
             result.getData().putAll(chainData);
             result.getData().put("stage", "failed");
             AgentFlowStateSupport.attachResumeData(result, context);
@@ -116,7 +122,7 @@ public class StoryTaskSubAgent implements SubAgent {
 
     private AgentResult completeAfterGenerationAccepted(AgentContext context,
                                                         Map<String, Object> chainData) {
-        String content = "完整故事生成任务已开始";
+        String content = "Story generation has started";
         if (context != null) {
             context.putAttribute("storyTaskStage", "done");
         }
@@ -135,7 +141,7 @@ public class StoryTaskSubAgent implements SubAgent {
     }
 
     private AgentResult waiting(AgentContext context, String content, Map<String, Object> chainData, String stage) {
-        String text = oConvertUtils.isNotEmpty(content) ? content : "请继续补充故事设定。";
+        String text = oConvertUtils.isNotEmpty(content) ? content : "Please continue describing the story.";
         markStage(context, stage, this.storyCreateDialogNode.nodeName());
         AgentResult result = AgentResult.waitingUser(text);
         result.setStructuredResult(chainData);
@@ -155,7 +161,7 @@ public class StoryTaskSubAgent implements SubAgent {
                                            Map<String, Object> interaction) {
         String question = oConvertUtils.getString(interaction.get("question"));
         if (!oConvertUtils.isNotEmpty(question)) {
-            question = "你对这版故事满意吗？";
+            question = "Are you satisfied with this story?";
         }
         markStage(context, STAGE_CONFIRMATION, this.storyCreateDialogNode.nodeName());
         AgentResult result = AgentResult.waitingUser(question);

@@ -1,6 +1,8 @@
 package org.jeecg.modules.airag.agent.tool;
 
 import lombok.Data;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorSupport;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -29,6 +31,22 @@ public class ToolCallResult {
      * 错误信息。
      */
     private String errorMessage;
+    /**
+     * 稳定业务错误码。
+     */
+    private String errorCode;
+    /**
+     * 错误分类。
+     */
+    private String errorCategory;
+    /**
+     * 是否建议重试。
+     */
+    private Boolean retryable;
+    /**
+     * 错误插值参数。
+     */
+    private Map<String, Object> errorArgs = new LinkedHashMap<>();
     /**
      * 扩展载荷。
      */
@@ -116,6 +134,29 @@ public class ToolCallResult {
         result.setSuccess(false);
         result.setErrorMessage(errorMessage);
         result.setSummary(errorMessage);
+        return result;
+    }
+
+    /**
+     * 创建带稳定错误码的失败结果。
+     *
+     * @param errorCode 错误码
+     * @param errorArgs 错误参数
+     * @return 失败结果
+     */
+    public static ToolCallResult failure(AgentErrorCode errorCode, Map<String, Object> errorArgs) {
+        AgentErrorSupport.ResolvedError resolved = new AgentErrorSupport.ResolvedError(
+                errorCode,
+                errorArgs,
+                null
+        );
+        Map<String, Object> payload = AgentErrorSupport.toPayload(resolved);
+        ToolCallResult result = failure(resolved.code().defaultMessage());
+        result.setErrorCode(resolved.code().code());
+        result.setErrorCategory(resolved.code().category());
+        result.setRetryable(resolved.code().retryable());
+        result.setErrorArgs(new LinkedHashMap<>(resolved.args()));
+        result.setPayload(new LinkedHashMap<>(payload));
         return result;
     }
 

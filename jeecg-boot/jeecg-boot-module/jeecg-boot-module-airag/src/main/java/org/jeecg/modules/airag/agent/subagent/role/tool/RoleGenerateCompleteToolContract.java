@@ -3,6 +3,8 @@ package org.jeecg.modules.airag.agent.subagent.role.tool;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorException;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 
 import java.util.LinkedHashMap;
@@ -92,13 +94,19 @@ public final class RoleGenerateCompleteToolContract {
     public static Map<String, Object> requireTransferData(Map<String, Object> arguments) {
         Object rawTransferData = arguments == null ? null : arguments.get(TRANSFER_DATA);
         if (!(rawTransferData instanceof Map<?, ?> rawMap)) {
-            throw new IllegalArgumentException("transferData 必须是包含角色核心字段的对象");
+            throw new AgentErrorException(
+                    AgentErrorCode.TOOL_ROLE_GENERATION_REQUIRED_FIELD_MISSING,
+                    Map.of("field", TRANSFER_DATA)
+            );
         }
         Map<String, Object> transferData = new LinkedHashMap<>();
         for (String field : TRANSFER_FIELDS) {
             String value = normalize(rawMap.get(field));
             if (!oConvertUtils.isNotEmpty(value)) {
-                throw new IllegalArgumentException("transferData." + field + " 不能为空");
+                throw new AgentErrorException(
+                        AgentErrorCode.TOOL_ROLE_GENERATION_REQUIRED_FIELD_MISSING,
+                        Map.of("field", TRANSFER_DATA + "." + field)
+                );
             }
             transferData.put(field, value);
         }

@@ -163,7 +163,37 @@ Agent SSE 确认交互说明：
 | PUT | `/ts-story-chapters` | 编辑章节 |
 | DELETE | `/ts-story-chapters` | 删除章节 |
 
-### 3.4 公开浏览与公开管理
+### 3.4 统一草稿
+
+角色与故事草稿使用同一资源，通过 `draftType` 区分类型。所有接口仅访问当前登录用户的数据。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/ts-drafts` | 分页查询草稿及完整 `content`，可按类型、名称和来源 ID 筛选 |
+| GET | `/ts-drafts/detail` | 查询单条草稿并返回完整 `content` |
+| POST | `/ts-drafts` | 新增角色或故事草稿 |
+| PUT | `/ts-drafts` | 编辑角色或故事草稿 |
+| DELETE | `/ts-drafts` | 软删除草稿 |
+
+查询参数：
+- `pageNo/pageSize`：默认 `1/10`，`pageSize` 最大为 `100`。
+- `draftType`：可选，只允许 `role` 或 `story`。
+- `keyword`：可选，按草稿名称模糊查询。
+- `sourceId`：可选，筛选来自指定正式角色或故事的草稿。
+
+新增或编辑参数：
+- `id`：仅编辑时必填。
+- `draftType`：必填，只允许 `role` 或 `story`。
+- `draftName`：必填，最大 200 个字符。
+- `sourceId`：可选，记录来源正式资源 ID，不会修改该资源。
+- `content`：必填 JSON 对象，保存页面完整状态快照。
+
+响应说明：
+- 列表、详情、新增和编辑均返回完整结构化 `content`；前端直接从该字段组装草稿卡片并恢复页面。
+- 当前草稿箱按较小分页读取完整 JSON，不额外维护重复的 `cardData`。
+- 删除设置 `status=0`；已删除草稿不会出现在列表或详情中。
+
+### 3.5 公开浏览与公开管理
 公开浏览接口默认用于前台访问；公开管理接口用于上架、审核、下架流程。
 
 | 方法 | 路径 | 说明 |
@@ -203,7 +233,7 @@ Agent SSE 确认交互说明：
 | POST | `/ts-story-publics/offline` | 下架故事公开记录 |
 | GET | `/ts-story-publics/story-options` | 故事公开目标下拉 |
 
-### 3.5 预设与标签资源
+### 3.6 预设与标签资源
 以下资源型控制器均遵循统一的标准 CRUD 形态：`list / add / edit / queryById / delete / deleteBatch`。
 
 | 控制器 | 基础路径 | 说明 |
@@ -214,7 +244,7 @@ Agent SSE 确认交互说明：
 | `TsTagTypeController` | `/sys/tsTagType` | 标签类型字典 |
 | `TsTagRelationController` | `/sys/tsTagRelation` | 标签关系规则 |
 
-### 3.6 音色与资产
+### 3.7 音色与资产
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/ts-voice-profiles` | 音色档案分页查询 |
@@ -236,7 +266,7 @@ Agent SSE 确认交互说明：
 | POST | `/ts-voice-tags` | 新增音色标签 |
 | DELETE | `/ts-voice-tags` | 删除音色标签 |
 
-### 3.7 AI 日志与 MCP
+### 3.8 AI 日志与 MCP
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/tsAiLog/list` | AI 调用日志分页查询 |

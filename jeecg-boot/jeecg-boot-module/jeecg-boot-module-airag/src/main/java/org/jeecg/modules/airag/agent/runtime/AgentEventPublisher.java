@@ -4,13 +4,14 @@ import com.alibaba.fastjson2.JSONObject;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.modules.airag.agent.entity.TsAgentChatMessageEventEntity;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorSupport;
 import org.jeecg.modules.airag.agent.graph.NodeKind;
 import org.jeecg.modules.airag.agent.sse.SseConnectionManager;
 import org.jeecg.modules.airag.agent.sse.SsePayload;
 import org.jeecg.modules.airag.agent.service.TsAgentChatMessageEventService;
 import org.jeecg.common.util.UUIDGenerator;
 import org.jeecg.common.util.oConvertUtils;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -18,7 +19,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Agent 事件发布器。
@@ -34,11 +34,6 @@ public class AgentEventPublisher {
      * DeepAgents 内部委托工具名。
      */
     private static final String INTERNAL_TASK_TOOL = "task";
-
-    /**
-     * Redis 缓存过期时间，单位分钟。
-     */
-    private static final long BUFFER_EXPIRE_MINUTES = 30L;
 
     /**
      * 展示摘要最大长度。
@@ -64,9 +59,9 @@ public class AgentEventPublisher {
      */
     private final SseConnectionManager sseConnectionManager;
     /**
-     * Redis 客户端。
+     * 当前进程内的 LLM 增量文本缓冲。
      */
-    private final RedisTemplate redisTemplate;
+    private final Map<String, StringBuffer> llmBuffers = new ConcurrentHashMap<>();
 
     /**
      * 发送 agent.start。
@@ -82,14 +77,14 @@ public class AgentEventPublisher {
                 null,
                 null,
                 agentName,
-                "开始执行 " + safeText(agentName, "Agent"),
+                "Starting " + safeText(agentName, "Agent"),
                 null,
                 null
         );
         fillContextFields(dbData, context);
         Map<String, Object> sseData = buildCompactAgentEventData(context, agentName, null, "running", null);
         recordEventTrail(context, dbData);
-        sendOnlyCompact(context, "agent.start", null, agentName, "开始执行 " + safeText(agentName, "Agent"), 2, sseData);
+        sendOnlyCompact(context, "agent.start", null, agentName, "Starting " + safeText(agentName, "Agent"), 2, sseData);
     }
 
     /**
@@ -133,7 +128,7 @@ public class AgentEventPublisher {
     public void publishSubAgentStart(AgentContext context, String subAgentName, Map<String, Object> payload) {
         context.setLastCompletedSubAgentEventId(null);
         sendOnlyCustomCompact(context, "subagent.start", "subagent", subAgentName,
-                "开始执行 " + safeText(subAgentName, "SubAgent"), 2);
+                "Starting " + safeText(subAgentName, "SubAgent"), 2);
     }
 
     /**
@@ -166,8 +161,13 @@ public class AgentEventPublisher {
                                      String subAgentName,
                                      Throwable error,
                                      Map<String, Object> payload) {
+        AgentErrorSupport.ResolvedError resolved = AgentErrorSupport.resolve(
+                error,
+                AgentErrorCode.RUNTIME_SUBAGENT_EXECUTION_FAILED
+        );
+        Map<String, Object> errorPayload = AgentErrorSupport.toPayload(resolved);
         sendOnlyCustomCompact(context, "subagent.error", "subagent", subAgentName,
-                error == null ? "SubAgent step failed" : error.getMessage(), 0);
+                resolved.code().defaultMessage(), 0, errorPayload);
     }
 
     /**
@@ -190,12 +190,12 @@ public class AgentEventPublisher {
                 promptCode,
                 null,
                 null,
-                "开始生成",
+                "Generating",
                 2,
                 null
         );
         recordEventTrail(context, dbData);
-        sendOnlyCompact(context, "llm.start", NodeKind.LLM, nodeName, "开始生成", 2, null);
+        sendOnlyCompact(context, "llm.start", NodeKind.LLM, nodeName, "Generating", 2, null);
     }
 
     /**
@@ -216,7 +216,7 @@ public class AgentEventPublisher {
     }
 
     /**
-     * 发送 llm.delta，并写入 Redis buffer。
+     * 发送 llm.delta，并写入进程内 buffer。
      *
      * @param context 运行上下文
      * @param nodeName 节点名
@@ -249,12 +249,12 @@ public class AgentEventPublisher {
      * @param error 错误对象
      */
     public void publishLlmError(AgentContext context, String nodeName, String promptCode, Throwable error) {
-        String errorText = error == null ? "LLM step failed" : error.getMessage();
-        Map<String, Object> payload = new LinkedHashMap<>();
-        if (error != null) {
-            payload.put("errorCode", error.getClass().getSimpleName());
-            payload.put("errorMessage", error.getMessage());
-        }
+        AgentErrorSupport.ResolvedError resolved = AgentErrorSupport.resolve(
+                error,
+                AgentErrorCode.LLM_CHAT_EXECUTION_FAILED
+        );
+        String errorText = resolved.code().defaultMessage();
+        Map<String, Object> payload = AgentErrorSupport.toPayload(resolved);
         Map<String, Object> dbData = buildEventData(
                 "llm.error",
                 NodeKind.LLM,
@@ -268,11 +268,8 @@ public class AgentEventPublisher {
         );
         recordEventTrail(context, dbData);
         LlmEventState state = getLlmState(context, nodeName, promptCode);
-        state.setError(buildErrorData(
-                error == null ? "LLM_EXECUTION_ERROR" : error.getClass().getSimpleName(),
-                errorText
-        ));
-        sendOnlyCompact(context, "llm.error", NodeKind.LLM, nodeName, errorText, 0, null);
+        state.setError(new LinkedHashMap<>(payload));
+        sendOnlyCompact(context, "llm.error", NodeKind.LLM, nodeName, errorText, 0, payload);
     }
 
     /**
@@ -313,7 +310,7 @@ public class AgentEventPublisher {
         LlmEventState state = removeLlmState(context, nodeName, promptCode);
         Map<String, Object> completeData = buildCompleteLlmData(success, state);
         fillContextFields(completeData, context);
-        String eventContent = success ? "模型调用成功" : "模型调用失败";
+        String eventContent = success ? "Model call completed" : "Model call failed";
         try {
             this.eventService.saveEvent(
                     state.eventId(),
@@ -410,7 +407,7 @@ public class AgentEventPublisher {
                                     String originalQuestion,
                                     List<Map<String, String>> options,
                                     Throwable error) {
-        String question = error == null ? "确认节点执行失败" : error.getMessage();
+        String question = "Confirmation failed";
         Map<String, Object> payload = buildOptionPromptSseData(question, List.of());
         Map<String, Object> dbData = buildEventData(
                 eventName,
@@ -509,7 +506,7 @@ public class AgentEventPublisher {
                                     String originalQuestion,
                                     List<Map<String, String>> options,
                                     Throwable error) {
-        String question = error == null ? "候选项节点执行失败" : error.getMessage();
+        String question = "Option selection failed";
         Map<String, Object> payload = buildOptionPromptSseData(question, List.of());
         Map<String, Object> dbData = buildEventData(
                 eventName,
@@ -549,7 +546,7 @@ public class AgentEventPublisher {
                 buildToolInput(payload)
         );
         getToolStates(context).put(buildToolStateKey(nodeName, toolName), toolState);
-        String content = "开始调用 " + safeText(toolName, "Tool");
+        String content = "Calling " + safeText(toolName, "Tool");
         Map<String, Object> dbData = buildEventData(
                 "tool.start",
                 NodeKind.TOOL,
@@ -588,7 +585,7 @@ public class AgentEventPublisher {
                 buildToolInput(payload)
         );
         getToolStates(context).put(buildToolStateKey(nodeName, toolName), toolState);
-        String content = "开始调用 " + safeText(toolName, "Tool");
+        String content = "Calling " + safeText(toolName, "Tool");
         Map<String, Object> dbData = buildEventData(
                 "tool.start",
                 NodeKind.TOOL,
@@ -638,7 +635,7 @@ public class AgentEventPublisher {
                                     String toolName,
                                     String content,
                                     Map<String, Object> payload) {
-        String summary = safeText(summarize(content), "调用完成 " + safeText(toolName, "Tool"));
+        String summary = safeText(summarize(content), "Completed " + safeText(toolName, "Tool"));
         try {
             CompleteEventState state = removeToolState(context, nodeName, toolName);
             Map<String, Object> completeData = buildCompleteToolData(true, content, payload, state);
@@ -688,19 +685,18 @@ public class AgentEventPublisher {
                                       String toolName,
                                       Throwable error,
                                       Map<String, Object> payload) {
-        String message = error == null ? "Tool step failed" : safeText(error.getMessage(), "Tool step failed");
+        AgentErrorCode fallbackCode = AgentErrorSupport.toolExecutionCode(toolName);
+        AgentErrorSupport.ResolvedError resolved = AgentErrorSupport.resolve(error, fallbackCode);
+        String message = resolved.code().defaultMessage();
         try {
             CompleteEventState state = removeToolState(context, nodeName, toolName);
-            state.setError(buildErrorData(
-                    error == null ? "TOOL_EXECUTION_ERROR" : error.getClass().getSimpleName(),
-                    message
-            ));
+            Map<String, Object> resolvedPayload = AgentErrorSupport.toPayload(resolved);
+            state.setError(new LinkedHashMap<>(resolvedPayload));
             Map<String, Object> errorPayload = new LinkedHashMap<>();
             if (payload != null) {
                 errorPayload.putAll(payload);
             }
-            errorPayload.put("errorCode", error == null ? "TOOL_EXECUTION_ERROR" : error.getClass().getSimpleName());
-            errorPayload.put("errorMessage", message);
+            errorPayload.putAll(resolvedPayload);
             Map<String, Object> completeData = buildCompleteToolData(false, message, errorPayload, state);
             completeData.put("async", Boolean.TRUE);
             fillContextFields(completeData, context);
@@ -746,11 +742,12 @@ public class AgentEventPublisher {
                                  String toolName,
                                  Throwable error,
                                  Map<String, Object> payload) {
-        Map<String, Object> errorPayload = new LinkedHashMap<>();
-        if (error != null) {
-            errorPayload.put("errorCode", error.getClass().getSimpleName());
-            errorPayload.put("errorMessage", error.getMessage());
-        }
+        AgentErrorSupport.ResolvedError resolved = AgentErrorSupport.resolve(
+                error,
+                AgentErrorSupport.toolExecutionCode(toolName)
+        );
+        String message = resolved.code().defaultMessage();
+        Map<String, Object> errorPayload = AgentErrorSupport.toPayload(resolved);
         Map<String, Object> dbData = buildEventData(
                 "tool.error",
                 NodeKind.TOOL,
@@ -758,27 +755,24 @@ public class AgentEventPublisher {
                 null,
                 toolName,
                 null,
-                error == null ? "Tool step failed" : error.getMessage(),
+                message,
                 0,
                 mergePayload(payload, errorPayload)
         );
         Map<String, Object> sseData = buildCompactToolEventData(
                 "tool.error",
                 toolName,
-                error == null ? "Tool step failed" : error.getMessage(),
+                message,
                 0,
                 mergePayload(payload, errorPayload),
                 null
         );
         recordEventTrail(context, dbData);
         CompleteEventState state = getToolState(context, nodeName, toolName);
-        state.setError(buildErrorData(
-                error == null ? "TOOL_EXECUTION_ERROR" : error.getClass().getSimpleName(),
-                error == null ? "Tool step failed" : error.getMessage()
-        ));
+        state.setError(new LinkedHashMap<>(errorPayload));
         if (!isInternalTaskToolEvent(NodeKind.TOOL, dbData)) {
             sendOnlyCompact(context, "tool.error", NodeKind.TOOL, nodeName,
-                    error == null ? "Tool step failed" : error.getMessage(), 0, sseData);
+                    message, 0, sseData);
         }
     }
 
@@ -798,7 +792,7 @@ public class AgentEventPublisher {
                                boolean success,
                                String content,
                                Map<String, Object> payload) {
-        String summary = safeText(summarize(content), "调用完成 " + safeText(toolName, "Tool"));
+        String summary = safeText(summarize(content), "Completed " + safeText(toolName, "Tool"));
         Map<String, Object> dbData = buildEventData(
                 "tool.end",
                 NodeKind.TOOL,
@@ -1081,7 +1075,7 @@ public class AgentEventPublisher {
         ));
         completeData.put("metrics", buildInteractiveMetrics(pending));
         fillContextFields(completeData, context);
-        String content = error == null ? "交互节点执行失败" : error.getMessage();
+        String content = "Interaction failed";
         if (pending != null) {
             this.eventService.updateEventResult(pending.getId(), summarize(content), 0, completeData);
         }
@@ -1198,10 +1192,10 @@ public class AgentEventPublisher {
         if (rawSelection instanceof Map<?, ?> rawMap) {
             String label = firstOptionValue(rawMap, "label", "optionValue", "value");
             if (label != null) {
-                return "已选择：" + label;
+                return "Selected: " + label;
             }
         }
-        return "已完成选择";
+        return "Selection completed";
     }
 
     /**
@@ -1443,6 +1437,11 @@ public class AgentEventPublisher {
      */
     private Map<String, Object> buildErrorData(String code, String message) {
         Map<String, Object> error = new LinkedHashMap<>();
+        error.put("errorCode", code);
+        error.put("errorCategory", "SYSTEM");
+        error.put("retryable", Boolean.FALSE);
+        error.put("errorArgs", new LinkedHashMap<>());
+        error.put("errorMessage", message);
         error.put("code", code);
         error.put("message", message);
         return error;
@@ -1482,7 +1481,7 @@ public class AgentEventPublisher {
      *
      * @param context 运行上下文
      * @param nodeName 节点名
-     * @return Redis key
+     * @return 缓冲键
      */
     public String buildLlmBufferKey(AgentContext context, String nodeName) {
         if (context.getRunId() != null && !context.getRunId().isBlank()) {
@@ -1494,21 +1493,21 @@ public class AgentEventPublisher {
     /**
      * 读取 llm buffer 全文。
      *
-     * @param bufferKey Redis key
+     * @param bufferKey 缓冲键
      * @return 缓冲全文
      */
     public String readBuffer(String bufferKey) {
-        Object value = this.redisTemplate.opsForValue().get(bufferKey);
-        return value == null ? "" : String.valueOf(value);
+        StringBuffer buffer = this.llmBuffers.get(bufferKey);
+        return buffer == null ? "" : buffer.toString();
     }
 
     /**
      * 清理 llm buffer。
      *
-     * @param bufferKey Redis key
+     * @param bufferKey 缓冲键
      */
     public void clearBuffer(String bufferKey) {
-        this.redisTemplate.delete(bufferKey);
+        this.llmBuffers.remove(bufferKey);
     }
 
     /**
@@ -1574,12 +1573,25 @@ public class AgentEventPublisher {
                                        String nodeName,
                                        String content,
                                        Integer status) {
+        sendOnlyCustomCompact(context, eventName, type, nodeName, content, status, null);
+    }
+
+    private void sendOnlyCustomCompact(AgentContext context,
+                                       String eventName,
+                                       String type,
+                                       String nodeName,
+                                       String content,
+                                       Integer status,
+                                       Object data) {
         SsePayload payload = new SsePayload();
         payload.setEvent(eventName);
         payload.setType(type);
         payload.setName(nodeName);
         payload.setContent(content);
         payload.setStatus(status);
+        if (data != null) {
+            payload.setData(data);
+        }
         this.sseConnectionManager.send(context.getSseConnectionKey(), eventName, payload);
     }
 
@@ -1656,7 +1668,8 @@ public class AgentEventPublisher {
             data.put("async", booleanValue(payload.get("async")));
         }
         if ("tool.start".equals(eventName)) {
-            putString(data, "contentType", "progress");
+            String contentType = stringValue(payload == null ? null : payload.get("contentType"));
+            putString(data, "contentType", oConvertUtils.isNotEmpty(contentType) ? contentType : "progress");
         } else if ("tool.error".equals(eventName)) {
             putString(data, "contentType", "error");
             String error = buildToolResultPreview(payload, rawContent);
@@ -1782,7 +1795,23 @@ public class AgentEventPublisher {
         if (error != null) {
             putString(data, "error", error);
         }
+        if (result != null && result.getData() != null) {
+            copyIfPresent(data, result.getData(), "errorCode");
+            copyIfPresent(data, result.getData(), "errorCategory");
+            copyIfPresent(data, result.getData(), "retryable");
+            copyIfPresent(data, result.getData(), "errorArgs");
+            copyIfPresent(data, result.getData(), "message");
+        }
         return data;
+    }
+
+    private void copyIfPresent(Map<String, Object> target,
+                               Map<String, Object> source,
+                               String key) {
+        if (target == null || source == null || key == null || source.get(key) == null) {
+            return;
+        }
+        target.put(key, source.get(key));
     }
 
     /**
@@ -1860,13 +1889,13 @@ public class AgentEventPublisher {
      */
     private String buildAgentEndContent(AgentResult result) {
         if (result == null || result.getStatus() == null) {
-            return "执行结束";
+            return "Execution finished";
         }
         return switch (result.getStatus()) {
-            case SUCCESS -> "执行完成";
-            case FAILED -> "执行失败";
-            case WAITING_USER -> "等待用户继续输入";
-            case HANDOFF -> "已交还主Agent重新派活";
+            case SUCCESS -> "Completed";
+            case FAILED -> "Failed";
+            case WAITING_USER -> "Waiting for user input";
+            case HANDOFF -> "Handed off to the main agent";
         };
     }
 
@@ -1875,13 +1904,13 @@ public class AgentEventPublisher {
      */
     private String buildSubAgentEndContent(AgentResult result) {
         if (result == null || result.getStatus() == null) {
-            return "子Agent执行结束";
+            return "Sub-agent execution finished";
         }
         String base = switch (result.getStatus()) {
-            case SUCCESS -> "子Agent执行完成";
-            case FAILED -> "子Agent执行失败";
-            case WAITING_USER -> "子Agent等待用户继续输入";
-            case HANDOFF -> "子Agent已交还主Agent";
+            case SUCCESS -> "Sub-agent completed";
+            case FAILED -> "Sub-agent failed";
+            case WAITING_USER -> "Sub-agent is waiting for user input";
+            case HANDOFF -> "Sub-agent handed off to the main agent";
         };
         return base;
     }
@@ -1955,14 +1984,16 @@ public class AgentEventPublisher {
     }
 
     /**
-     * 追加 llm 增量文本到 Redis。
+     * 追加 llm 增量文本到进程内缓冲。
      *
-     * @param bufferKey Redis key
+     * @param bufferKey 缓冲键
      * @param delta 增量文本
      */
     private void appendBuffer(String bufferKey, String delta) {
-        String current = readBuffer(bufferKey);
-        this.redisTemplate.opsForValue().set(bufferKey, current + (delta == null ? "" : delta), BUFFER_EXPIRE_MINUTES, TimeUnit.MINUTES);
+        if (delta == null || delta.isEmpty()) {
+            return;
+        }
+        this.llmBuffers.computeIfAbsent(bufferKey, key -> new StringBuffer()).append(delta);
     }
 
     /**

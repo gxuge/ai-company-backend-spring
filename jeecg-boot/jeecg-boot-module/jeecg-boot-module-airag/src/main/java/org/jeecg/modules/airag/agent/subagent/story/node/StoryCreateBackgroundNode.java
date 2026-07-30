@@ -28,9 +28,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 故事背景生成节点。
+ * 故事背景图片生成节点。
  *
- * <p>基于已确认的故事核心，生成适合继续推进的背景 / 场景设定。</p>
+ * <p>基于已确认的故事核心，生成故事场景背景图片。</p>
  *
  * @author codex
  * @date 2026/7/11
@@ -59,47 +59,17 @@ public class StoryCreateBackgroundNode extends LlmNode {
 
     private static LlmNodeDefinition buildDefinition() {
         LlmNodeDefinition definition = new LlmNodeDefinition();
-        definition.setName("故事背景生成");
-        definition.setDescription("基于已确认的故事核心设定，生成适合继续推进的背景与场景描述。");
+        definition.setName("故事场景背景生成");
+        definition.setDescription("通过自然对话收集或补全故事场景的核心地点、环境氛围和关键特征，并生成故事场景背景图片。");
         definition.setSkillDomain("story");
         definition.setSkillTopK(3);
         definition.setSkills(List.of("story_create_background"));
-        definition.setTools(List.of(
-                StoryTaskToolSpec.STORY_GENERATE_SCENE,
-                StoryTaskToolSpec.STORY_GENERATE_SCENE_IMAGE
-        ));
-        definition.setPermissions(List.of(
-                StoryTaskToolSpec.STORY_GENERATE_SCENE,
-                StoryTaskToolSpec.STORY_GENERATE_SCENE_IMAGE
-        ));
+        definition.setTools(List.of(StoryTaskToolSpec.STORY_GENERATE_SCENE_IMAGE));
+        definition.setPermissions(List.of(StoryTaskToolSpec.STORY_GENERATE_SCENE_IMAGE));
         definition.setResponseFormat("text");
         definition.setUserPromptTemplate("""
-                当前故事核心：
-                {{story_core_result_json}}
-
-                当前背景设定：
-                {{story_background_result_json}}
-
-                标题：
-                {{title}}
-
-                故事模式：
-                {{story_mode}}
-
-                故事简介：
-                {{story_intro}}
-
-                故事设定：
-                {{story_setting}}
-
-                场景设定：
-                {{site_setting}}
-
-                剧情大纲：
-                {{plot_outline}}
-
-                故事背景：
-                {{story_background}}
+                本轮输入：
+                {{user_input}}
                 """);
         definition.getMetadata().put("flow", "create-story");
         definition.getMetadata().put("stage", "background");
@@ -108,9 +78,7 @@ public class StoryCreateBackgroundNode extends LlmNode {
 
     @Override
     protected Map<String, String> buildPromptVariables(AgentContext context) {
-        Map<String, String> variables = StoryTaskPromptSupport.baseVariables(context);
-        StoryTaskPromptSupport.appendStoryBackgroundVariables(variables, context);
-        return variables;
+        return StoryTaskPromptSupport.baseVariables(context);
     }
 
     @Override
@@ -119,9 +87,6 @@ public class StoryCreateBackgroundNode extends LlmNode {
         if (params.getTools() == null) {
             params.setTools(new LinkedHashMap<>());
         }
-        params.getTools().put(
-                buildStoryBackgroundSpec(),
-                buildToolExecutor(context, StoryTaskToolSpec.STORY_GENERATE_SCENE));
         params.getTools().put(
                 buildStorySceneImageSpec(),
                 buildToolExecutor(context, StoryTaskToolSpec.STORY_GENERATE_SCENE_IMAGE));
@@ -133,30 +98,9 @@ public class StoryCreateBackgroundNode extends LlmNode {
         NodeResult result = NodeResult.success(finalText);
         result.setContent(finalText);
         result.put("stage", "background");
-        result.put("storySceneResultJson", oConvertUtils.getString(context == null ? null : context.getAttribute("storySceneResultJson")));
-        result.put("storyBackgroundResultJson", oConvertUtils.getString(context == null ? null : context.getAttribute("storyBackgroundResultJson")));
         result.put("storySceneImageResultJson", oConvertUtils.getString(
                 context == null ? null : context.getAttribute("storySceneImageResultJson")));
         return result;
-    }
-
-    private ToolSpecification buildStoryBackgroundSpec() {
-        JsonObjectSchema schema = JsonObjectSchema.builder()
-                .addStringProperty("title", "故事标题，可为空")
-                .addStringProperty("storyMode", "故事模式，可为空")
-                .addStringProperty("storySetting", "故事世界观或整体设定")
-                .addStringProperty("storyIntro", "故事简介，可为空")
-                .addStringProperty("storyBackground", "故事背景或本次生成任务描述")
-                .addStringProperty("sceneSetting", "主要场景设定，可为空")
-                .addStringProperty("plotOutline", "剧情大纲，可为空")
-                .addStringProperty("styleHint", "期望的叙事或画面风格，可为空")
-                .addStringProperty("templateMode", "模板模式，可为空")
-                .build();
-        return ToolSpecification.builder()
-                .name(StoryTaskToolSpec.STORY_GENERATE_SCENE)
-                .description("根据本次任务描述和已有故事设定生成故事背景与场景")
-                .parameters(schema)
-                .build();
     }
 
     /**
@@ -164,17 +108,15 @@ public class StoryCreateBackgroundNode extends LlmNode {
      */
     private ToolSpecification buildStorySceneImageSpec() {
         JsonObjectSchema schema = JsonObjectSchema.builder()
-                .addStringProperty("title", "故事标题，可为空")
-                .addStringProperty("storySetting", "故事世界观或整体设定")
-                .addStringProperty("siteSetting", "故事主要地点或场景设定")
-                .addStringProperty("plotOutline", "剧情大纲，可为空")
-                .addStringProperty("styleName", "视觉风格名称，可为空")
-                .addStringProperty("aspectRatio", "图片宽高比，默认9:16")
+                .addStringProperty(
+                        "siteSetting",
+                        "完整的中文故事场景描述，必须包含核心地点、环境氛围和关键特征")
                 .addStringProperty("referenceImageUrl", "参考图片地址，可为空")
+                .required("siteSetting")
                 .build();
         return ToolSpecification.builder()
                 .name(StoryTaskToolSpec.STORY_GENERATE_SCENE_IMAGE)
-                .description("根据故事与场景设定生成临时背景图片，不保存素材或关联故事")
+                .description("根据完整故事场景描述生成背景图片，参考图可选")
                 .parameters(schema)
                 .build();
     }

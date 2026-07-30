@@ -40,6 +40,7 @@ import org.jeecg.modules.system.service.ITsChatAiReplyService;
 import org.jeecg.modules.system.service.ITsChatTtsGatewayService;
 import org.jeecg.modules.system.util.ChatGenerateSnapshotUtil;
 import org.jeecg.modules.system.util.PromptRuntimeUtil;
+import org.jeecg.modules.system.util.TsPromptLanguageInjector;
 import org.jeecg.modules.system.vo.tschatsession.TsChatAiReplyVo;
 import org.jeecg.modules.system.vo.tschatsession.TsChatMessageTtsVo;
 import org.jeecg.modules.system.vo.tschatsession.TsChatReplySuggestionsVo;
@@ -237,7 +238,7 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         promptBuilder.append(PROMPT_OUTPUT_RULE);
 
         MiniMaxChatRequestDto chatRequest = new MiniMaxChatRequestDto();
-        chatRequest.setPrompt(promptBuilder.toString());
+        chatRequest.setPrompt(TsPromptLanguageInjector.inject(promptBuilder.toString()));
         logPlainChatRequest(sessionId, request, historyMessages, userContent, chatRequest.getPrompt());
         MiniMaxChatResponseVo chatResponse = miniMaxDemoService.chat(chatRequest);
         String assistantContent = chatResponse == null ? null : chatResponse.getContent();
@@ -408,6 +409,7 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
 
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
                 PROMPT_CODE_TEMPLATE_REPLY, PROMPT_VERSION_TEMPLATE_REPLY, variables);
+        TsPromptLanguageInjector.inject(promptSections);
         String renderedPrompt = promptSections.getRenderedPrompt();
         String assistantContent = promptChatService.chat(renderedPrompt);
         assistantContent = PromptRuntimeUtil.trimToNull(assistantContent);
@@ -613,6 +615,7 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
 
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
                 PROMPT_CODE_REPLY_SUGGESTIONS, PROMPT_VERSION, variables);
+        TsPromptLanguageInjector.inject(promptSections);
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, promptSections);
 

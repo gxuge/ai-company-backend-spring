@@ -1,9 +1,9 @@
 package org.jeecg.modules.airag.agent.runtime;
 
 import lombok.RequiredArgsConstructor;
-import org.jeecg.common.exception.JeecgBootBizTipException;
-import org.jeecg.common.util.AssertUtils;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorException;
 import org.jeecg.modules.airag.app.entity.AiragApp;
 import org.jeecg.modules.airag.app.mapper.AiragAppMapper;
 import org.springframework.stereotype.Component;
@@ -29,13 +29,21 @@ public class AgentModelResolver {
      * @return 文本模型ID
      */
     public String resolveTextModelId(String appId) {
-        AssertUtils.assertNotEmpty("appId不能为空", appId);
+        if (oConvertUtils.isEmpty(appId)) {
+            throw new AgentErrorException(AgentErrorCode.LLM_MODEL_APP_ID_REQUIRED);
+        }
         AiragApp airagApp = this.airagAppMapper.getByIdIgnoreTenant(appId);
         if (airagApp == null) {
-            throw new JeecgBootBizTipException("未找到应用配置：" + appId);
+            throw new AgentErrorException(
+                    AgentErrorCode.LLM_MODEL_APP_NOT_FOUND,
+                    java.util.Map.of("appId", appId)
+            );
         }
         if (oConvertUtils.isEmpty(airagApp.getModelId())) {
-            throw new JeecgBootBizTipException("应用未绑定文本模型：" + appId);
+            throw new AgentErrorException(
+                    AgentErrorCode.LLM_MODEL_NOT_CONFIGURED,
+                    java.util.Map.of("appId", appId)
+            );
         }
         return airagApp.getModelId();
     }

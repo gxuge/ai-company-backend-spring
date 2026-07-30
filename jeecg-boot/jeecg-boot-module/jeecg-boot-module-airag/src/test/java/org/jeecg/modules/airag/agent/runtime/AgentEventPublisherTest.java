@@ -9,8 +9,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
-import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
 
 import java.util.LinkedHashMap;
 import java.util.Date;
@@ -28,10 +26,7 @@ class AgentEventPublisherTest {
     void setUp() {
         this.eventService = Mockito.mock(TsAgentChatMessageEventService.class);
         this.sseConnectionManager = Mockito.mock(SseConnectionManager.class);
-        RedisTemplate redisTemplate = Mockito.mock(RedisTemplate.class);
-        ValueOperations valueOperations = Mockito.mock(ValueOperations.class);
-        Mockito.when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        this.eventPublisher = new AgentEventPublisher(this.eventService, this.sseConnectionManager, redisTemplate);
+        this.eventPublisher = new AgentEventPublisher(this.eventService, this.sseConnectionManager);
 
         this.context = new AgentContext();
         this.context.setMessageId("10001");
@@ -251,6 +246,34 @@ class AgentEventPublisherTest {
     }
 
     @Test
+    void shouldJoinLlmDeltasInMemoryAndClearBufferOnEnd() {
+        this.eventPublisher.publishLlmStart(this.context, "dialogNode", "role_dialog_v1");
+        this.eventPublisher.publishLlmDelta(this.context, "dialogNode", "你好，");
+        this.eventPublisher.publishLlmDelta(this.context, "dialogNode", "我们继续");
+        this.eventPublisher.publishLlmDelta(this.context, "dialogNode", "创建角色。");
+
+        String bufferKey = this.eventPublisher.buildLlmBufferKey(this.context, "dialogNode");
+        Assertions.assertEquals("你好，我们继续创建角色。", this.eventPublisher.readBuffer(bufferKey));
+
+        this.eventPublisher.publishLlmEnd(
+                this.context,
+                "dialogNode",
+                "role_dialog_v1",
+                true,
+                Map.of()
+        );
+
+        ArgumentCaptor<SsePayload> payloadCaptor = ArgumentCaptor.forClass(SsePayload.class);
+        Mockito.verify(this.sseConnectionManager).send(
+                Mockito.eq("sse-1"),
+                Mockito.eq("llm.end"),
+                payloadCaptor.capture()
+        );
+        Assertions.assertEquals("你好，我们继续创建角色。", payloadCaptor.getValue().getContent());
+        Assertions.assertEquals("", this.eventPublisher.readBuffer(bufferKey));
+    }
+
+    @Test
     void shouldPersistEmbeddedToolAndSendSse() {
         Map<String, Object> arguments = Map.of("name", "林雪", "gender", "女");
         this.eventPublisher.publishToolStart(
@@ -291,6 +314,24 @@ class AgentEventPublisherTest {
                 Mockito.eq("tool.end"),
                 Mockito.any()
         );
+    }
+
+    @Test
+    void shouldDefaultToolStartContentTypeToProgress() {
+        this.eventPublisher.publishToolStart(
+                this.context,
+                "role_create_dialog",
+                "role_generate_role",
+                Map.of()
+        );
+
+        ArgumentCaptor<SsePayload> payloadCaptor = ArgumentCaptor.forClass(SsePayload.class);
+        Mockito.verify(this.sseConnectionManager).send(
+                Mockito.eq("sse-1"),
+                Mockito.eq("tool.start"),
+                payloadCaptor.capture()
+        );
+        Assertions.assertEquals("progress", payloadCaptor.getValue().getContentType());
     }
 
     @Test
@@ -433,7 +474,10 @@ class AgentEventPublisherTest {
                 this.context,
                 "role_create_image",
                 "role_generate_role_image",
-                Map.of("toolArguments", arguments)
+                Map.of(
+                        "toolArguments", arguments,
+                        "contentType", "image"
+                )
         );
         Map<String, Object> endPayload = new LinkedHashMap<>();
         endPayload.put("toolArguments", arguments);
@@ -472,6 +516,14 @@ class AgentEventPublisherTest {
         Assertions.assertEquals("role_image_generate", output.get("promptCode"));
         Assertions.assertEquals("v1", output.get("promptVersion"));
         Assertions.assertFalse(output.containsKey("result"));
+
+        ArgumentCaptor<SsePayload> startPayloadCaptor = ArgumentCaptor.forClass(SsePayload.class);
+        Mockito.verify(this.sseConnectionManager).send(
+                Mockito.eq("sse-1"),
+                Mockito.eq("tool.start"),
+                startPayloadCaptor.capture()
+        );
+        Assertions.assertEquals("image", startPayloadCaptor.getValue().getContentType());
 
         ArgumentCaptor<SsePayload> payloadCaptor = ArgumentCaptor.forClass(SsePayload.class);
         Mockito.verify(this.sseConnectionManager).send(

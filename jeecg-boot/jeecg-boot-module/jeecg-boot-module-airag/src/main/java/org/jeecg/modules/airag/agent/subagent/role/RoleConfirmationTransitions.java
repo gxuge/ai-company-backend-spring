@@ -1,6 +1,10 @@
 package org.jeecg.modules.airag.agent.subagent.role;
 
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorException;
+
+import java.util.Map;
 
 /**
  * 角色确认展示选项与内部决策状态。
@@ -34,7 +38,10 @@ public final class RoleConfirmationTransitions {
             setDecision(context, DECISION_REVISION_REQUESTED);
             return;
         }
-        throw new IllegalArgumentException("不支持的角色确认选项：" + selectedValue);
+        throw new AgentErrorException(
+                AgentErrorCode.INTERACTION_OPTION_UNSUPPORTED,
+                Map.of("module", "roleConfirmation", "optionValue", String.valueOf(selectedValue))
+        );
     }
 
     /**

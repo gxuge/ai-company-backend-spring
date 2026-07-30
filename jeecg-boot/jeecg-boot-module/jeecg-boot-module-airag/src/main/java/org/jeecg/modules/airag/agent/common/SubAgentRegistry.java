@@ -86,11 +86,11 @@ public class SubAgentRegistry {
      */
     public String describeAvailableSubAgents() {
         if (this.registry.isEmpty()) {
-            return "无";
+            return "None";
         }
         return this.registry.values().stream()
                 .filter(subAgent -> subAgent != null && !"welcome_intro".equalsIgnoreCase(subAgent.subAgentName()))
-                .map(subAgent -> subAgent.subAgentName() + "：" + describeSubAgent(subAgent.subAgentName()))
+                .map(subAgent -> subAgent.subAgentName() + ": " + describeSubAgent(subAgent.subAgentName()))
                 .distinct()
                 .collect(Collectors.joining("\n", "- ", ""));
     }
@@ -103,13 +103,17 @@ public class SubAgentRegistry {
      */
     private String describeSubAgent(String subAgentName) {
         if (oConvertUtils.isEmpty(subAgentName)) {
-            return "未命名子 Agent";
+            return "Unnamed sub-agent";
         }
         return switch (subAgentName) {
-            case "role_task_agent" -> "角色创建对话，支持追问、preset/full 生成、确认后补形象与声音";
-            case "story_task_agent" -> "故事创建对话，支持追问、preset/full 生成、确认后补背景与场景";
-            case "role_image_task_agent" -> "根据角色描述或已有角色设定，直接生成角色形象";
-            case "story_background_task_agent" -> "根据故事方向或已有故事设定，直接生成故事背景与场景";
+            case "role_task_agent" ->
+                    "Creates complete roles. Use when the user asks to create, design, or refine a role, or asks AI to decide role details. It gathers the role name, gender, occupation, and background story through conversation, then generates the complete role after confirmation. Do not use for image-only or voice-only requests.";
+            case "story_task_agent" ->
+                    "Creates complete stories. Use when the user asks to create, write, or refine a story, or asks AI to decide story details. It gathers the title, world setting, scene setting, plot outline, and role information through conversation, then generates the complete story after confirmation. Do not use for background-image-only requests.";
+            case "role_image_task_agent" ->
+                    "Creates role images. Use for role appearance design, portraits, avatars, full-body images, or other role image requests. Delegate even when appearance details are incomplete; this sub-agent gathers appearance, clothing, and overall presence through conversation before generating the image. Do not use for complete role creation or voice-only requests.";
+            case "story_background_task_agent" ->
+                    "Creates story scene background images. Use for story backgrounds, scene images, environment concept art, or other background image requests. Delegate even when scene details are incomplete; this sub-agent gathers the core location, atmosphere, and key features through conversation before generating the image. Do not use for complete story creation.";
             default -> subAgentName;
         };
     }

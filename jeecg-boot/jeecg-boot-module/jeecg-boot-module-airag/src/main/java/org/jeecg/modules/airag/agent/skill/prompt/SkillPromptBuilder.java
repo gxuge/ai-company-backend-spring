@@ -23,8 +23,8 @@ public class SkillPromptBuilder {
             return "";
         }
         StringBuilder sb = new StringBuilder();
-        sb.append("你现在可以按需读取 Skill。").append('\n');
-        sb.append("可用 Skill 列表：").append('\n');
+        sb.append("You may load skills when they are relevant to the current task.").append('\n');
+        sb.append("Available skills:").append('\n');
         for (int i = 0; i < skills.size(); i++) {
             SkillDefinition skill = skills.get(i);
             if (skill == null) {
@@ -37,10 +37,10 @@ public class SkillPromptBuilder {
             sb.append('\n');
         }
         sb.append('\n');
-        sb.append("读取方式：readSkill(skillCode)").append('\n');
-        sb.append("规则：如果某个 Skill 适合当前任务，先调用 readSkill 读取完整 SKILL.md；").append('\n');
-        sb.append("不要猜测未读取的 Skill 正文；不要一次性读取无关 Skill；").append('\n');
-        sb.append("如果当前任务不需要 Skill，可以继续按现有上下文执行。");
+        sb.append("Load with: readSkill(skillCode)").append('\n');
+        sb.append("Rules: if a skill matches the current task, call readSkill before relying on its full instructions.").append('\n');
+        sb.append("Do not guess the contents of an unloaded skill or load unrelated skills in bulk.").append('\n');
+        sb.append("If no skill is needed, continue using the current context.");
         return sb.toString();
     }
 }

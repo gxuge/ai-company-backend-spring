@@ -36,6 +36,10 @@ class StoryTaskToolRegistrarTest {
                 .noneMatch(definition -> "story_confirmation_decision".equals(definition.getName())));
         Assertions.assertTrue(toolRegistry.listDefinitions().stream()
                 .noneMatch(definition -> "story_flow_gate".equals(definition.getName())));
+        Assertions.assertEquals(
+                "image",
+                toolRegistry.getDefinition(StoryTaskToolSpec.STORY_GENERATE_SCENE_IMAGE).getContentType()
+        );
 
         AgentContext context = new AgentContext();
         context.setUserId("test-user");
@@ -55,16 +59,16 @@ class StoryTaskToolRegistrarTest {
         ToolCallRequest imageRequest = new ToolCallRequest();
         imageRequest.setToolName(StoryTaskToolSpec.STORY_GENERATE_SCENE_IMAGE);
         imageRequest.setArguments(Map.of(
-                "story_setting", "被海雾笼罩的群岛世界",
-                "site_setting", "午夜的废弃灯塔"
+                "siteSetting", "午夜的废弃灯塔矗立在被海雾笼罩的群岛上，冷色月光穿过破损窗户，塔顶信号灯忽明忽暗。"
         ));
         toolRegistry.execute(context, imageRequest);
 
         ArgumentCaptor<TsStoryOneClickSceneImageGenerateDto> imageDtoCaptor =
                 ArgumentCaptor.forClass(TsStoryOneClickSceneImageGenerateDto.class);
         Mockito.verify(generateService).generateStorySceneImage(Mockito.any(), imageDtoCaptor.capture());
-        Assertions.assertEquals("被海雾笼罩的群岛世界", imageDtoCaptor.getValue().getStorySetting());
-        Assertions.assertEquals("午夜的废弃灯塔", imageDtoCaptor.getValue().getSiteSetting());
+        Assertions.assertEquals(
+                "午夜的废弃灯塔矗立在被海雾笼罩的群岛上，冷色月光穿过破损窗户，塔顶信号灯忽明忽暗。",
+                imageDtoCaptor.getValue().getSiteSetting());
         Assertions.assertEquals("9:16", imageDtoCaptor.getValue().getAspectRatio());
         Assertions.assertNotNull(context.getAttribute("storySceneImageResultJson"));
     }

@@ -6,6 +6,7 @@
 `type` 推荐值：`feat`、`fix`、`refactor`、`breaking`、`security`、`docs`
 
 ## 记录
+- [2026-07-30] [feat] [ts-draft] 新增角色与故事统一草稿表及 `/sys/ts-drafts` 增删改查；`draftType` 区分 `role/story`，列表返回摘要，详情返回完整 JSON 快照，所有操作按当前用户归属过滤
 - [2026-07-29] [fix] [agent-runtime] 角色/故事确认选项映射为仅供模型判断的 `NONE/ACCEPTED/REVISION_REQUESTED` 隐藏状态，支持跨轮恢复并注入 Skill Prompt，不写入消息、SSE 或 Agent Event
 - [2026-07-29] [fix] [agent-runtime] 角色/故事创建对话节点停止在 USER Prompt 重复注入主 Agent 初始委托；`task_description` 仅保留在 Skill/System 中，USER 只表达本轮最新输入
 - [2026-07-29] [refactor] [agent-runtime] 角色形象与故事场景图片 Tool 统一为扁平媒体协议；SSE 顶层及事件 `output` 直接提供 `contentType/resourceType/imageUrl/promptCode/promptVersion`，不再嵌套 `result`
@@ -44,3 +45,4 @@
 - [2026-05-25] [refactor] [airag-llm] 新增 `llm.adapter` 参数适配层（capability/normalizer/registry/adapter），并接入 `AIChatHandler` 的 `completions/chat` 调用链，优先支持 `DEEPSEEK/MINIMAX/GEMINI` 的参数裁剪与映射
 - [2026-06-01] [feat] [ts-story] 新增 `POST /sys/ts-stories/story-full-generate`：随机选取 story 预设并读取绑定标签，先做 `{{ value }}` 模板替换与 toolcall 预编排，再串联现有故事设定/场景/大纲生成（chapter 模式支持跳过大纲）
 - [2026-06-01] [feat] [ts-story] 新增 `POST /sys/ts-stories/story-full-generate-preset`：按预设绑定标签映射填充 5 字段模板并统一串联设定/场景/大纲；删除对外 `story-setting-generate`/`story--scene-generate`/`story--outline-generate`；toolcall 修复链路补充 `required_field_hints`
+- [2026-07-30] [feat] [ts-draft] 统一草稿列表直接返回完整 `content`，前端无需维护重复的 `cardData`

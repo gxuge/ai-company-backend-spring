@@ -2,6 +2,8 @@ package org.jeecg.modules.airag.agent.task;
 
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorException;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import com.alibaba.fastjson.JSONObject;
 
@@ -28,7 +30,7 @@ public final class TaskAgentSupport {
     public static LoginUser buildLoginUser(AgentContext context) {
         String userId = normalizeText(context == null ? null : context.getUserId());
         if (!oConvertUtils.isNotEmpty(userId)) {
-            throw new IllegalStateException("任务 Agent 缺少用户信息");
+            throw new AgentErrorException(AgentErrorCode.RUNTIME_USER_CONTEXT_MISSING);
         }
         return new LoginUser()
                 .setId(userId)

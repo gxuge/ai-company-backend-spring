@@ -1,0 +1,43 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsDraftMapper">
+
+    <!-- 分页查询当前用户草稿及页面状态 -->
+    <select id="selectDraftPage" resultType="org.jeecg.modules.system.entity.TsDraft">
+        SELECT
+            id,
+            user_id,
+            draft_type,
+            draft_name,
+            source_id,
+            content_json,
+            status,
+            created_at,
+            updated_at
+        FROM ts_draft
+        WHERE user_id = #{query.userId}
+          AND status = 1
+        <if test="query != null and query.keyword != null and query.keyword != ''">
+            AND draft_name LIKE CONCAT('%', #{query.keyword}, '%')
+        </if>
+        <if test="query != null and query.draftType != null and query.draftType != ''">
+            AND draft_type = #{query.draftType}
+        </if>
+        <if test="query != null and query.sourceId != null">
+            AND source_id = #{query.sourceId}
+        </if>
+        ORDER BY updated_at DESC, id DESC
+    </select>
+
+    <!-- 查询当前用户拥有的有效草稿，详情按需读取完整 JSON -->
+    <select id="selectOwned" resultType="org.jeecg.modules.system.entity.TsDraft">
+        SELECT *
+        FROM ts_draft
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND status = 1
+        LIMIT 1
+    </select>
+
+</mapper>

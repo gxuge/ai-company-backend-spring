@@ -40,7 +40,8 @@ public class TsStoryOneClickSceneImageGenerateDto {
      * 判断是否提供了可用于生成场景的核心设定。
      */
     public boolean hasSceneContext() {
-        return StringUtils.hasText(this.storySetting) || StringUtils.hasText(this.siteSetting);
+        return StringUtils.hasText(this.storySetting)
+                || StringUtils.hasText(this.siteSetting);
     }
 
     private static String defaultIfBlank(String value, String defaultValue) {

@@ -44,18 +44,18 @@ public class SkillTools {
      * @param skillCode Skill 编码
      * @return 完整 SKILL.md
      */
-    @Tool("读取已注册 skill 的完整 SKILL.md 正文")
+    @Tool("Read the complete SKILL.md content of a registered skill")
     public String readSkill(String skillCode) {
         if (!StringUtils.hasText(skillCode)) {
-            return "Skill 读取失败：skillCode不能为空";
+            return "Skill read failed: skillCode is required.";
         }
         if (!this.skillToolPolicy.isToolAllowed(skillCode, TOOL_READ_SKILL)) {
-            return "Skill 读取失败：当前 Skill 不允许调用 readSkill";
+            return "Skill read failed: readSkill is not allowed for this skill.";
         }
         try {
             return this.skillRegistry.getSkillBody(skillCode);
         } catch (Exception ex) {
-            return "Skill 读取失败：" + ex.getMessage();
+            return "Skill read failed.";
         }
     }
 
@@ -66,26 +66,26 @@ public class SkillTools {
      * @param resourcePath 资源相对路径
      * @return 资源内容
      */
-    @Tool("读取已注册 skill 的资源文件内容")
+    @Tool("Read a resource file from a registered skill")
     public String readSkillResource(String skillCode, String resourcePath) {
         if (!StringUtils.hasText(skillCode)) {
-            return "Skill 资源读取失败：skillCode不能为空";
+            return "Skill resource read failed: skillCode is required.";
         }
         if (!StringUtils.hasText(resourcePath)) {
-            return "Skill 资源读取失败：resourcePath不能为空";
+            return "Skill resource read failed: resourcePath is required.";
         }
         if (!this.skillToolPolicy.isToolAllowed(skillCode, TOOL_READ_SKILL_RESOURCE)) {
-            return "Skill 资源读取失败：当前 Skill 不允许调用 readSkillResource";
+            return "Skill resource read failed: readSkillResource is not allowed for this skill.";
         }
         try {
             Optional<SkillResource> resource = this.skillRegistry.getResource(skillCode, resourcePath);
             if (resource.isEmpty()) {
-                return "Skill 资源读取失败：未找到资源 " + resourcePath;
+                return "Skill resource read failed: resource not found.";
             }
             SkillResource skillResource = resource.get();
             return skillResource.getContent() == null ? "" : skillResource.getContent();
         } catch (Exception ex) {
-            return "Skill 资源读取失败：" + ex.getMessage();
+            return "Skill resource read failed.";
         }
     }
 
@@ -113,25 +113,25 @@ public class SkillTools {
 
     private ToolSpecification buildReadSkillSpec() {
         JsonObjectSchema schema = JsonObjectSchema.builder()
-                .addStringProperty("skillCode", "Skill 编码")
+                .addStringProperty("skillCode", "Registered skill code")
                 .required("skillCode")
                 .build();
         return ToolSpecification.builder()
                 .name(TOOL_READ_SKILL)
-                .description("读取已注册 skill 的完整 SKILL.md 正文")
+                .description("Read the complete SKILL.md content of a registered skill")
                 .parameters(schema)
                 .build();
     }
 
     private ToolSpecification buildReadSkillResourceSpec() {
         JsonObjectSchema schema = JsonObjectSchema.builder()
-                .addStringProperty("skillCode", "Skill 编码")
-                .addStringProperty("resourcePath", "Skill 资源相对路径")
+                .addStringProperty("skillCode", "Registered skill code")
+                .addStringProperty("resourcePath", "Resource path relative to the skill directory")
                 .required("skillCode", "resourcePath")
                 .build();
         return ToolSpecification.builder()
                 .name(TOOL_READ_SKILL_RESOURCE)
-                .description("读取已注册 skill 的资源文件内容")
+                .description("Read a resource file from a registered skill")
                 .parameters(schema)
                 .build();
     }

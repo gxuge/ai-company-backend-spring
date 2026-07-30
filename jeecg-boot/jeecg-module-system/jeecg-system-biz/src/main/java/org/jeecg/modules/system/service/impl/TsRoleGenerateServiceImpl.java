@@ -45,6 +45,8 @@ import org.jeecg.modules.system.mapper.TsVoiceTagMapper;
 import org.jeecg.modules.system.service.ITsRoleGenerateService;
 import org.jeecg.modules.system.service.ITsUserImageAssetService;
 import org.jeecg.modules.system.util.PromptRuntimeUtil;
+import org.jeecg.modules.system.util.TsPromptLanguageInjector;
+import org.jeecg.modules.system.util.TsResponseLanguageSupport;
 import org.jeecg.modules.system.util.RoleGenerateSnapshotUtil;
 import org.jeecg.modules.system.util.VoiceProfileMatchUtil;
 import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateImageByPromptVo;
@@ -106,7 +108,6 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
     private static final int IMAGE_PROMPT_TEMPLATE_MAX_LENGTH = 220;
     private static final int IMAGE_NEGATIVE_PROMPT_TEMPLATE_MAX_LENGTH = 80;
     private static final String DEFAULT_IMAGE_PROMPT_STYLE = "写实风";
-    private static final String DEFAULT_PREVIEW_TEXT = "你好呀，很高兴认识你。";
     private static final int VOICE_CANDIDATE_LIMIT = 20;
     private static final BigDecimal DEFAULT_VOICE_PITCH_PERCENT = BigDecimal.ZERO;
     private static final BigDecimal DEFAULT_VOICE_SPEED_RATE = new BigDecimal("1.00");
@@ -179,6 +180,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(promptCode, PROMPT_VERSION,
                 PromptRuntimeUtil.buildSettingVars(dto.getRoleName(), dto.getGender(), dto.getOccupation(), dto.getBackgroundStory(),
                         dto.getGreeting(), dto.getStyleHint(), dto.getKeywords(), dto.getExtraInfo()));
+        TsPromptLanguageInjector.inject(promptSections);
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, scene);
 
@@ -291,9 +293,10 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
     private ImageGenerateRuntimeResult executeImageGenerate(LoginUser user, TsRoleOneClickImageGenerateDto dto) {
         String promptRoleName = normalizeRoleNameForPrompt(dto.getRoleName());
         String promptOccupation = normalizeRoleFieldForPrompt(dto.getOccupation());
-        String promptBackgroundStory = normalizeRoleFieldForPrompt(dto.getBackgroundStory());
+        String promptImageDescription = normalizeRoleFieldForPrompt(
+                PromptRuntimeUtil.firstNonBlank(dto.getImageDescription(), dto.getBackgroundStory()));
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(PROMPT_CODE_IMAGE, PROMPT_VERSION,
-                PromptRuntimeUtil.buildImageVars(promptRoleName, dto.getGender(), promptOccupation, promptBackgroundStory,
+                PromptRuntimeUtil.buildImageVars(promptRoleName, dto.getGender(), promptOccupation, promptImageDescription,
                         dto.getStyleName(), dto.getAspectRatio(), dto.getReferenceImageUrl()));
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, "image");
@@ -431,6 +434,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(PROMPT_CODE_VOICE, PROMPT_VERSION,
                 PromptRuntimeUtil.buildVoiceVars(dto.getRoleName(), dto.getGender(), dto.getOccupation(), dto.getBackgroundStory(),
                         dto.getPreferredVoiceName(), dto.getTargetTone(), dto.getPreviewText()));
+        TsPromptLanguageInjector.inject(promptSections);
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, "voice");
 
@@ -446,11 +450,23 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         String previewText = PromptRuntimeUtil.firstNonBlank(
                 PromptRuntimeUtil.trimToNull(modelJson.getString("preview_text")),
                 PromptRuntimeUtil.trimToNull(dto.getPreviewText()),
-                DEFAULT_PREVIEW_TEXT
+                TsResponseLanguageSupport.text(
+                        "你好呀，很高兴认识你。",
+                        "你好呀，很高興認識你。",
+                        "Hello, it is nice to meet you.",
+                        "こんにちは、お会いできてうれしいです。",
+                        "مرحبًا، سعيد بلقائك."
+                )
         );
         String recommendation = PromptRuntimeUtil.firstNonBlank(
                 PromptRuntimeUtil.trimToNull(modelJson.getString("selection_reason")),
-                "已完成声音生成，请前端调用试听接口获取音频"
+                TsResponseLanguageSupport.text(
+                        "声音生成已完成，可以开始试听。",
+                        "聲音生成已完成，可以開始試聽。",
+                        "Voice generation is complete and ready for preview.",
+                        "音声生成が完了しました。試聴できます。",
+                        "اكتمل إنشاء الصوت وأصبح جاهزًا للمعاينة."
+                )
         );
 
         TsVoiceProfile selected = selectRandomVoiceProfile(recommendedGender, recommendedVoiceName);
@@ -625,7 +641,10 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
             }
         }
 
-        String renderedPrompt = promptRenderService.renderPrompt(promptCode, promptVersion, variables);
+        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
+                promptCode, promptVersion, variables);
+        TsPromptLanguageInjector.inject(promptSections);
+        String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson = PromptRuntimeUtil.callPromptChat(promptChatService, renderedPrompt);
         String generatedText = PromptRuntimeUtil.firstNonBlank(
                 PromptRuntimeUtil.trimToNull(modelJson.getString("generated_text")),
@@ -838,6 +857,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         dto.normalize();
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(PROMPT_CODE_GENERATE_ROLE, PROMPT_VERSION,
                 PromptRuntimeUtil.buildGenerateRoleVars(dto.getStorySetting(), dto.getStoryBackground()));
+        TsPromptLanguageInjector.inject(promptSections);
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, "generate-role");
 
@@ -1070,6 +1090,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
                 PROMPT_CODE_SETTING_PRESET, PROMPT_VERSION,
                 buildRoleSettingPresetVars(dto, preset, tagNamesByType, tagPromptsByType)
         );
+        TsPromptLanguageInjector.inject(promptSections);
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, "setting-preset");
 

@@ -4,6 +4,8 @@ import com.alibaba.fastjson2.JSON;
 import lombok.RequiredArgsConstructor;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorException;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentEventPublisher;
 import org.jeecg.modules.airag.agent.subagent.story.tool.StoryGenerateCompleteToolContract;
@@ -56,7 +58,10 @@ public class StoryGenerateCompleteAsyncService {
         String taskId = request == null ? null : request.getTaskId();
         String eventId = request == null ? null : request.getEventId();
         if (!StringUtils.hasText(taskId) || !StringUtils.hasText(eventId)) {
-            throw new IllegalArgumentException("异步故事生成缺少 taskId 或 eventId");
+            throw new AgentErrorException(
+                    AgentErrorCode.TOOL_STORY_GENERATION_REQUIRED_FIELD_MISSING,
+                    Map.of("field", "taskId/eventId")
+            );
         }
 
         LoginUser user = TaskAgentSupport.buildLoginUser(context);
@@ -82,7 +87,7 @@ public class StoryGenerateCompleteAsyncService {
         accepted.put("eventId", eventId);
         accepted.put("status", "running");
         ToolCallResult result = ToolCallResult.asyncAccepted(
-                "完整故事生成任务已开始",
+                "Story generation started",
                 taskId,
                 eventId,
                 accepted
@@ -134,7 +139,7 @@ public class StoryGenerateCompleteAsyncService {
                     eventId,
                     nodeName,
                     StoryTaskToolSpec.STORY_GENERATE_COMPLETE,
-                    "完整故事生成完成",
+                    "Story generation completed",
                     payload
             );
         } catch (Exception ex) {
@@ -200,14 +205,20 @@ public class StoryGenerateCompleteAsyncService {
 
         Result<TsStoryVo> result = this.storyService.addStory(user, request);
         if (result == null || !result.isSuccess() || result.getResult() == null) {
-            throw new IllegalStateException(result == null ? "故事保存失败" : result.getMessage());
+            throw new AgentErrorException(
+                    AgentErrorCode.GENERATION_STORY_SAVE_FAILED,
+                    Map.of(),
+                    result == null || !StringUtils.hasText(result.getMessage())
+                            ? null
+                            : new IllegalStateException(result.getMessage())
+            );
         }
         return result.getResult();
     }
 
     private String persistSceneImage(LoginUser user, TsStoryOneClickSceneImageGenerateVo imageResult) {
         if (imageResult == null || !StringUtils.hasText(imageResult.getImageUrl())) {
-            throw new IllegalStateException("故事场景背景图片生成失败，未返回图片地址");
+            throw new AgentErrorException(AgentErrorCode.GENERATION_STORY_IMAGE_EXECUTION_FAILED);
         }
         TsUserImageAssetImportDto importRequest = new TsUserImageAssetImportDto();
         importRequest.setSourceImageUrl(imageResult.getImageUrl());
@@ -216,7 +227,7 @@ public class StoryGenerateCompleteAsyncService {
         Result<TsUserImageAssetVo> assetResult = this.userImageAssetService.importAsset(user, importRequest);
         TsUserImageAssetVo asset = assetResult == null ? null : assetResult.getResult();
         if (asset == null || !StringUtils.hasText(asset.getFileUrl())) {
-            throw new IllegalStateException("故事场景背景图片保存失败，未返回永久图片地址");
+            throw new AgentErrorException(AgentErrorCode.GENERATION_STORY_SAVE_FAILED);
         }
         return asset.getFileUrl().trim();
     }
@@ -226,7 +237,10 @@ public class StoryGenerateCompleteAsyncService {
         for (int index = 0; index < roleResults.size(); index++) {
             TsRoleGenerateRoleVo roleResult = roleResults.get(index);
             if (roleResult == null || roleResult.getRoleId() == null) {
-                throw new IllegalStateException("角色生成完成但未返回角色ID");
+                throw new AgentErrorException(
+                        AgentErrorCode.GENERATION_STORY_ROLE_RESULT_INVALID,
+                        Map.of("index", index)
+                );
             }
             TsStoryRoleBindingDto binding = new TsStoryRoleBindingDto();
             binding.setRoleId(roleResult.getRoleId());
@@ -242,12 +256,17 @@ public class StoryGenerateCompleteAsyncService {
     private StoryGenerationInput readGenerationInput(Map<String, Object> transferData) {
         Object roles = transferData == null ? null : transferData.get(StoryGenerateCompleteToolContract.ROLES);
         if (!(roles instanceof List<?> roleList) || roleList.isEmpty()) {
-            throw new IllegalArgumentException("transferData.roles 不能为空");
+            throw new AgentErrorException(
+                    AgentErrorCode.TOOL_STORY_GENERATION_REQUIRED_FIELD_MISSING,
+                    Map.of("field", "transferData.roles")
+            );
         }
         List<Map<String, Object>> normalizedRoles = new ArrayList<>(roleList.size());
         for (Object role : roleList) {
             if (!(role instanceof Map<?, ?> roleMap)) {
-                throw new IllegalArgumentException("transferData.roles 中存在无效角色数据");
+                throw new AgentErrorException(
+                        AgentErrorCode.TOOL_STORY_GENERATION_ROLE_INVALID
+                );
             }
             Map<String, Object> normalizedRole = new LinkedHashMap<>();
             roleMap.forEach((key, value) -> normalizedRole.put(String.valueOf(key), value));
@@ -265,9 +284,9 @@ public class StoryGenerateCompleteAsyncService {
     private String buildStorySettingWithRoles(String storySetting, List<Map<String, Object>> roles) {
         String roleProfiles = JSON.toJSONString(roles);
         if (!StringUtils.hasText(storySetting)) {
-            return "角色列表：\n" + roleProfiles;
+            return "Roles:\n" + roleProfiles;
         }
-        return storySetting.trim() + "\n\n角色列表：\n" + roleProfiles;
+        return storySetting.trim() + "\n\nRoles:\n" + roleProfiles;
     }
 
     private Throwable unwrap(Exception exception) {

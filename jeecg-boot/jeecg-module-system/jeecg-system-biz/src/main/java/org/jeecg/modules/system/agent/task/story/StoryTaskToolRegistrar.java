@@ -3,6 +3,8 @@ package org.jeecg.modules.system.agent.task.story;
 import com.alibaba.fastjson.JSONObject;
 import jakarta.annotation.PostConstruct;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorException;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.subagent.story.tool.StoryTaskToolSpec;
 import org.jeecg.modules.airag.agent.task.TaskAgentSupport;
@@ -113,7 +115,8 @@ public class StoryTaskToolRegistrar {
         definition.setRouteKey(ROUTE_STORY_SCENE_IMAGE_GENERATE);
         definition.setCategory("story_task");
         definition.setDisplayName("故事场景背景图片生成");
-        definition.setDescription("基于故事设定生成临时场景背景图片，不保存素材或关联故事");
+        definition.setDescription("根据故事场景描述生成临时背景图片，参考图可选");
+        definition.setContentType("image");
         definition.setExecutor(this::executeStorySceneImageGenerate);
         return definition;
     }
@@ -133,7 +136,7 @@ public class StoryTaskToolRegistrar {
             context.putAttribute("storyFullGenerateResultJson", resultJson);
             context.putAttribute("storyCoreResultJson", resultJson);
         }
-        ToolCallResult callResult = ToolCallResult.success("已生成完整故事", result);
+        ToolCallResult callResult = ToolCallResult.success("Story generated", result);
         callResult.setPayload(payload);
         return callResult;
     }
@@ -153,7 +156,7 @@ public class StoryTaskToolRegistrar {
             context.putAttribute("storyCorePresetResultJson", resultJson);
             context.putAttribute("storyCoreResultJson", resultJson);
         }
-        ToolCallResult callResult = ToolCallResult.success("已生成故事 preset", result);
+        ToolCallResult callResult = ToolCallResult.success("Story preset generated", result);
         callResult.setPayload(payload);
         return callResult;
     }
@@ -173,7 +176,7 @@ public class StoryTaskToolRegistrar {
             context.putAttribute("storySceneResultJson", resultJson);
             context.putAttribute("storyBackgroundResultJson", resultJson);
         }
-        ToolCallResult callResult = ToolCallResult.success("已生成故事背景", result);
+        ToolCallResult callResult = ToolCallResult.success("Story background generated", result);
         callResult.setPayload(payload);
         return callResult;
     }
@@ -191,7 +194,7 @@ public class StoryTaskToolRegistrar {
             context.putAttribute("storySceneImageResultJson", JSONObject.toJSONString(result));
         }
         ToolCallResult callResult = ToolCallResult.image(
-                "已生成故事场景背景图片",
+                "Story background image generated",
                 "story_scene_image",
                 result == null ? null : result.getImageUrl(),
                 result == null ? null : result.getPromptCode(),
@@ -246,15 +249,15 @@ public class StoryTaskToolRegistrar {
             AgentContext context, ToolCallRequest toolRequest) {
         TsStoryOneClickSceneImageGenerateDto dto = new TsStoryOneClickSceneImageGenerateDto();
         Map<String, Object> args = toolRequest == null ? null : toolRequest.getArguments();
-        Map<String, Object> promptVariables = TaskAgentSupport.readMapAttribute(context, "promptVariables");
-        dto.setTitle(firstText(args, promptVariables, "title"));
-        dto.setStorySetting(firstText(args, promptVariables, "storySetting", "story_setting"));
-        dto.setSiteSetting(firstText(args, promptVariables, "siteSetting", "site_setting"));
-        dto.setPlotOutline(firstText(args, promptVariables, "plotOutline", "plot_outline"));
-        dto.setStyleName(firstText(args, promptVariables, "styleName", "style_name", "styleHint", "style_hint"));
-        dto.setAspectRatio(firstText(args, promptVariables, "aspectRatio", "aspect_ratio"));
-        dto.setReferenceImageUrl(firstText(
-                args, promptVariables, "referenceImageUrl", "reference_image_url"));
+        String siteSetting = firstText(args, "siteSetting", "site_setting");
+        if (!StringUtils.hasText(siteSetting)) {
+            throw new AgentErrorException(
+                    AgentErrorCode.TOOL_STORY_IMAGE_REQUIRED_FIELD_MISSING,
+                    Map.of("field", "siteSetting")
+            );
+        }
+        dto.setSiteSetting(siteSetting);
+        dto.setReferenceImageUrl(firstText(args, "referenceImageUrl", "reference_image_url"));
         dto.normalize();
         return dto;
     }

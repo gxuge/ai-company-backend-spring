@@ -3,6 +3,8 @@ package org.jeecg.modules.system.agent.task.role;
 import com.alibaba.fastjson.JSONObject;
 import jakarta.annotation.PostConstruct;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorException;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.subagent.role.tool.RoleTaskToolSpec;
 import org.jeecg.modules.airag.agent.task.TaskAgentSupport;
@@ -116,7 +118,8 @@ public class RoleTaskToolRegistrar {
         definition.setRouteKey(ROUTE_ROLE_IMAGE_GENERATE);
         definition.setCategory("role_task");
         definition.setDisplayName("角色形象生成");
-        definition.setDescription("基于角色核心设定生成角色形象与生图提示");
+        definition.setDescription("根据角色形象描述生成角色图片，参考图可选");
+        definition.setContentType("image");
         definition.setExecutor(this::executeRoleGenerateRoleImage);
         return definition;
     }
@@ -160,7 +163,7 @@ public class RoleTaskToolRegistrar {
         if (context != null) {
             context.putAttribute("roleCoreResultJson", JSONObject.toJSONString(result));
         }
-        ToolCallResult callResult = ToolCallResult.success("已生成角色核心设定", result);
+        ToolCallResult callResult = ToolCallResult.success("Role core generated", result);
         callResult.setPayload(payload);
         return callResult;
     }
@@ -190,7 +193,7 @@ public class RoleTaskToolRegistrar {
             context.putAttribute("roleCorePresetResultJson", resultJson);
             context.putAttribute("roleCoreResultJson", resultJson);
         }
-        ToolCallResult callResult = ToolCallResult.success("已生成角色核心设定", result);
+        ToolCallResult callResult = ToolCallResult.success("Role core generated", result);
         callResult.setPayload(payload);
         return callResult;
     }
@@ -216,7 +219,7 @@ public class RoleTaskToolRegistrar {
                 context.putAttribute("roleCoreResultJson", coreJson);
             }
         }
-        ToolCallResult callResult = ToolCallResult.success("已生成完整角色", result);
+        ToolCallResult callResult = ToolCallResult.success("Role generated", result);
         callResult.setPayload(payload);
         return callResult;
     }
@@ -228,18 +231,19 @@ public class RoleTaskToolRegistrar {
         LoginUser user = TaskAgentSupport.buildLoginUser(context);
         TsRoleOneClickImageGenerateDto dto = new TsRoleOneClickImageGenerateDto();
         Map<String, Object> args = request == null ? null : request.getArguments();
-        Map<String, Object> promptVariables = TaskAgentSupport.readMapAttribute(context, "promptVariables");
-        dto.setRoleName(firstText(args, promptVariables, "roleName", "role_name"));
-        dto.setGender(firstText(args, promptVariables, "gender"));
-        dto.setOccupation(firstText(args, promptVariables, "occupation"));
-        dto.setBackgroundStory(firstText(args, promptVariables, "backgroundStory", "background_story"));
-        dto.setStyleName(firstText(args, promptVariables, "styleName", "style_name"));
-        dto.setAspectRatio(firstText(args, promptVariables, "aspectRatio", "aspect_ratio"));
-        dto.setReferenceImageUrl(firstText(args, promptVariables, "referenceImageUrl", "reference_image_url"));
+        String imageDescription = firstText(args, "imageDescription", "image_description");
+        if (!StringUtils.hasText(imageDescription)) {
+            throw new AgentErrorException(
+                    AgentErrorCode.TOOL_ROLE_IMAGE_REQUIRED_FIELD_MISSING,
+                    Map.of("field", "imageDescription")
+            );
+        }
+        dto.setImageDescription(imageDescription);
+        dto.setReferenceImageUrl(firstText(args, "referenceImageUrl", "reference_image_url"));
         dto.normalize();
         TsRoleOneClickImageGenerateVo result = this.roleGenerateService.generateRoleImage(user, dto);
         ToolCallResult callResult = ToolCallResult.image(
-                "已生成角色形象",
+                "Role image generated",
                 "role_image",
                 result == null ? null : result.getImageUrl(),
                 result == null ? null : result.getPromptCode(),
@@ -272,7 +276,7 @@ public class RoleTaskToolRegistrar {
         dto.setPreviewText(firstText(args, promptVariables, "previewText", "preview_text"));
         dto.normalize();
         TsRoleOneClickVoiceGenerateVo result = this.roleGenerateService.generateRoleVoice(user, dto);
-        ToolCallResult callResult = ToolCallResult.success("已生成角色声音", result);
+        ToolCallResult callResult = ToolCallResult.success("Role voice generated", result);
         Map<String, Object> payload = buildCommonPayload(context, request, "role_voice", RoleTaskToolSpec.ROLE_GENERATE_ROLE_VOICE);
         payload.put("result", result);
         payload.put("resultJson", JSONObject.toJSONString(result));

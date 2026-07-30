@@ -34,7 +34,7 @@
 - 处理 `llm.start / llm.delta / llm.end` 和 `tool.start / tool.error / tool.end`。
 
 ### AgentEventPublisher
-- 统一负责 SSE 推送、事件落库、Redis 缓冲。
+- 统一负责 SSE 推送、事件落库、进程内文本缓冲。
 - `llm.delta` 只推送和缓存，不落库。
 
 ## 三、执行链路

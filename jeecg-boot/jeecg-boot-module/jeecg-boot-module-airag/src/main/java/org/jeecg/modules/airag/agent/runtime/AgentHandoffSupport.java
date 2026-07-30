@@ -119,9 +119,9 @@ public final class AgentHandoffSupport {
         payload.putIfAbsent("subAgentName", subAgentName);
         payload.putIfAbsent("stage", fallbackStage);
         payload.putIfAbsent("userRequest", context == null ? null : context.getUserInput());
-        payload.putIfAbsent("reason", "用户请求已超出当前子Agent职责，需要交还主Agent重新派活");
-        payload.putIfAbsent("progressSummary", "当前子Agent已停止继续处理，并交还主Agent重新判断。");
-        String content = "已交还主Agent重新派活：" + oConvertUtils.getString(payload.get("userRequest"));
+        payload.putIfAbsent("reason", "The request is outside the current sub-agent's responsibility");
+        payload.putIfAbsent("progressSummary", "The sub-agent stopped processing and returned control to the main agent.");
+        String content = "Returned control to the main agent: " + oConvertUtils.getString(payload.get("userRequest"));
         String handoffInput = oConvertUtils.getString(payload.get("userRequest"));
         AgentResult result = AgentResult.handoffTo(MAIN_AGENT_CODE, handoffInput);
         result.setContent(content);
@@ -152,11 +152,11 @@ public final class AgentHandoffSupport {
         payload.put("stage", "done");
         payload.put("completed", Boolean.TRUE);
         payload.put("userRequest", context == null ? null : context.getUserInput());
-        payload.put("reason", "子Agent职责内任务已完成，交还主Agent统一回复用户");
+        payload.put("reason", "The sub-agent task is complete and control is returning to the main agent");
         payload.put("progressSummary", content);
         payload.put("result", structuredResult);
 
-        String handoffInput = "子Agent任务已经完成。请根据交还报告直接向用户确认结果，不要再次委托同一个子Agent。";
+        String handoffInput = "The sub-agent task is complete. Reply using the handoff report and do not delegate the same task again.";
         AgentResult result = AgentResult.handoffTo(MAIN_AGENT_CODE, handoffInput);
         result.setContent(content);
         result.setStructuredResult(payload);

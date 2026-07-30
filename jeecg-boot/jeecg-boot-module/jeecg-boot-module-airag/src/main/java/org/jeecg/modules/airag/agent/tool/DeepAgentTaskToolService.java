@@ -5,6 +5,7 @@ import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.service.tool.ToolExecutor;
 import org.jeecg.modules.airag.agent.common.SubAgentRegistry;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentResult;
 import org.springframework.stereotype.Component;
@@ -66,13 +67,13 @@ public class DeepAgentTaskToolService {
 
     private ToolSpecification buildTaskSpec() {
         JsonObjectSchema schema = JsonObjectSchema.builder()
-                .addStringProperty("subAgentName", "要委托的子 Agent 名称")
-                .addStringProperty("taskDescription", "本次需要子 Agent 完成的任务说明")
+                .addStringProperty("subAgentName", "Name of the sub-agent that should handle the delegated task")
+                .addStringProperty("taskDescription", "Clear description of the task the sub-agent must complete")
                 .required("subAgentName", "taskDescription")
                 .build();
         return ToolSpecification.builder()
                 .name(TOOL_TASK)
-                .description("把当前任务委托给指定子 Agent 执行")
+                .description("Delegate the current task to a specific sub-agent")
                 .parameters(schema)
                 .build();
     }
@@ -80,23 +81,23 @@ public class DeepAgentTaskToolService {
     private ToolExecutor buildTaskExecutor(AgentContext parentContext) {
         return (toolExecutionRequest, memoryId) -> {
             if (isTaskAlreadyCalled(parentContext)) {
-                return "本轮已委托过一个子Agent，不再重复委托；请基于已有子Agent结果回复用户。";
+                return "A sub-agent was already delegated in this run. Use the existing sub-agent result.";
             }
             markTaskCalled(parentContext);
             JSONObject args = parseArgs(toolExecutionRequest == null ? null : toolExecutionRequest.arguments());
             String subAgentName = trimToNull(args == null ? null : args.getString("subAgentName"));
             String taskDescription = trimToNull(args == null ? null : args.getString("taskDescription"));
             if (!StringUtils.hasText(subAgentName)) {
-                return "task 调用失败：subAgentName不能为空";
+                return "Task delegation failed: subAgentName is required.";
             }
             if (!StringUtils.hasText(taskDescription)) {
-                return "task 调用失败：taskDescription不能为空";
+                return "Task delegation failed: taskDescription is required.";
             }
 
             if (parentContext != null) {
                 parentContext.putAttribute(ATTR_PENDING_TASK_ARGS, args);
             }
-            return "task 已登记，将在当前主 Agent LLM 节点结束后执行；不要再输出面向用户的委托说明。";
+            return "Task delegation registered. Do not output another delegation message to the user.";
         };
     }
 
@@ -114,14 +115,20 @@ public class DeepAgentTaskToolService {
         String subAgentName = trimToNull(args.getString("subAgentName"));
         String taskDescription = trimToNull(args.getString("taskDescription"));
         if (!StringUtils.hasText(subAgentName) || !StringUtils.hasText(taskDescription)) {
-            return AgentResult.failed("task 调用失败：subAgentName/taskDescription不能为空");
+            return AgentResult.failed(
+                    AgentErrorCode.TOOL_TASK_DELEGATION_REQUIRED_FIELD_MISSING,
+                    Map.of("fields", "subAgentName,taskDescription")
+            );
         }
         if (!this.subAgentRegistry.exists(subAgentName)) {
-            return AgentResult.failed("task 调用失败：未找到子Agent " + subAgentName);
+            return AgentResult.failed(
+                    AgentErrorCode.TOOL_TASK_DELEGATION_SUBAGENT_NOT_FOUND,
+                    Map.of("subAgentName", subAgentName)
+            );
         }
 
         AgentResult result = AgentResult.handoffTo(subAgentName, taskDescription);
-        result.setContent("正在转交子Agent处理");
+        result.setContent("Handing off to the sub-agent");
         result.setStructuredResult(args);
         result.getData().put("action", "HANDOFF_TO_AGENT");
         result.getData().put("status", "HANDOFF");

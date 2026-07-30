@@ -3,6 +3,8 @@ package org.jeecg.modules.system.vo.tsagentchatsession;
 import lombok.Data;
 
 import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Agent 回复结果。
@@ -52,4 +54,24 @@ public class TsAgentChatReplyVo {
      * 创建时间。
      */
     private Date createdAt;
+
+    /**
+     * 稳定业务错误码。
+     */
+    private String errorCode;
+
+    /**
+     * 错误分类。
+     */
+    private String errorCategory;
+
+    /**
+     * 是否建议重试。
+     */
+    private Boolean retryable;
+
+    /**
+     * 错误插值参数。
+     */
+    private Map<String, Object> errorArgs = new LinkedHashMap<>();
 }

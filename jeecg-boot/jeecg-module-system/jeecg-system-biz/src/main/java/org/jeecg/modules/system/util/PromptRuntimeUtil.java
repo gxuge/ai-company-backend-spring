@@ -134,7 +134,7 @@ public class PromptRuntimeUtil {
     public static Map<String, String> buildImageVars(String roleName,
                                                      String gender,
                                                      String occupation,
-                                                     String backgroundStory,
+                                                     String imageDescription,
                                                      String styleName,
                                                      String aspectRatio,
                                                      String referenceImageUrl) {
@@ -142,7 +142,8 @@ public class PromptRuntimeUtil {
         variables.put("role_name", nullableToken(roleName));
         variables.put("gender", nullableToken(gender));
         variables.put("occupation", nullableToken(occupation));
-        variables.put("background_story", nullableToken(backgroundStory));
+        variables.put("image_description", nullableToken(imageDescription));
+        variables.put("background_story", nullableToken(imageDescription));
         variables.put("style_name", nullableToken(styleName));
         variables.put("aspect_ratio", nullableToken(aspectRatio));
         variables.put("reference_image_url", nullableToken(referenceImageUrl));

@@ -3,6 +3,8 @@ package org.jeecg.modules.airag.agent.subagent.story;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.airag.agent.graph.NodeResult;
 import org.jeecg.modules.airag.agent.graph.SubAgent;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentHandoffSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentResult;
@@ -42,7 +44,7 @@ public class StoryBackgroundTaskSubAgent implements SubAgent {
                 return AgentHandoffSupport.buildHandoffResult(context, subAgentName(), "background");
             }
             if (nodeResult == null || !nodeResult.isSuccess()) {
-                return AgentResult.failed(nodeResult == null ? "故事背景生成节点未返回结果" : nodeResult.getErrorMessage());
+                return AgentResult.failed(nodeResult == null ? "Story background generation returned no result" : nodeResult.getErrorMessage());
             }
 
             String content = nodeResult.getContent();
@@ -50,7 +52,7 @@ public class StoryBackgroundTaskSubAgent implements SubAgent {
                 content = context.getLatestContent();
             }
             if (!oConvertUtils.isNotEmpty(content)) {
-                content = "故事背景已生成";
+                content = "Story background generated";
             }
 
             Map<String, Object> structuredResult = new LinkedHashMap<>();
@@ -59,14 +61,19 @@ public class StoryBackgroundTaskSubAgent implements SubAgent {
             structuredResult.put("storySceneImageResultJson", context == null ? null : context.getAttribute("storySceneImageResultJson"));
             structuredResult.put("nodeResult", nodeResult.getData());
             structuredResult.put("nodeContent", nodeResult.getContent());
-            return AgentHandoffSupport.buildCompletedHandoffResult(
+            return AgentHandoffSupport.buildTerminalCompletedHandoffResult(
                     context,
                     subAgentName(),
                     content,
                     structuredResult
             );
         } catch (Exception ex) {
-            return AgentResult.failed(ex.getMessage());
+            AgentResult result = AgentErrorSupport.failed(
+                    AgentErrorCode.GENERATION_STORY_IMAGE_EXECUTION_FAILED,
+                    Map.of("subAgentName", subAgentName())
+            );
+            AgentErrorSupport.attach(result, ex, AgentErrorCode.GENERATION_STORY_IMAGE_EXECUTION_FAILED);
+            return result;
         }
     }
 

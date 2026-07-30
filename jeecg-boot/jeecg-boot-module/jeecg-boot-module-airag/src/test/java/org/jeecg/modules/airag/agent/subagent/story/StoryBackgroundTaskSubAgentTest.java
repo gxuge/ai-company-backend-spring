@@ -2,6 +2,7 @@ package org.jeecg.modules.airag.agent.subagent.story;
 
 import org.jeecg.modules.airag.agent.graph.NodeResult;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
+import org.jeecg.modules.airag.agent.runtime.AgentHandoffSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentRegistry;
 import org.jeecg.modules.airag.agent.runtime.AgentResult;
 import org.jeecg.modules.airag.agent.runtime.NodeRunner;
@@ -28,6 +29,10 @@ class StoryBackgroundTaskSubAgentTest {
         Assertions.assertEquals(AgentResult.Status.HANDOFF, result.getStatus());
         Assertions.assertEquals(AgentRegistry.MAIN_AGENT_CODE, result.getHandoffTargetAgentCode());
         Assertions.assertEquals(Boolean.TRUE, result.getData().get("completed"));
+        Assertions.assertEquals(
+                Boolean.TRUE,
+                result.getData().get(AgentHandoffSupport.DATA_END_RUN_AFTER_HANDOFF)
+        );
         Mockito.verify(nodeRunner).run(context, backgroundNode);
         Mockito.verifyNoMoreInteractions(nodeRunner);
     }

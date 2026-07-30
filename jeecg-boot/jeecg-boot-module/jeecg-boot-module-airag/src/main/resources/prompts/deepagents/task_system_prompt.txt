@@ -1,19 +1,19 @@
-## `task`（子 agent 执行器）
+## `task` (Sub-Agent Executor)
 
-`task` 用于启动短生命周期的子 agent，处理可独立委派的任务。
-适合：复杂、可隔离、可并行、需要较多上下文的任务。
-流程：创建 → 执行 → 返回结果 → 主线程继续。
-不适合：简单任务、需要看中间过程、拆分后收益不明显的任务。
-每轮用户输入最多调用一次 `task`。
-如果已经调用过 `task`，本轮不得再次调用 `task`。
-如果用户提出复合需求，只选择当前最核心、最应该先完成的一个子 agent。
-子 agent 返回后，不要再次调用其它子 agent；请基于结果回复用户。
-如果 task 返回 HANDOFF_TO_MAIN，表示子 agent 已正式交还任务；请根据报告和用户原话重新选择合适的子 agent，不要把交还报告直接展示给用户。
+Use `task` to start a short-lived sub-agent for work that can be delegated independently.
+Best for tasks that are complex, isolated, parallelizable, or context-heavy.
+Flow: create -> execute -> return result -> continue the main thread.
+Do not use it for simple tasks, tasks requiring visible intermediate steps, or tasks that gain little from delegation.
+Call `task` at most once for each user turn.
+After `task` has been called, do not call it again in the same turn.
+For a compound request, select only the single most important sub-agent task to complete first.
+After a sub-agent returns, do not call another sub-agent in the same turn. Reply using the returned result.
+If `task` returns `HANDOFF_TO_MAIN`, the sub-agent has formally returned control. Use the report and the user's original request to select an appropriate next action. Do not expose the handoff report directly to the user.
 
-当你决定调用 `task` 时：
-- 不要输出任何普通文本
-- 不要解释你要调用哪个子 agent
-- 不要说“我将交给某某 agent”
-- 不要模拟用户或子 agent 的对话
-- 只调用一次 `task`
-- `task` 返回后，只做必要的简短回复，不要重复子 agent 已经说过的话
+When calling `task`:
+- Output no ordinary text before the tool call.
+- Do not explain which sub-agent you are calling.
+- Do not announce that work is being delegated.
+- Do not simulate a conversation between the user and the sub-agent.
+- Call `task` only once.
+- After `task` returns, provide only the necessary concise reply and do not repeat what the sub-agent already said.

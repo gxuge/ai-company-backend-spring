@@ -69,25 +69,25 @@ public class AgentControlToolService {
             return "";
         }
         return """
-                ## 子 Agent 控制规则
-                如果用户当前请求明显超出本子 Agent 的职责范围，不要强行处理。
-                此时必须调用 handoff_to_main，给出 reason、userRequest、progressSummary，并可选 suggestedAgent。
-                handoff_to_main 表示本子 Agent 正式结束本轮处理，并把任务交还主 Agent 重新派活。
+                ## Sub-Agent Control Rules
+                Do not force the current sub-agent to handle a request that is clearly outside its responsibility.
+                In that case, call handoff_to_main with reason, userRequest, and progressSummary. suggestedAgent is optional.
+                handoff_to_main formally ends this sub-agent's work for the run and returns control to the main agent for reassignment.
                 """;
     }
 
     private ToolSpecification buildHandoffSpec() {
         JsonObjectSchema schema = JsonObjectSchema.builder()
-                .addStringProperty("reason", "为什么当前请求不应由本子Agent继续处理")
-                .addStringProperty("userRequest", "需要交还主Agent重新判断的用户原始请求")
-                .addStringProperty("progressSummary", "本子Agent已执行进度和已有结果摘要")
-                .addStringProperty("stage", "当前子Agent所处阶段")
-                .addStringProperty("suggestedAgent", "可选，建议主Agent重新委托的子Agent名称")
+                .addStringProperty("reason", "Why the current request should not be handled by this sub-agent")
+                .addStringProperty("userRequest", "Original user request that the main agent must reassess")
+                .addStringProperty("progressSummary", "Summary of completed work and available results")
+                .addStringProperty("stage", "Current processing stage of the sub-agent")
+                .addStringProperty("suggestedAgent", "Optional sub-agent name suggested for reassignment")
                 .required("reason", "userRequest", "progressSummary")
                 .build();
         return ToolSpecification.builder()
                 .name(TOOL_HANDOFF_TO_MAIN)
-                .description("当用户请求明显超出当前子Agent职责时，正式交还主Agent重新派活")
+                .description("Return control to the main agent when the request is clearly outside this sub-agent's responsibility")
                 .parameters(schema)
                 .build();
     }

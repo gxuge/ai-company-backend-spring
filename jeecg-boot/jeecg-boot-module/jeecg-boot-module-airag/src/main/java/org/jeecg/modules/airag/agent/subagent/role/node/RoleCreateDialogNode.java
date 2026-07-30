@@ -61,8 +61,8 @@ public class RoleCreateDialogNode extends LlmNode {
 
     private static LlmNodeDefinition buildDefinition() {
         LlmNodeDefinition definition = new LlmNodeDefinition();
-        definition.setName("角色创建对话");
-        definition.setDescription("围绕创建角色收集信息、追问并整理最终核心设定。");
+        definition.setName("角色创建");
+        definition.setDescription("通过自然对话收集或补全角色名称、性别、职业和背景故事，整理确认后生成完整角色。");
         definition.setSkillDomain("role");
         definition.setSkillTopK(3);
         definition.setSkills(List.of("role_create_dialog"));

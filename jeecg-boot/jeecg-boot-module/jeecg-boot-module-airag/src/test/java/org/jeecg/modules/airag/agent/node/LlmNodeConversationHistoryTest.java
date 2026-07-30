@@ -8,10 +8,17 @@ import org.jeecg.modules.airag.agent.graph.LlmNodeDefinition;
 import org.jeecg.modules.airag.agent.graph.NodeResult;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentConversationMessage;
+import org.jeecg.modules.airag.agent.runtime.AgentEventPublisher;
 import org.jeecg.modules.airag.agent.subagent.role.node.RoleCreateDialogNode;
 import org.jeecg.modules.airag.agent.subagent.story.node.StoryCreateDialogNode;
+import org.jeecg.modules.airag.agent.tool.ToolCallRequest;
+import org.jeecg.modules.airag.agent.tool.ToolCallResult;
+import org.jeecg.modules.airag.agent.tool.ToolDefinition;
+import org.jeecg.modules.airag.agent.tool.ToolRegistry;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
 
 import java.lang.reflect.Method;
 import java.util.List;
@@ -116,6 +123,39 @@ class LlmNodeConversationHistoryTest {
         }
     }
 
+    @Test
+    void shouldPublishToolDefinitionContentTypeOnStart() {
+        AgentEventPublisher eventPublisher = Mockito.mock(AgentEventPublisher.class);
+        ToolRegistry toolRegistry = Mockito.mock(ToolRegistry.class);
+        ToolDefinition toolDefinition = new ToolDefinition();
+        toolDefinition.setName("image_tool");
+        toolDefinition.setContentType("image");
+        Mockito.when(toolRegistry.getDefinition("image_tool")).thenReturn(toolDefinition);
+        Mockito.when(toolRegistry.execute(Mockito.any(), Mockito.any()))
+                .thenReturn(ToolCallResult.success("图片生成完成", Map.of()));
+
+        ToolCallRequest request = new ToolCallRequest();
+        request.setToolName("image_tool");
+        request.setArguments(Map.of("prompt", "测试图片"));
+        TestLlmNode node = new TestLlmNode(false, eventPublisher);
+
+        node.executeTestTool(new AgentContext(), toolRegistry, request);
+
+        ArgumentCaptor<Map<String, Object>> payloadCaptor = mapCaptor();
+        Mockito.verify(eventPublisher).publishToolStart(
+                Mockito.any(),
+                Mockito.eq("test_llm"),
+                Mockito.eq("image_tool"),
+                payloadCaptor.capture()
+        );
+        Assertions.assertEquals("image", payloadCaptor.getValue().get("contentType"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static ArgumentCaptor<Map<String, Object>> mapCaptor() {
+        return ArgumentCaptor.forClass((Class) Map.class);
+    }
+
     private static LlmNodeDefinition readDefinition(Class<?> nodeType) throws Exception {
         Method method = nodeType.getDeclaredMethod("buildDefinition");
         method.setAccessible(true);
@@ -125,12 +165,22 @@ class LlmNodeConversationHistoryTest {
     private static class TestLlmNode extends LlmNode {
 
         TestLlmNode(boolean conversationHistoryEnabled) {
+            this(conversationHistoryEnabled, null);
+        }
+
+        TestLlmNode(boolean conversationHistoryEnabled, AgentEventPublisher eventPublisher) {
             super("test_llm", "测试 LLM", buildDefinition(conversationHistoryEnabled),
-                    null, null, null, null);
+                    null, null, null, eventPublisher);
         }
 
         List<ChatMessage> buildTestMessages(AgentContext context) {
             return buildMessages(Map.of(), null, context);
+        }
+
+        ToolCallResult executeTestTool(AgentContext context,
+                                       ToolRegistry toolRegistry,
+                                       ToolCallRequest request) {
+            return executeToolWithSse(context, toolRegistry, request);
         }
 
         @Override

@@ -186,7 +186,7 @@ public class TsVoiceProfileServiceImpl extends ServiceImpl<TsVoiceProfileMapper,
         if (profile == null) {
             throw new JeecgBootException(MSG_USER_VOICE_NOT_FOUND);
         }
-        return Result.OK("淇敼鎴愬姛", buildVoiceProfileVo(profile));
+        return Result.OK("Updated successfully", buildVoiceProfileVo(profile));
     }
 
     @Override
@@ -199,7 +199,7 @@ public class TsVoiceProfileServiceImpl extends ServiceImpl<TsVoiceProfileMapper,
         relation.setStatus(0);
         relation.setUpdatedAt(new Date());
         tsUserVoiceProfileMapper.updateById(relation);
-        return Result.OK("鍒犻櫎鎴愬姛");
+        return Result.OK("Deleted successfully");
     }
 
     @Override

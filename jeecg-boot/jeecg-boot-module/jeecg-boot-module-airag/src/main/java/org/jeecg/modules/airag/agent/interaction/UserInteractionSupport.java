@@ -2,6 +2,8 @@ package org.jeecg.modules.airag.agent.interaction;
 
 import org.jeecg.common.util.UUIDGenerator;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorException;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 
 import java.util.ArrayList;
@@ -99,10 +101,16 @@ public final class UserInteractionSupport {
         if (actualInteractionId != null
                 && expectedInteractionId != null
                 && !expectedInteractionId.equals(actualInteractionId)) {
-            throw new IllegalArgumentException("当前选项已失效，请重新选择");
+            throw new AgentErrorException(
+                    AgentErrorCode.INTERACTION_OPTION_EXPIRED,
+                    Map.of("interactionId", actualInteractionId)
+            );
         }
         if (!containsOption(pending.get("options"), optionValue)) {
-            throw new IllegalArgumentException("不支持的选项值：" + optionValue);
+            throw new AgentErrorException(
+                    AgentErrorCode.INTERACTION_OPTION_UNSUPPORTED,
+                    Map.of("optionValue", optionValue)
+            );
         }
         return optionValue;
     }

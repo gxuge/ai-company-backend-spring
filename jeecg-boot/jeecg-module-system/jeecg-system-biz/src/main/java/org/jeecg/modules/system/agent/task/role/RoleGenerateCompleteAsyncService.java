@@ -3,6 +3,8 @@ package org.jeecg.modules.system.agent.task.role;
 import com.alibaba.fastjson2.JSON;
 import lombok.RequiredArgsConstructor;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorException;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentEventPublisher;
 import org.jeecg.modules.airag.agent.subagent.role.tool.RoleGenerateCompleteToolContract;
@@ -39,7 +41,10 @@ public class RoleGenerateCompleteAsyncService {
         String taskId = request == null ? null : request.getTaskId();
         String eventId = request == null ? null : request.getEventId();
         if (taskId == null || taskId.isBlank() || eventId == null || eventId.isBlank()) {
-            throw new IllegalArgumentException("异步角色生成缺少 taskId 或 eventId");
+            throw new AgentErrorException(
+                    AgentErrorCode.TOOL_ROLE_GENERATION_REQUIRED_FIELD_MISSING,
+                    Map.of("field", "taskId/eventId")
+            );
         }
 
         LoginUser user = TaskAgentSupport.buildLoginUser(context);
@@ -67,7 +72,7 @@ public class RoleGenerateCompleteAsyncService {
         accepted.put("eventId", eventId);
         accepted.put("status", "running");
         ToolCallResult result = ToolCallResult.asyncAccepted(
-                "完整角色生成任务已开始",
+                "Role generation started",
                 taskId,
                 eventId,
                 accepted
@@ -96,7 +101,7 @@ public class RoleGenerateCompleteAsyncService {
                     eventId,
                     nodeName,
                     RoleTaskToolSpec.ROLE_GENERATE_COMPLETE,
-                    "完整角色生成完成",
+                    "Role generation completed",
                     payload
             );
         } catch (Exception ex) {

@@ -2,6 +2,8 @@ package org.jeecg.modules.airag.agent.main;
 
 import lombok.RequiredArgsConstructor;
 import org.jeecg.modules.airag.agent.common.SubAgentRegistry;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorSupport;
 import org.jeecg.modules.airag.agent.graph.Agent;
 import org.jeecg.modules.airag.agent.graph.AgentNode;
 import org.jeecg.modules.airag.agent.graph.NodeResult;
@@ -62,16 +64,25 @@ public class TsAgentChatAgent implements Agent {
         }
         NodeResult nodeResult = this.nodeRunner.run(context, (AgentNode) this.mainNode);
         if (nodeResult == null) {
-            return AgentResult.failed("DeepAgents 主节点未返回结果");
+            return AgentResult.failed(AgentErrorCode.RUNTIME_AGENT_EMPTY_RESULT, null);
         }
         AgentResult pendingTaskResult = this.deepAgentTaskToolService.consumePendingHandoff(context);
         if (pendingTaskResult != null) {
             enrichResult(pendingTaskResult, nodeResult);
             return pendingTaskResult;
         }
-        AgentResult result = nodeResult.isSuccess()
-                ? AgentResult.success(nodeResult.getContent())
-                : AgentResult.failed(nodeResult.getErrorMessage() == null ? nodeResult.getContent() : nodeResult.getErrorMessage());
+        AgentResult result;
+        if (nodeResult.isSuccess()) {
+            result = AgentResult.success(nodeResult.getContent());
+        } else {
+            result = AgentErrorSupport.failed(AgentErrorCode.RUNTIME_AGENT_EXECUTION_FAILED, null);
+            String detail = nodeResult.getErrorMessage() == null
+                    ? nodeResult.getContent()
+                    : nodeResult.getErrorMessage();
+            if (detail != null && !detail.isBlank()) {
+                result.getData().put("details", java.util.Map.of("originalMessage", detail));
+            }
+        }
         enrichResult(result, nodeResult);
         return result;
     }

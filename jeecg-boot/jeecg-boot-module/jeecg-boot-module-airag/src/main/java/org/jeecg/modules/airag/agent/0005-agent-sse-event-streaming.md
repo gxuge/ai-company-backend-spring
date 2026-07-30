@@ -24,9 +24,9 @@ Superseded by ADR 0008
 ## 传输规则
 - `agent.start` / `agent.end`：只通过 SSE 下发，不入库。
 - `llm.start`：入库 + SSE。
-- `llm.delta`：只写 Redis buffer + SSE，不入库。
+- `llm.delta`：只写进程内 buffer + SSE，不入库。
 - `llm.error`：入库 + SSE。
-- `llm.end`：入库 + SSE，内容来自 Redis buffer 合并结果。
+- `llm.end`：入库 + SSE，内容来自进程内 buffer 合并结果。
 - `tool.start`：入库 + SSE。
 - `tool.error`：入库 + SSE。
 - `tool.end`：入库 + SSE，且始终作为 Tool 节点最后一个事件。
@@ -44,8 +44,8 @@ Superseded by ADR 0008
    - 组织事件 payload
    - 写入数据库
    - 推送 SSE
-   - 缓存 `llm.delta`
-3. `llm.end` 时从 Redis 合并完整文本，再写入事件表。
+   - 在进程内缓存 `llm.delta`
+3. `llm.end` 时从进程内缓冲合并完整文本，再写入事件表。
 4. 前端只消费精简后的 SSE 内容，避免直接处理大段嵌套 JSON。
 
 ## 设计目标

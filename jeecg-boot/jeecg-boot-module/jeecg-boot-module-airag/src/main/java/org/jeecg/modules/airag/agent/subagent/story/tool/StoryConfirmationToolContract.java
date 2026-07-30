@@ -3,6 +3,8 @@ package org.jeecg.modules.airag.agent.subagent.story.tool;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -92,10 +94,16 @@ public final class StoryConfirmationToolContract {
     private static String requireCopy(Map<String, Object> arguments, String fieldName) {
         String value = normalize(arguments == null ? null : arguments.get(fieldName));
         if (!oConvertUtils.isNotEmpty(value)) {
-            throw new IllegalArgumentException(fieldName + " 不能为空");
+            throw new AgentErrorException(
+                    AgentErrorCode.TOOL_STORY_CONFIRMATION_REQUIRED_FIELD_MISSING,
+                    Map.of("field", fieldName)
+            );
         }
         if (value.codePointCount(0, value.length()) > MAX_COPY_LENGTH) {
-            throw new IllegalArgumentException(fieldName + " 不能超过12个字");
+            throw new AgentErrorException(
+                    AgentErrorCode.TOOL_STORY_CONFIRMATION_FIELD_TOO_LONG,
+                    Map.of("field", fieldName, "maxLength", MAX_COPY_LENGTH)
+            );
         }
         return value;
     }

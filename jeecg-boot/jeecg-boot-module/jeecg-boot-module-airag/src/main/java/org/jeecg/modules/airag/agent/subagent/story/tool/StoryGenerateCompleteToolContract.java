@@ -4,6 +4,8 @@ import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.model.chat.request.json.JsonArraySchema;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorException;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 
 import java.util.ArrayList;
@@ -127,13 +129,19 @@ public final class StoryGenerateCompleteToolContract {
     public static Map<String, Object> requireTransferData(Map<String, Object> arguments) {
         Object rawTransferData = arguments == null ? null : arguments.get(TRANSFER_DATA);
         if (!(rawTransferData instanceof Map<?, ?> rawMap)) {
-            throw new IllegalArgumentException("transferData 必须是包含故事核心字段和角色列表的对象");
+            throw new AgentErrorException(
+                    AgentErrorCode.TOOL_STORY_GENERATION_REQUIRED_FIELD_MISSING,
+                    Map.of("field", TRANSFER_DATA)
+            );
         }
         Map<String, Object> transferData = new LinkedHashMap<>();
         for (String field : STORY_FIELDS) {
             String value = normalize(rawMap.get(field));
             if (!oConvertUtils.isNotEmpty(value)) {
-                throw new IllegalArgumentException("transferData." + field + " 不能为空");
+                throw new AgentErrorException(
+                        AgentErrorCode.TOOL_STORY_GENERATION_REQUIRED_FIELD_MISSING,
+                        Map.of("field", TRANSFER_DATA + "." + field)
+                );
             }
             transferData.put(field, value);
         }
@@ -164,20 +172,27 @@ public final class StoryGenerateCompleteToolContract {
 
     private static List<Map<String, Object>> requireRoles(Object rawRoles) {
         if (!(rawRoles instanceof List<?> roleList) || roleList.isEmpty()) {
-            throw new IllegalArgumentException("transferData.roles 不能为空");
+            throw new AgentErrorException(
+                    AgentErrorCode.TOOL_STORY_GENERATION_REQUIRED_FIELD_MISSING,
+                    Map.of("field", TRANSFER_DATA + "." + ROLES)
+            );
         }
         List<Map<String, Object>> roles = new ArrayList<>(roleList.size());
         for (int index = 0; index < roleList.size(); index++) {
             Object rawRole = roleList.get(index);
             if (!(rawRole instanceof Map<?, ?> rawRoleMap)) {
-                throw new IllegalArgumentException("transferData.roles[" + index + "] 必须是角色对象");
+                throw new AgentErrorException(
+                        AgentErrorCode.TOOL_STORY_GENERATION_ROLE_INVALID,
+                        Map.of("index", index)
+                );
             }
             Map<String, Object> role = new LinkedHashMap<>();
             for (String field : ROLE_FIELDS) {
                 String value = normalize(rawRoleMap.get(field));
                 if (!oConvertUtils.isNotEmpty(value)) {
-                    throw new IllegalArgumentException(
-                            "transferData.roles[" + index + "]." + field + " 不能为空"
+                    throw new AgentErrorException(
+                            AgentErrorCode.TOOL_STORY_GENERATION_REQUIRED_FIELD_MISSING,
+                            Map.of("field", TRANSFER_DATA + "." + ROLES + "[" + index + "]." + field)
                     );
                 }
                 role.put(field, value);

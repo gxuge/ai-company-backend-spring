@@ -5,6 +5,8 @@ import org.springframework.util.StringUtils;
 
 @Data
 public class TsRoleOneClickImageGenerateDto {
+    /** 完整角色形象描述 */
+    private String imageDescription;
     /** 人物名称 */
     private String roleName;
     /** 性别（male/female/unknown/random） */
@@ -21,6 +23,7 @@ public class TsRoleOneClickImageGenerateDto {
     private String referenceImageUrl;
 
     public void normalize() {
+        this.imageDescription = trimToNull(this.imageDescription);
         this.roleName = trimToNull(this.roleName);
         this.gender = normalizeGender(this.gender);
         this.occupation = trimToNull(this.occupation);

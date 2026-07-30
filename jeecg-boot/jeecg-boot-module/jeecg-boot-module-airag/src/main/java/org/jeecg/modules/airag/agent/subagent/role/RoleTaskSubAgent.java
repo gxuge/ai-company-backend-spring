@@ -1,6 +1,8 @@
 package org.jeecg.modules.airag.agent.subagent.role;
 
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorSupport;
 import org.jeecg.modules.airag.agent.graph.NodeResult;
 import org.jeecg.modules.airag.agent.graph.SubAgent;
 import org.jeecg.modules.airag.agent.interaction.UserInteractionSupport;
@@ -61,7 +63,11 @@ public class RoleTaskSubAgent implements SubAgent {
 
             return continueWithDialog(context, chainData);
         } catch (Exception ex) {
-            AgentResult result = AgentResult.failed(ex.getMessage());
+            AgentResult result = AgentErrorSupport.failed(
+                    AgentErrorCode.RUNTIME_SUBAGENT_EXECUTION_FAILED,
+                    Map.of("subAgentName", subAgentName())
+            );
+            AgentErrorSupport.attach(result, ex, AgentErrorCode.RUNTIME_SUBAGENT_EXECUTION_FAILED);
             result.getData().putAll(chainData);
             result.getData().put("stage", "failed");
             AgentFlowStateSupport.attachResumeData(result, context);
@@ -116,7 +122,7 @@ public class RoleTaskSubAgent implements SubAgent {
 
     private AgentResult completeAfterGenerationAccepted(AgentContext context,
                                                         Map<String, Object> chainData) {
-        String content = "完整角色生成任务已开始";
+        String content = "Role generation has started";
         if (context != null) {
             context.putAttribute("roleTaskStage", "done");
         }
@@ -142,7 +148,7 @@ public class RoleTaskSubAgent implements SubAgent {
                                            Map<String, Object> interaction) {
         String question = oConvertUtils.getString(interaction.get("question"));
         if (!oConvertUtils.isNotEmpty(question)) {
-            question = "你对这版角色满意吗？";
+            question = "Are you satisfied with this role?";
         }
         markStage(context, STAGE_CONFIRMATION, this.roleCreateDialogNode.nodeName());
         AgentResult result = AgentResult.waitingUser(question);
@@ -163,7 +169,7 @@ public class RoleTaskSubAgent implements SubAgent {
                                 String content,
                                 Map<String, Object> chainData,
                                 String stage) {
-        String text = oConvertUtils.isNotEmpty(content) ? content : "请继续补充角色设定。";
+        String text = oConvertUtils.isNotEmpty(content) ? content : "Please continue describing the role.";
         markStage(context, stage, this.roleCreateDialogNode.nodeName());
         AgentResult result = AgentResult.waitingUser(text);
         result.setStructuredResult(chainData);

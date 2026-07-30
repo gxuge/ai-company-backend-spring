@@ -61,8 +61,8 @@ public class StoryCreateDialogNode extends LlmNode {
 
     private static LlmNodeDefinition buildDefinition() {
         LlmNodeDefinition definition = new LlmNodeDefinition();
-        definition.setName("故事创建对话");
-        definition.setDescription("围绕创建故事收集信息、追问并整理最终核心设定。");
+        definition.setName("故事创建");
+        definition.setDescription("通过自然对话收集或补全故事标题、世界观、场景设定、剧情大纲和角色信息，整理确认后生成完整故事。");
         definition.setSkillDomain("story");
         definition.setSkillTopK(3);
         definition.setSkills(List.of("story_create_dialog"));

@@ -32,6 +32,10 @@ class RoleTaskToolRegistrarCleanupTest {
         Assertions.assertEquals(5, toolRegistry.listDefinitions().size());
         Assertions.assertTrue(toolRegistry.listDefinitions().stream()
                 .noneMatch(definition -> "role_confirmation".equals(definition.getName())));
+        Assertions.assertEquals(
+                "image",
+                toolRegistry.getDefinition(RoleTaskToolSpec.ROLE_GENERATE_ROLE_IMAGE).getContentType()
+        );
 
         AgentContext context = new AgentContext();
         context.setUserId("test-user");

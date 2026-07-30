@@ -8,10 +8,14 @@ import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.common.util.UUIDGenerator;
 import org.jeecg.common.util.ShiroThreadPoolExecutor;
 import org.jeecg.common.util.oConvertUtils;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorException;
+import org.jeecg.modules.airag.agent.error.AgentErrorSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentConversationMessage;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentFlowStateSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentRegistry;
+import org.jeecg.modules.airag.agent.runtime.AgentResponseLanguageSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentResult;
 import org.jeecg.modules.airag.agent.runtime.AgentRunLoopService;
 import org.jeecg.modules.airag.agent.runtime.AgentRunOutcome;
@@ -26,6 +30,7 @@ import org.jeecg.modules.system.service.ITsAgentChatReplyService;
 import org.jeecg.modules.system.service.ITsAgentChatSessionService;
 import org.jeecg.modules.system.monitor.TsAiLogTraceContext;
 import org.jeecg.modules.system.vo.tsagentchatsession.TsAgentChatReplyVo;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -80,9 +85,9 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Result<TsAgentChatReplyVo> createAiReply(LoginUser user, Long sessionId, TsAgentChatReplyDto request) {
-        String validationError = validateRequest(user, sessionId, request);
+        AgentErrorSupport.ResolvedError validationError = validateRequest(user, sessionId, request);
         if (validationError != null) {
-            return Result.error(validationError);
+            return Result.error(validationError.code().defaultMessage(), buildErrorReply(validationError));
         }
         ReplyRuntime runtime = prepareRuntime(user, sessionId, request);
         AgentRunOutcome runOutcome = executeAgentRun(runtime);
@@ -97,7 +102,7 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         String connectionKey = UUIDGenerator.generate();
         this.sseConnectionManager.register(connectionKey, emitter);
         try {
-            String validationError = validateRequest(user, sessionId, request);
+            AgentErrorSupport.ResolvedError validationError = validateRequest(user, sessionId, request);
             if (validationError != null) {
                 sendStreamEnd(connectionKey, validationError);
                 completeEmitter(emitter);
@@ -108,11 +113,11 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
             STREAM_EXECUTOR.submit(() -> runStreamReply(connectionKey, emitter, runtime));
         } catch (JeecgBootException ex) {
             log.warn("Agent流式回复预处理失败，sessionId={}", sessionId, ex);
-            sendStreamEnd(connectionKey, ex.getMessage());
+            sendStreamEnd(connectionKey, AgentErrorSupport.resolve(ex, AgentErrorCode.CHAT_EXECUTION_FAILED));
             completeEmitter(emitter);
         } catch (Exception ex) {
             log.error("Agent流式回复初始化失败，sessionId={}", sessionId, ex);
-            sendStreamEnd(connectionKey, ex.getMessage());
+            sendStreamEnd(connectionKey, AgentErrorSupport.resolve(ex, AgentErrorCode.CHAT_EXECUTION_FAILED));
             completeEmitter(emitter);
         }
         return emitter;
@@ -124,23 +129,31 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
      * @param user 当前用户
      * @param sessionId 会话ID
      * @param request 请求参数
-     * @return 校验失败消息，校验通过返回 null
+     * @return 校验失败错误，校验通过返回 null
      */
-    private String validateRequest(LoginUser user, Long sessionId, TsAgentChatReplyDto request) {
+    private AgentErrorSupport.ResolvedError validateRequest(LoginUser user,
+                                                            Long sessionId,
+                                                            TsAgentChatReplyDto request) {
         if (user == null) {
-            return "未登录或登录已过期";
+            return resolvedError(AgentErrorCode.CHAT_AUTH_REQUIRED, null);
         }
         if (request == null) {
-            return "请求参数不能为空";
+            return resolvedError(AgentErrorCode.CHAT_REQUEST_INVALID, null);
         }
         request.applyDefaults();
         String userInput = normalizeText(request.getUserInput());
         if (!StringUtils.hasText(userInput)) {
-            return "userInput不能为空";
+            return resolvedError(
+                    AgentErrorCode.CHAT_USER_INPUT_EMPTY,
+                    Map.of("field", "userInput")
+            );
         }
         TsAgentChatSession session = tsAgentChatSessionService.getOwnedSession(user.getId(), sessionId);
         if (session == null) {
-            return "会话不存在或无权限访问";
+            return resolvedError(
+                    AgentErrorCode.CHAT_SESSION_NOT_FOUND,
+                    Map.of("sessionId", sessionId == null ? "" : sessionId)
+            );
         }
         return null;
     }
@@ -158,11 +171,12 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
             AgentResult agentResult = runOutcome.getResult();
             String assistantContent = resolveAssistantContent(agentResult, runtime.context);
             if (!StringUtils.hasText(assistantContent)) {
-                throw new JeecgBootException("AI回复为空，请稍后重试");
+                throw new AgentErrorException(AgentErrorCode.CHAT_EMPTY_RESPONSE);
             }
             saveAssistantReply(runtime, agentResult, assistantContent);
         } catch (Exception ex) {
             log.error("Agent流式回复执行失败，sessionId={}, userMessageId={}", runtime.session.getId(), runtime.userMessage.getId(), ex);
+            sendStreamEnd(connectionKey, AgentErrorSupport.resolve(ex, AgentErrorCode.CHAT_EXECUTION_FAILED));
         } finally {
             this.sseConnectionManager.finishRun(connectionKey);
         }
@@ -178,21 +192,27 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
      */
     private ReplyRuntime prepareRuntime(LoginUser user, Long sessionId, TsAgentChatReplyDto request) {
         if (user == null) {
-            throw new JeecgBootException("未登录或登录已过期");
+            throw new AgentErrorException(AgentErrorCode.CHAT_AUTH_REQUIRED);
         }
         if (request == null) {
-            throw new JeecgBootException("请求参数不能为空");
+            throw new AgentErrorException(AgentErrorCode.CHAT_REQUEST_INVALID);
         }
         request.applyDefaults();
 
         String userInput = normalizeText(request.getUserInput());
         if (!StringUtils.hasText(userInput)) {
-            throw new JeecgBootException("userInput不能为空");
+            throw new AgentErrorException(
+                    AgentErrorCode.CHAT_USER_INPUT_EMPTY,
+                    Map.of("field", "userInput")
+            );
         }
 
         TsAgentChatSession session = tsAgentChatSessionService.getOwnedSession(user.getId(), sessionId);
         if (session == null) {
-            throw new JeecgBootException("会话不存在或无权限访问");
+            throw new AgentErrorException(
+                    AgentErrorCode.CHAT_SESSION_NOT_FOUND,
+                    Map.of("sessionId", sessionId == null ? "" : sessionId)
+            );
         }
 
         TsAgentChatMessage userMessage = tsAgentChatMessageService.saveUserMessage(
@@ -262,10 +282,10 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
      */
     private TsAgentChatReplyVo saveAssistantReply(ReplyRuntime runtime, AgentResult agentResult, String assistantContent) {
         if (runtime == null) {
-            throw new JeecgBootException("运行上下文不能为空");
+            throw new AgentErrorException(AgentErrorCode.CHAT_EXECUTION_FAILED);
         }
         if (!StringUtils.hasText(assistantContent)) {
-            throw new JeecgBootException("AI回复为空，请稍后重试");
+            throw new AgentErrorException(AgentErrorCode.CHAT_EMPTY_RESPONSE);
         }
         String promptCode = extractString(agentResult == null ? null : agentResult.getData(), "promptCode");
         String promptVersion = extractString(agentResult == null ? null : agentResult.getData(), "promptVersion");
@@ -340,21 +360,43 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
      * 发送流式终止事件。
      *
      * @param connectionKey SSE 连接键
-     * @param message 错误消息
+     * @param error 错误信息
      */
-    private void sendStreamEnd(String connectionKey, String message) {
+    private void sendStreamEnd(String connectionKey, AgentErrorSupport.ResolvedError error) {
         if (!StringUtils.hasText(connectionKey)) {
             return;
         }
+        AgentErrorSupport.ResolvedError resolved = error == null
+                ? resolvedError(AgentErrorCode.CHAT_EXECUTION_FAILED, null)
+                : error;
+        Map<String, Object> errorPayload = AgentErrorSupport.toPayload(resolved);
         SsePayload payload = new SsePayload();
         payload.setEvent("agent.end");
-        payload.setContent(message);
+        payload.setContent(resolved.code().defaultMessage());
         payload.setStatus(0);
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("errorMessage", message);
+        data.putAll(errorPayload);
+        data.put("error", new LinkedHashMap<>(errorPayload));
         data.put("status", "FAILED");
         payload.setData(data);
         this.sseConnectionManager.send(connectionKey, "agent.end", payload);
+    }
+
+    private AgentErrorSupport.ResolvedError resolvedError(AgentErrorCode errorCode,
+                                                          Map<String, Object> errorArgs) {
+        return new AgentErrorSupport.ResolvedError(errorCode, errorArgs, null);
+    }
+
+    private TsAgentChatReplyVo buildErrorReply(AgentErrorSupport.ResolvedError error) {
+        AgentErrorSupport.ResolvedError resolved = error == null
+                ? resolvedError(AgentErrorCode.CHAT_EXECUTION_FAILED, null)
+                : error;
+        TsAgentChatReplyVo vo = new TsAgentChatReplyVo();
+        vo.setErrorCode(resolved.code().code());
+        vo.setErrorCategory(resolved.code().category());
+        vo.setRetryable(resolved.code().retryable());
+        vo.setErrorArgs(new LinkedHashMap<>(resolved.args()));
+        return vo;
     }
 
     /**
@@ -449,6 +491,7 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         context.setActiveStage(session.getActiveStage());
         context.setUserId(user == null || user.getId() == null ? null : String.valueOf(user.getId()));
         context.setUserInput(userInput);
+        AgentResponseLanguageSupport.apply(context, LocaleContextHolder.getLocale().toLanguageTag());
         context.setConversationMessages(buildConversationMessages(recentMessages));
         context.putAttribute("sessionMemoryJson", session.getMemoryJson());
         context.putAttribute("sessionStateJson", session.getStateJson());

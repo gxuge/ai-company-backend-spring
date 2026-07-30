@@ -202,7 +202,7 @@ public final class DeepAgentsPromptSupport {
         if (!org.springframework.util.StringUtils.hasText(rootDir)) {
             return "";
         }
-        return "来源: " + rootDir + "\n";
+        return "Source: " + rootDir + "\n";
     }
 
     /**
@@ -217,7 +217,7 @@ public final class DeepAgentsPromptSupport {
         }
         String availableSubAgents = oConvertUtils.getString(context.getAttribute("availableSubAgentsPrompt"));
         if (org.springframework.util.StringUtils.hasText(availableSubAgents)) {
-            return "## 可用子 Agent\n" + availableSubAgents.trim();
+            return "## Available Sub-Agents\n" + availableSubAgents.trim();
         }
         return "";
     }
@@ -236,7 +236,7 @@ public final class DeepAgentsPromptSupport {
         if (candidateCount == null) {
             return "";
         }
-        return "备注: 候选技能 " + candidateCount + " 个\n";
+        return "Note: " + candidateCount + " candidate skill(s)\n";
     }
 
     /**
@@ -267,7 +267,7 @@ public final class DeepAgentsPromptSupport {
         try (InputStream inputStream = new ClassPathResource(path).getInputStream()) {
             return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException ex) {
-            throw new IllegalStateException("读取 deepagents prompt 失败: " + path, ex);
+            throw new IllegalStateException("Failed to read DeepAgents prompt: " + path, ex);
         }
     }
 

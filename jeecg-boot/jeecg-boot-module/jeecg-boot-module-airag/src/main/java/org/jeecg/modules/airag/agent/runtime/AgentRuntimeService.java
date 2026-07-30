@@ -2,6 +2,8 @@ package org.jeecg.modules.airag.agent.runtime;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorSupport;
 import org.jeecg.modules.airag.agent.graph.Agent;
 import org.springframework.stereotype.Service;
 
@@ -44,11 +46,15 @@ public class AgentRuntimeService {
         try {
             result = agent.execute(context);
             if (result == null) {
-                result = AgentResult.failed("Agent未返回结果");
+                result = AgentResult.failed(AgentErrorCode.RUNTIME_AGENT_EMPTY_RESULT, null);
             }
         } catch (Exception ex) {
             log.error("Agent执行失败，agentName={}", agent.agentName(), ex);
-            result = AgentResult.failed(ex.getMessage());
+            AgentErrorCode fallback = subAgent
+                    ? AgentErrorCode.RUNTIME_SUBAGENT_EXECUTION_FAILED
+                    : AgentErrorCode.RUNTIME_AGENT_EXECUTION_FAILED;
+            result = AgentResult.failed(fallback, null);
+            AgentErrorSupport.attach(result, ex, fallback);
         }
         if (subAgent) {
             this.eventPublisher.publishSubAgentEnd(context, agent.agentName(), result, null);

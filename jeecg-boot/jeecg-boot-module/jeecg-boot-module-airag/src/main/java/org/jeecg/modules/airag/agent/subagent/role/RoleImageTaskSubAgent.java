@@ -3,6 +3,8 @@ package org.jeecg.modules.airag.agent.subagent.role;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.airag.agent.graph.NodeResult;
 import org.jeecg.modules.airag.agent.graph.SubAgent;
+import org.jeecg.modules.airag.agent.error.AgentErrorCode;
+import org.jeecg.modules.airag.agent.error.AgentErrorSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentHandoffSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentResult;
@@ -42,7 +44,7 @@ public class RoleImageTaskSubAgent implements SubAgent {
                 return AgentHandoffSupport.buildHandoffResult(context, subAgentName(), "image");
             }
             if (nodeResult == null || !nodeResult.isSuccess()) {
-                return AgentResult.failed(nodeResult == null ? "角色形象生成节点未返回结果" : nodeResult.getErrorMessage());
+                return AgentResult.failed(nodeResult == null ? "Role image generation returned no result" : nodeResult.getErrorMessage());
             }
 
             String content = nodeResult.getContent();
@@ -50,21 +52,26 @@ public class RoleImageTaskSubAgent implements SubAgent {
                 content = context.getLatestContent();
             }
             if (!oConvertUtils.isNotEmpty(content)) {
-                content = "角色形象已生成";
+                content = "Role image generated";
             }
 
             Map<String, Object> structuredResult = new LinkedHashMap<>();
             structuredResult.put("roleImageResultJson", context == null ? null : context.getAttribute("roleImageResultJson"));
             structuredResult.put("nodeResult", nodeResult.getData());
             structuredResult.put("nodeContent", nodeResult.getContent());
-            return AgentHandoffSupport.buildCompletedHandoffResult(
+            return AgentHandoffSupport.buildTerminalCompletedHandoffResult(
                     context,
                     subAgentName(),
                     content,
                     structuredResult
             );
         } catch (Exception ex) {
-            return AgentResult.failed(ex.getMessage());
+            AgentResult result = AgentErrorSupport.failed(
+                    AgentErrorCode.GENERATION_ROLE_IMAGE_EXECUTION_FAILED,
+                    Map.of("subAgentName", subAgentName())
+            );
+            AgentErrorSupport.attach(result, ex, AgentErrorCode.GENERATION_ROLE_IMAGE_EXECUTION_FAILED);
+            return result;
         }
     }
 
