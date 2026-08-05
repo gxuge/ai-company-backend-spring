@@ -5,7 +5,10 @@ import org.jeecg.modules.airag.agent.graph.NodeResult;
 import org.jeecg.modules.airag.agent.graph.SubAgent;
 import org.jeecg.modules.airag.agent.error.AgentErrorCode;
 import org.jeecg.modules.airag.agent.error.AgentErrorSupport;
+import org.jeecg.modules.airag.agent.interaction.AgentOptionsInteractionSupport;
+import org.jeecg.modules.airag.agent.interaction.UserInteractionSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
+import org.jeecg.modules.airag.agent.runtime.AgentFlowStateSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentHandoffSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentResult;
 import org.jeecg.modules.airag.agent.runtime.NodeRunner;
@@ -39,6 +42,16 @@ public class StoryBackgroundTaskSubAgent implements SubAgent {
     @Override
     public AgentResult execute(AgentContext context) {
         try {
+            Map<String, Object> pendingInteraction = UserInteractionSupport.getPending(context);
+            if (AgentOptionsInteractionSupport.isCandidateOptions(pendingInteraction)
+                    && !AgentOptionsInteractionSupport.resumeConversation(context, pendingInteraction)) {
+                return AgentOptionsInteractionSupport.waitingResult(
+                        context,
+                        pendingInteraction,
+                        this.storyCreateBackgroundNode.nodeName(),
+                        "background"
+                );
+            }
             NodeResult nodeResult = this.nodeRunner.run(context, this.storyCreateBackgroundNode);
             if (isHandoff(context, nodeResult)) {
                 return AgentHandoffSupport.buildHandoffResult(context, subAgentName(), "background");
@@ -61,6 +74,28 @@ public class StoryBackgroundTaskSubAgent implements SubAgent {
             structuredResult.put("storySceneImageResultJson", context == null ? null : context.getAttribute("storySceneImageResultJson"));
             structuredResult.put("nodeResult", nodeResult.getData());
             structuredResult.put("nodeContent", nodeResult.getContent());
+            pendingInteraction = UserInteractionSupport.getPending(context);
+            if (AgentOptionsInteractionSupport.isCandidateOptions(pendingInteraction)) {
+                AgentResult result = AgentOptionsInteractionSupport.waitingResult(
+                        context,
+                        pendingInteraction,
+                        this.storyCreateBackgroundNode.nodeName(),
+                        "background"
+                );
+                result.getData().putAll(structuredResult);
+                return result;
+            }
+            if (!hasGeneratedImage(context)) {
+                AgentFlowStateSupport.markResume(context, this.storyCreateBackgroundNode.nodeName(), "background");
+                AgentResult result = AgentResult.waitingUser(content);
+                result.setStructuredResult(structuredResult);
+                result.getData().putAll(structuredResult);
+                result.getData().put("stage", "background");
+                result.getData().put("question", content);
+                result.getData().put("status", "WAITING_USER");
+                AgentFlowStateSupport.attachResumeData(result, context);
+                return result;
+            }
             return AgentHandoffSupport.buildTerminalCompletedHandoffResult(
                     context,
                     subAgentName(),
@@ -80,5 +115,10 @@ public class StoryBackgroundTaskSubAgent implements SubAgent {
     private boolean isHandoff(AgentContext context, NodeResult nodeResult) {
         return AgentHandoffSupport.isHandoff(nodeResult)
                 || !AgentHandoffSupport.getHandoffPayload(context).isEmpty();
+    }
+
+    private boolean hasGeneratedImage(AgentContext context) {
+        return context != null
+                && oConvertUtils.isNotEmpty(context.getAttribute("storySceneImageResultJson"));
     }
 }

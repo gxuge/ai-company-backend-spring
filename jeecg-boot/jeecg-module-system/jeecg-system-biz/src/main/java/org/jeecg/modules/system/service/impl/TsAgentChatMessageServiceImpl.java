@@ -85,6 +85,42 @@ public class TsAgentChatMessageServiceImpl extends ServiceImpl<TsAgentChatMessag
                 tokenUsageJson, extJson);
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public TsAgentChatMessage completeAssistantMessage(String userId,
+                                                       Long id,
+                                                       String senderType,
+                                                       String agentCode,
+                                                       String sourceNodeName,
+                                                       String sourceEventId,
+                                                       String content,
+                                                       String messageStatus,
+                                                       String promptCode,
+                                                       String modelId,
+                                                       String tokenUsageJson,
+                                                       String extJson) {
+        TsAgentChatMessage message = getOwnedMessage(userId, id);
+        if (message == null || !ROLE_ASSISTANT.equalsIgnoreCase(message.getRoleType())) {
+            throw new JeecgBootBizTipException("助手消息不存在或无权限访问");
+        }
+        TsAgentChatSession session = ensureOwnedSession(userId, message.getSessionId());
+        message.setSenderType(resolveSenderType(ROLE_ASSISTANT, senderType));
+        message.setAgentCode(resolveAgentCode(session, agentCode));
+        message.setSourceNodeName(sourceNodeName);
+        message.setSourceEventId(sourceEventId);
+        message.setContent(content);
+        message.setContentRaw(content);
+        message.setMessageStatus(oConvertUtils.isEmpty(messageStatus) ? STATUS_SUCCESS : messageStatus.trim());
+        message.setPromptCode(promptCode);
+        message.setModelId(modelId);
+        message.setTokenUsageJson(tokenUsageJson);
+        message.setExtJson(extJson);
+        message.setUpdatedAt(new Date());
+        this.updateById(message);
+        sessionService.touchAfterMessage(session.getId(), message.getId(), message.getUpdatedAt(), 0, 0);
+        return message;
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public TsAgentChatMessage saveSystemMessage(String userId,
                                                Long sessionId,

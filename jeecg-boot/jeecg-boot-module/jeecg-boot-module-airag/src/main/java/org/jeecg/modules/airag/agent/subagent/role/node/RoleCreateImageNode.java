@@ -64,6 +64,7 @@ public class RoleCreateImageNode extends LlmNode {
         definition.setTools(List.of(RoleTaskToolSpec.ROLE_GENERATE_ROLE_IMAGE));
         definition.setPermissions(List.of(RoleTaskToolSpec.ROLE_GENERATE_ROLE_IMAGE));
         definition.setResponseFormat("text");
+        definition.setConversationHistoryEnabled(true);
         definition.setUserPromptTemplate("""
                 本轮输入：
                 {{user_input}}

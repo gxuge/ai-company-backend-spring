@@ -69,6 +69,71 @@ class AgentFlowStateSupportTest {
     }
 
     @Test
+    void shouldSnapshotImageAgentConversationState() {
+        AgentContext roleImageSource = new AgentContext();
+        roleImageSource.putAttribute("taskDescription", "生成一张女剑客立绘");
+        roleImageSource.putAttribute("transferDataJson", "{\"style\":\"国风\"}");
+        roleImageSource.putAttribute("pendingUserInteraction", Map.of(
+                "interactionId", "role-image-options",
+                "interactionType", "options"
+        ));
+
+        String roleImageJson = AgentFlowStateSupport.snapshot(
+                roleImageSource,
+                AgentFlowStateSupport.ROLE_IMAGE_AGENT_CODE
+        );
+        AgentContext restoredRoleImage = new AgentContext();
+        AgentFlowStateSupport.restore(
+                restoredRoleImage,
+                AgentFlowStateSupport.ROLE_IMAGE_AGENT_CODE,
+                roleImageJson
+        );
+
+        Assertions.assertEquals("生成一张女剑客立绘", restoredRoleImage.getAttribute("taskDescription"));
+        Assertions.assertEquals("{\"style\":\"国风\"}", restoredRoleImage.getAttribute("transferDataJson"));
+        Assertions.assertNotNull(restoredRoleImage.getAttribute("pendingUserInteraction"));
+
+        AgentContext backgroundSource = new AgentContext();
+        backgroundSource.putAttribute("taskDescription", "生成雨夜港口背景");
+        backgroundSource.putAttribute("storySceneResultJson", "{\"site\":\"港口\"}");
+        backgroundSource.putAttribute("pendingUserInteraction", Map.of(
+                "interactionId", "story-background-options",
+                "interactionType", "options"
+        ));
+
+        String backgroundJson = AgentFlowStateSupport.snapshot(
+                backgroundSource,
+                AgentFlowStateSupport.STORY_BACKGROUND_AGENT_CODE
+        );
+        AgentContext restoredBackground = new AgentContext();
+        AgentFlowStateSupport.restore(
+                restoredBackground,
+                AgentFlowStateSupport.STORY_BACKGROUND_AGENT_CODE,
+                backgroundJson
+        );
+
+        Assertions.assertEquals("生成雨夜港口背景", restoredBackground.getAttribute("taskDescription"));
+        Assertions.assertEquals("{\"site\":\"港口\"}", restoredBackground.getAttribute("storySceneResultJson"));
+        Assertions.assertNotNull(restoredBackground.getAttribute("pendingUserInteraction"));
+    }
+
+    @Test
+    void shouldSnapshotMainAgentCandidateOptions() {
+        AgentContext source = new AgentContext();
+        source.putAttribute("pendingUserInteraction", Map.of(
+                "interactionId", "main-options",
+                "interactionType", "options"
+        ));
+
+        String json = AgentFlowStateSupport.snapshot(source, AgentFlowStateSupport.MAIN_AGENT_CODE);
+        AgentContext restored = new AgentContext();
+        AgentFlowStateSupport.restore(restored, AgentFlowStateSupport.MAIN_AGENT_CODE, json);
+
+        Assertions.assertTrue(AgentFlowStateSupport.supports(AgentFlowStateSupport.MAIN_AGENT_CODE));
+        Assertions.assertNotNull(restored.getAttribute("pendingUserInteraction"));
+    }
+
+    @Test
     void shouldClearResumePositionAndBusinessStateOnAgentSwitch() {
         AgentContext context = new AgentContext();
         context.setResumeNodeName("role_create_voice");

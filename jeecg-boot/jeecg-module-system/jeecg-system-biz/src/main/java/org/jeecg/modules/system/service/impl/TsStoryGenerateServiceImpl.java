@@ -25,6 +25,7 @@ import org.jeecg.modules.system.entity.TsTag;
 import org.jeecg.modules.system.mapper.TsPresetMapper;
 import org.jeecg.modules.system.mapper.TsPresetTagMapper;
 import org.jeecg.modules.system.mapper.TsTagMapper;
+import org.jeecg.modules.system.monitor.TsMultimodalUsageRecorder;
 import org.jeecg.modules.system.service.ITsStoryGenerateService;
 import org.jeecg.modules.system.util.PromptRuntimeUtil;
 import org.jeecg.modules.system.util.TsPromptLanguageInjector;
@@ -55,6 +56,9 @@ import java.util.stream.Collectors;
  */
 @Service
 public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
+    @Resource
+    private TsMultimodalUsageRecorder multimodalUsageRecorder;
+
     private static final String METADATA_STORY_PROMPT_KEY = "storyPromptTemplate";
     private static final String METADATA_STORY_PROMPTS_KEY = "storyPromptTemplates";
     private static final String REDIS_SNAPSHOT_PREFIX = "ts:story:generate:snapshot:";
@@ -361,7 +365,11 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         imageRequest.setPrompt(composeSceneImagePrompt(visualPrompt, styleName, aspectRatio));
         imageRequest.setReferenceImageUrl(dto.getReferenceImageUrl());
         imageRequest.setUploadGeneratedMedia(Boolean.FALSE);
-        MiniMaxImageResponseVo imageResponse = miniMaxDemoService.image(imageRequest);
+        MiniMaxImageResponseVo imageResponse = multimodalUsageRecorder.recordImage(
+                user == null ? null : user.getId(),
+                "story_scene_image_generate",
+                () -> miniMaxDemoService.image(imageRequest)
+        );
         String imageUrl = firstOriginalImageUrl(imageResponse);
         if (!StringUtils.hasText(imageUrl)) {
             throw new JeecgBootBizTipException("故事场景背景图片生成失败，未返回图片地址");

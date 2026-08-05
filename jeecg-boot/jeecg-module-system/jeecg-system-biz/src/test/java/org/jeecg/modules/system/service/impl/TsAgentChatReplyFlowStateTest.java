@@ -106,4 +106,50 @@ class TsAgentChatReplyFlowStateTest {
 
         Assertions.assertNull(content);
     }
+
+    @Test
+    void shouldPersistInterruptedFlowStateAndMessageStatus() {
+        TsAgentChatReplyServiceImpl service = new TsAgentChatReplyServiceImpl();
+        TsAgentChatSession session = new TsAgentChatSession();
+        AgentContext context = new AgentContext();
+        context.setResumeNodeName("role_create_dialog");
+        context.setActiveStage("collecting");
+        context.putAttribute("roleCoreResultJson", "{\"name\":\"林夏\"}");
+        AgentResult interrupted = AgentResult.interrupted("已停止");
+        AgentFlowStateSupport.attachResumeData(interrupted, context);
+
+        ReflectionTestUtils.invokeMethod(
+                service,
+                "updateFlowResumeState",
+                session,
+                context,
+                AgentFlowStateSupport.ROLE_AGENT_CODE,
+                interrupted
+        );
+
+        Assertions.assertEquals("role_create_dialog", session.getActiveNodeName());
+        Assertions.assertEquals("collecting", session.getActiveStage());
+        Assertions.assertTrue(session.getAgentFlowStateJson().contains("roleCoreResultJson"));
+        Assertions.assertEquals(
+                "interrupted",
+                ReflectionTestUtils.invokeMethod(service, "toMessageStatus", AgentResult.Status.INTERRUPTED)
+        );
+    }
+
+    @Test
+    void shouldPreferInterruptedPartialContentForDisplay() {
+        TsAgentChatReplyServiceImpl service = new TsAgentChatReplyServiceImpl();
+        AgentContext context = new AgentContext();
+        context.setLatestContent("不应覆盖中断文本");
+        context.putAttribute("interruptedLlmContent", "已经输出的部分内容");
+
+        String content = ReflectionTestUtils.invokeMethod(
+                service,
+                "resolveAssistantContent",
+                AgentResult.interrupted("用户停止"),
+                context
+        );
+
+        Assertions.assertEquals("已经输出的部分内容", content);
+    }
 }

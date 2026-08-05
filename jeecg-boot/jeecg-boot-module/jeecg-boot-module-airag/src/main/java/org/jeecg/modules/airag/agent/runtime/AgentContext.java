@@ -47,9 +47,13 @@ public class AgentContext {
      */
     private String appId;
     /**
-     * 消息ID。
+     * 触发当前 Run 的用户消息ID。
      */
     private String messageId;
+    /**
+     * 当前 Run 事件所属的助手消息ID。
+     */
+    private String eventMessageId;
     /**
      * Agent 会话ID。
      */
@@ -265,6 +269,7 @@ public class AgentContext {
         child.setSenderType(this.senderType);
         child.setAppId(this.appId);
         child.setMessageId(this.messageId);
+        child.setEventMessageId(this.eventMessageId);
         child.setAgentSessionId(this.agentSessionId);
         child.setSessionId(this.sessionId);
         child.setUserId(this.userId);

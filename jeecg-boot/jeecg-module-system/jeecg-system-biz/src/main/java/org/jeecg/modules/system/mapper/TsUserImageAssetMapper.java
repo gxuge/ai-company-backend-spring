@@ -8,4 +8,5 @@ import org.jeecg.modules.system.po.tsuserimageasset.TsUserImageAssetQueryPo;
 public interface TsUserImageAssetMapper extends BaseMapper<TsUserImageAsset> {
     Page<TsUserImageAsset> selectAssetPage(Page<TsUserImageAsset> page, @Param("query") TsUserImageAssetQueryPo query);
     TsUserImageAsset selectOwned(@Param("id") Long id, @Param("userId") Long userId);
+    TsUserImageAsset selectBySourceKey(@Param("userId") Long userId, @Param("sourceKey") String sourceKey);
 }

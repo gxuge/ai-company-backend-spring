@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsPaymentQueryMapper">
+
+    <select id="selectLatestByOrderId"
+            resultType="org.jeecg.modules.system.entity.TsPaymentTransaction">
+        SELECT id, order_id, provider, transaction_id, payment_intent_id,
+               amount, currency, status, raw_response, created_at
+        FROM payment_transaction
+        WHERE order_id = #{orderId}
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectByProviderPaymentIdForUpdate"
+            resultType="org.jeecg.modules.system.entity.TsPaymentTransaction">
+        SELECT id, order_id, provider, transaction_id, payment_intent_id,
+               amount, currency, status, raw_response, created_at
+        FROM payment_transaction
+        WHERE provider = #{provider}
+          AND payment_intent_id = #{paymentIntentId}
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <sql id="adminPaymentColumns">
+        pt.id, pt.order_id, mo.order_no, mo.user_id, su.username, su.realname,
+        mo.product_id, mp.code AS plan_code, mp.name AS plan_name, product.cycle_type,
+        pt.provider, pt.payment_intent_id, pt.transaction_id, pt.amount, pt.currency,
+        pt.status AS payment_status, mo.status AS order_status, pt.created_at,
+        mo.pay_time, mo.callback_time
+    </sql>
+
+    <sql id="adminPaymentFrom">
+        FROM payment_transaction pt
+        INNER JOIN member_order mo ON mo.id = pt.order_id
+        LEFT JOIN sys_user su ON su.id = mo.user_id
+        LEFT JOIN member_product product ON product.id = mo.product_id
+        LEFT JOIN member_plan mp ON mp.id = product.plan_id
+    </sql>
+
+    <select id="selectAdminPaymentPage"
+            resultType="org.jeecg.modules.system.vo.tsmemberadmin.TsPaymentAdminVo">
+        SELECT <include refid="adminPaymentColumns"/>
+        <include refid="adminPaymentFrom"/>
+        <where>
+            <if test="query.orderNo != null and query.orderNo != ''">
+                AND mo.order_no LIKE CONCAT('%', #{query.orderNo}, '%')
+            </if>
+            <if test="query.keyword != null and query.keyword != ''">
+                AND (
+                    mo.user_id LIKE CONCAT('%', #{query.keyword}, '%')
+                    OR su.username LIKE CONCAT('%', #{query.keyword}, '%')
+                    OR su.realname LIKE CONCAT('%', #{query.keyword}, '%')
+                )
+            </if>
+            <if test="query.provider != null and query.provider != ''">
+                AND pt.provider = #{query.provider}
+            </if>
+            <if test="query.status != null and query.status != ''">
+                AND pt.status = #{query.status}
+            </if>
+        </where>
+        ORDER BY pt.created_at DESC, pt.id DESC
+    </select>
+
+    <select id="selectAdminPaymentById"
+            resultType="org.jeecg.modules.system.vo.tsmemberadmin.TsPaymentAdminDetailVo">
+        SELECT <include refid="adminPaymentColumns"/>, pt.raw_response
+        <include refid="adminPaymentFrom"/>
+        WHERE pt.id = #{id}
+        LIMIT 1
+    </select>
+
+</mapper>

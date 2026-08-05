@@ -34,6 +34,10 @@ public class NodeRunner {
      */
     private static final String AGENT_RESPONSE_LANGUAGE_SKILL = "agent_response_language";
     /**
+     * 所有 Agent LLM 节点统一注入的候选项 Skill。
+     */
+    private static final String AGENT_CANDIDATE_OPTIONS_SKILL = "agent_candidate_options";
+    /**
      * 所有子 Agent LLM 节点统一注入的回复风格 Skill。
      */
     private static final String SUB_AGENT_RESPONSE_STYLE_SKILL = "subagent_response_style";
@@ -65,6 +69,7 @@ public class NodeRunner {
      * @return 节点结果
      */
     public NodeResult run(AgentContext context, AgentNode node) {
+        AgentRunControlService.throwIfStopRequested(context);
         if (node.kind() == NodeKind.LLM) {
             return runLlmNode(context, (LlmNode) node);
         }
@@ -92,21 +97,32 @@ public class NodeRunner {
      */
     private NodeResult runLlmNode(AgentContext context, LlmNode node) {
         boolean success = false;
+        boolean interrupted = false;
         NodeResult result = null;
         markCurrentNode(context, node);
         prepareNodeSkillContext(context, node);
         this.eventPublisher.publishLlmStart(context, node.nodeName(), node.getPromptCode());
         try {
             result = node.execute(context);
+            AgentRunControlService.throwIfStopRequested(context);
             success = result != null && result.isSuccess();
             markResultNode(context, node, result, success);
             return result;
         } catch (Exception ex) {
+            if (AgentRunControlService.isInterrupted(ex, context)) {
+                interrupted = true;
+                throw new AgentRunInterruptedException();
+            }
             this.eventPublisher.publishLlmError(context, node.nodeName(), node.getPromptCode(), ex);
             throw new RuntimeException(ex);
         } finally {
             Map<String, Object> payload = result == null ? new LinkedHashMap<>() : result.getData();
-            this.eventPublisher.publishLlmEnd(context, node.nodeName(), node.getPromptCode(), success, payload);
+            if (interrupted || AgentRunControlService.isStopRequested(context)) {
+                payload.put("stopReason", "user_stop");
+                this.eventPublisher.publishLlmEnd(context, node.nodeName(), node.getPromptCode(), 3, payload);
+            } else {
+                this.eventPublisher.publishLlmEnd(context, node.nodeName(), node.getPromptCode(), success, payload);
+            }
         }
     }
 
@@ -128,6 +144,7 @@ public class NodeRunner {
         LlmNodeDefinition definition = node.getDefinition();
         List<String> skillCodes = new ArrayList<>();
         skillCodes.add(AGENT_RESPONSE_LANGUAGE_SKILL);
+        skillCodes.add(AGENT_CANDIDATE_OPTIONS_SKILL);
         if (isSubAgentContext(context)) {
             skillCodes.add(SUB_AGENT_RESPONSE_STYLE_SKILL);
         }
@@ -225,6 +242,7 @@ public class NodeRunner {
      */
     private NodeResult runToolNode(AgentContext context, ToolNode node) {
         boolean success = false;
+        boolean interrupted = false;
         NodeResult result = null;
         markCurrentNode(context, node);
         Map<String, Object> startPayload = new LinkedHashMap<>();
@@ -236,20 +254,36 @@ public class NodeRunner {
             markResultNode(context, node, result, success);
             return result;
         } catch (Exception ex) {
+            if (AgentRunControlService.isInterrupted(ex, context)) {
+                interrupted = true;
+                throw new AgentRunInterruptedException();
+            }
             Map<String, Object> errorPayload = new LinkedHashMap<>();
             errorPayload.put("toolName", node.getToolName());
             this.eventPublisher.publishToolError(context, node.nodeName(), node.getToolName(), ex, errorPayload);
             throw new RuntimeException(ex);
         } finally {
             Map<String, Object> payload = result == null ? new LinkedHashMap<>() : result.getData();
-            this.eventPublisher.publishToolEnd(
-                    context,
-                    node.nodeName(),
-                    node.getToolName(),
-                    success,
-                    result == null ? "" : result.getContent(),
-                    payload
-            );
+            if (interrupted) {
+                payload.put("stopReason", "user_stop");
+                this.eventPublisher.publishToolEnd(
+                        context,
+                        node.nodeName(),
+                        node.getToolName(),
+                        3,
+                        result == null ? "" : result.getContent(),
+                        payload
+                );
+            } else {
+                this.eventPublisher.publishToolEnd(
+                        context,
+                        node.nodeName(),
+                        node.getToolName(),
+                        success,
+                        result == null ? "" : result.getContent(),
+                        payload
+                );
+            }
         }
     }
 
@@ -261,9 +295,11 @@ public class NodeRunner {
      * @return 节点结果
      */
     private NodeResult runConfirmNode(AgentContext context, ConfirmationNode node) {
+        AgentRunControlService.throwIfStopRequested(context);
         markCurrentNode(context, node);
         try {
             NodeResult result = node.execute(context);
+            AgentRunControlService.throwIfStopRequested(context);
             boolean success = result != null && result.isSuccess();
             markResultNode(context, node, result, success);
             if (success && node.isWaitingAction(result.getAction())) {
@@ -306,9 +342,11 @@ public class NodeRunner {
      * @return 节点结果
      */
     private NodeResult runOptionsNode(AgentContext context, OptionsNode node) {
+        AgentRunControlService.throwIfStopRequested(context);
         markCurrentNode(context, node);
         try {
             NodeResult result = node.execute(context);
+            AgentRunControlService.throwIfStopRequested(context);
             boolean success = result != null && result.isSuccess();
             markResultNode(context, node, result, success);
             if (success && node.isWaitingAction(result.getAction())) {

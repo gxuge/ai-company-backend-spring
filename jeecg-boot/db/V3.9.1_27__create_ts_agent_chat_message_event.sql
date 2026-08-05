@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS `ts_agent_chat_message_event` (
   `id` varchar(64) NOT NULL COMMENT '事件ID',
-  `message_id` bigint NOT NULL COMMENT '触发当前Run的用户消息ID',
+  `message_id` bigint NOT NULL COMMENT '事件所属助手消息ID',
   `session_id` bigint NOT NULL COMMENT 'Agent会话ID',
   `agent_session_id` bigint DEFAULT NULL COMMENT 'Agent会话记录ID',
   `run_id` varchar(64) DEFAULT NULL COMMENT 'Agent运行ID',
@@ -10,8 +10,8 @@ CREATE TABLE IF NOT EXISTS `ts_agent_chat_message_event` (
   `turn_id` varchar(64) DEFAULT NULL COMMENT '对话轮次ID',
   `sender_type` varchar(32) DEFAULT NULL COMMENT '发送方类型',
   `agent_code` varchar(64) DEFAULT NULL COMMENT 'Agent编码',
-  `type` varchar(16) NOT NULL COMMENT '事件类型：subagent/tool',
-  `name` varchar(128) NOT NULL COMMENT 'SubAgent或Tool名称',
+  `type` varchar(16) NOT NULL COMMENT '事件类型：llm/tool',
+  `name` varchar(128) NOT NULL COMMENT '模型或Tool名称',
   `content` text DEFAULT NULL COMMENT '结果摘要',
   `status` tinyint DEFAULT NULL COMMENT '状态：1成功 0失败 2运行中或未知',
   `json` longtext DEFAULT NULL COMMENT '完整执行JSON：input/output/error/metrics',

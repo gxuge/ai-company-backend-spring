@@ -6,6 +6,8 @@
 `type` 推荐值：`feat`、`fix`、`refactor`、`breaking`、`security`、`docs`
 
 ## 记录
+- [2026-08-04] [feat] [ts-member] 新增管理员支付流水分页与详情接口，并提供 `system/tanshi/payment/index` 只读管理页面；渠道原始响应在展示前二次脱敏
+- [2026-08-04] [feat] [ts-image] 新增 `POST /sys/ts-images/download` 公网图片代理下载接口；限制协议、内网地址、重定向、图片类型和 30MB 文件大小，不执行图片入库或角色/故事关联
 - [2026-07-30] [feat] [ts-draft] 新增角色与故事统一草稿表及 `/sys/ts-drafts` 增删改查；`draftType` 区分 `role/story`，列表返回摘要，详情返回完整 JSON 快照，所有操作按当前用户归属过滤
 - [2026-07-29] [fix] [agent-runtime] 角色/故事确认选项映射为仅供模型判断的 `NONE/ACCEPTED/REVISION_REQUESTED` 隐藏状态，支持跨轮恢复并注入 Skill Prompt，不写入消息、SSE 或 Agent Event
 - [2026-07-29] [fix] [agent-runtime] 角色/故事创建对话节点停止在 USER Prompt 重复注入主 Agent 初始委托；`task_description` 仅保留在 Skill/System 中，USER 只表达本轮最新输入

@@ -5,6 +5,7 @@ import org.jeecg.modules.airag.agent.error.AgentErrorCode;
 import org.jeecg.modules.airag.agent.error.AgentErrorSupport;
 import org.jeecg.modules.airag.agent.graph.NodeResult;
 import org.jeecg.modules.airag.agent.graph.SubAgent;
+import org.jeecg.modules.airag.agent.interaction.AgentOptionsInteractionSupport;
 import org.jeecg.modules.airag.agent.interaction.UserInteractionSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentFlowStateSupport;
@@ -81,6 +82,19 @@ public class StoryTaskSubAgent implements SubAgent {
     private AgentResult handlePendingInteraction(AgentContext context,
                                                  Map<String, Object> chainData,
                                                  Map<String, Object> pendingInteraction) {
+        if (AgentOptionsInteractionSupport.isCandidateOptions(pendingInteraction)) {
+            if (AgentOptionsInteractionSupport.resumeConversation(context, pendingInteraction)) {
+                return null;
+            }
+            AgentResult result = AgentOptionsInteractionSupport.waitingResult(
+                    context,
+                    pendingInteraction,
+                    this.storyCreateDialogNode.nodeName(),
+                    STAGE_DIALOG
+            );
+            result.getData().putAll(chainData);
+            return result;
+        }
         String selectedValue = UserInteractionSupport.resolveSelectedValue(context, pendingInteraction);
         if ((context == null || !oConvertUtils.isNotEmpty(context.getUserInput()))
                 && !oConvertUtils.isNotEmpty(selectedValue)) {
@@ -110,6 +124,16 @@ public class StoryTaskSubAgent implements SubAgent {
 
         Map<String, Object> pendingInteraction = UserInteractionSupport.getPending(context);
         if (!pendingInteraction.isEmpty()) {
+            if (AgentOptionsInteractionSupport.isCandidateOptions(pendingInteraction)) {
+                AgentResult result = AgentOptionsInteractionSupport.waitingResult(
+                        context,
+                        pendingInteraction,
+                        this.storyCreateDialogNode.nodeName(),
+                        STAGE_DIALOG
+                );
+                result.getData().putAll(chainData);
+                return result;
+            }
             return waitingInteraction(context, chainData, pendingInteraction);
         }
         return waiting(

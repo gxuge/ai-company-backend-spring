@@ -42,6 +42,7 @@ import org.jeecg.modules.system.mapper.TsUserVoiceProfileMapper;
 import org.jeecg.modules.system.mapper.TsVoiceProfileMapper;
 import org.jeecg.modules.system.mapper.TsVoiceProfileTagMapper;
 import org.jeecg.modules.system.mapper.TsVoiceTagMapper;
+import org.jeecg.modules.system.monitor.TsMultimodalUsageRecorder;
 import org.jeecg.modules.system.service.ITsRoleGenerateService;
 import org.jeecg.modules.system.service.ITsUserImageAssetService;
 import org.jeecg.modules.system.util.PromptRuntimeUtil;
@@ -88,6 +89,9 @@ import java.util.regex.Pattern;
 @Slf4j
 @Service
 public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
+    @Resource
+    private TsMultimodalUsageRecorder multimodalUsageRecorder;
+
     private static final String PROMPT_VERSION = "v2";
     private static final String PROMPT_CODE_SETTING = "role_core_fill";
     private static final String PROMPT_CODE_BACKGROUND_OPTIMIZE = "role_background_optimize";
@@ -313,7 +317,11 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         imageRequest.setPrompt(imagePrompt);
         imageRequest.setReferenceImageUrl(dto.getReferenceImageUrl());
         imageRequest.setUploadGeneratedMedia(Boolean.FALSE);
-        MiniMaxImageResponseVo imageResponse = miniMaxDemoService.image(imageRequest);
+        MiniMaxImageResponseVo imageResponse = multimodalUsageRecorder.recordImage(
+                user == null ? null : user.getId(),
+                "role_image_generate",
+                () -> miniMaxDemoService.image(imageRequest)
+        );
 
         String imageUrl = null;
         if (imageResponse != null && imageResponse.getOriginalImageUrls() != null) {
@@ -824,7 +832,11 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         MiniMaxImageRequestDto imageRequest = new MiniMaxImageRequestDto();
         imageRequest.setPrompt(promptUsed);
         imageRequest.setReferenceImageUrl(dto.getReferenceImageUrl());
-        MiniMaxImageResponseVo imageResponse = miniMaxDemoService.image(imageRequest);
+        MiniMaxImageResponseVo imageResponse = multimodalUsageRecorder.recordImage(
+                user == null ? null : user.getId(),
+                "role_image_generate",
+                () -> miniMaxDemoService.image(imageRequest)
+        );
 
         JSONObject snapshot = new JSONObject();
         snapshot.put("type", "image-by-prompt");

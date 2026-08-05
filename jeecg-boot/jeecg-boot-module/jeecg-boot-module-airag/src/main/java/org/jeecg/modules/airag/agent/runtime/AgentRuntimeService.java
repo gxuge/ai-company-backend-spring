@@ -49,12 +49,17 @@ public class AgentRuntimeService {
                 result = AgentResult.failed(AgentErrorCode.RUNTIME_AGENT_EMPTY_RESULT, null);
             }
         } catch (Exception ex) {
-            log.error("Agent执行失败，agentName={}", agent.agentName(), ex);
-            AgentErrorCode fallback = subAgent
-                    ? AgentErrorCode.RUNTIME_SUBAGENT_EXECUTION_FAILED
-                    : AgentErrorCode.RUNTIME_AGENT_EXECUTION_FAILED;
-            result = AgentResult.failed(fallback, null);
-            AgentErrorSupport.attach(result, ex, fallback);
+            if (AgentRunControlService.isInterrupted(ex, context)) {
+                Thread.interrupted();
+                result = AgentResult.interrupted(interruptedContent(context));
+            } else {
+                log.error("Agent执行失败，agentName={}", agent.agentName(), ex);
+                AgentErrorCode fallback = subAgent
+                        ? AgentErrorCode.RUNTIME_SUBAGENT_EXECUTION_FAILED
+                        : AgentErrorCode.RUNTIME_AGENT_EXECUTION_FAILED;
+                result = AgentResult.failed(fallback, null);
+                AgentErrorSupport.attach(result, ex, fallback);
+            }
         }
         if (subAgent) {
             this.eventPublisher.publishSubAgentEnd(context, agent.agentName(), result, null);
@@ -62,6 +67,11 @@ public class AgentRuntimeService {
             this.eventPublisher.publishAgentEnd(context, agent.agentName(), result);
         }
         return result;
+    }
+
+    private String interruptedContent(AgentContext context) {
+        Object content = context == null ? null : context.getAttribute("interruptedLlmContent");
+        return content == null ? null : String.valueOf(content);
     }
 
     private boolean isSubAgentContext(AgentContext context) {

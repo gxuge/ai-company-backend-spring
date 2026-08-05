@@ -19,6 +19,8 @@ import org.jeecg.modules.openapi.vo.MiniMaxChatResponseVo;
 import org.jeecg.modules.openapi.vo.MiniMaxImageResponseVo;
 import org.jeecg.modules.openapi.vo.MiniMaxTtsResponseVo;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.metadata.Usage;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.util.FileCopyUtils;
@@ -79,9 +81,27 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
         if (promptLength > maxChatChars) {
             throw new JeecgBootBizTipException("prompt长度超过限制，当前长度=" + promptLength + "，上限=" + maxChatChars);
         }
-        String content = invokeChatWithRetry(requestDto.getPrompt());
+        long startedAt = System.currentTimeMillis();
+        ChatResponse chatResponse = invokeChatWithRetry(requestDto.getPrompt());
+        String content = chatResponse == null
+                || chatResponse.getResult() == null
+                || chatResponse.getResult().getOutput() == null
+                ? null
+                : chatResponse.getResult().getOutput().getText();
+        Usage usage = chatResponse == null || chatResponse.getMetadata() == null
+                ? null
+                : chatResponse.getMetadata().getUsage();
         MiniMaxChatResponseVo responseVo = new MiniMaxChatResponseVo();
         responseVo.setContent(content);
+        responseVo.setProvider("MINIMAX");
+        responseVo.setModelName(chatResponse == null || chatResponse.getMetadata() == null
+                ? null
+                : chatResponse.getMetadata().getModel());
+        responseVo.setInputTokens(usage == null ? null : usage.getPromptTokens());
+        responseVo.setOutputTokens(usage == null ? null : usage.getCompletionTokens());
+        responseVo.setTotalTokens(usage == null ? null : usage.getTotalTokens());
+        responseVo.setUsageRawJson(usage == null ? null : com.alibaba.fastjson.JSONObject.toJSONString(usage.getNativeUsage()));
+        responseVo.setDurationMs(Math.max(0L, System.currentTimeMillis() - startedAt));
         return responseVo;
     }
 
@@ -173,12 +193,12 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
      * @param prompt 输入提示词
      * @return 模型输出文本
      */
-    private String invokeChatWithRetry(String prompt) {
+    private ChatResponse invokeChatWithRetry(String prompt) {
         int maxAttempts = Math.max(miniMaxDemoConfig.getRetryMaxAttempts(), 1);
         RuntimeException lastException = null;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                return chatClient.prompt(prompt).call().content();
+                return chatClient.prompt(prompt).call().chatResponse();
             } catch (RuntimeException e) {
                 lastException = e;
                 if (attempt >= maxAttempts) {

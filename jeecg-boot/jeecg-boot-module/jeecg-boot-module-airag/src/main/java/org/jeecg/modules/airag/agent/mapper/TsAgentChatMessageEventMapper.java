@@ -21,7 +21,7 @@ public interface TsAgentChatMessageEventMapper extends BaseMapper<TsAgentChatMes
      * @param page 分页参数
      * @param userId 用户ID
      * @param sessionId 会话ID
-     * @param messageId 触发 Run 的用户消息ID
+     * @param messageId 事件所属助手消息ID
      * @param type 事件类型
      * @param name 事件名称
      * @param nodeName 实际执行节点名称

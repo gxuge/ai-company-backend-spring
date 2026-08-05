@@ -95,7 +95,7 @@ public final class TsAgentChatMessageVoConverter {
     }
 
     /**
-     * 按触发消息ID分组事件，并保持查询结果中的时间顺序。
+     * 按所属助手消息ID分组事件，并保持查询结果中的时间顺序。
      *
      * @param events 事件实体列表
      * @return 消息ID与事件列表映射

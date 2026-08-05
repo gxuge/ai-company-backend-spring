@@ -10,6 +10,7 @@ import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.system.dto.tsagentchatsession.TsAgentChatSessionUpdateDto;
 import org.jeecg.modules.system.dto.tsagentchatsession.TsAgentChatReplyDto;
+import org.jeecg.modules.system.dto.tsagentchatsession.TsAgentChatStopDto;
 import org.jeecg.modules.system.dto.tsagentchatsession.TsAgentChatSessionQueryDto;
 import org.jeecg.modules.system.dto.tsagentchatsession.TsAgentChatSessionSaveDto;
 import org.jeecg.modules.system.entity.TsAgentChatSession;
@@ -120,6 +121,12 @@ public class TsAgentChatSessionController {
             return tsAgentChatReplyService.createAiReplyStream(user, request.getSessionId(), request);
         }
         return tsAgentChatReplyService.createAiReply(user, request.getSessionId(), request);
+    }
+
+    @Operation(summary = "停止当前Agent回复")
+    @PostMapping("/ts-agent-chat-sessions/ai-reply/stop")
+    public Result<String> stopAiReply(@Validated @RequestBody TsAgentChatStopDto request) {
+        return tsAgentChatReplyService.stopAiReply(currentUser(), request);
     }
 
     /**

@@ -142,7 +142,7 @@ class AgentEventPublisherTest {
     }
 
     @Test
-    void shouldPersistLightweightLlmEventWithoutConversationContext() {
+    void shouldPersistLlmOutputWithoutConversationContext() {
         this.eventPublisher.publishLlmStart(this.context, "dialogNode", "role_dialog_v1");
         this.eventPublisher.updateLlmExecutionMetadata(
                 this.context,
@@ -179,7 +179,7 @@ class AgentEventPublisherTest {
                 Mockito.eq("deepseek-v4-flash"),
                 Mockito.eq("dialogNode"),
                 Mockito.eq("llm"),
-                Mockito.eq("模型调用失败"),
+                Mockito.eq("不应写入完整输出"),
                 Mockito.eq(0),
                 dataCaptor.capture()
         );
@@ -204,6 +204,7 @@ class AgentEventPublisherTest {
     @Test
     void shouldPersistSuccessfulLlmStatusAndTokenUsage() {
         this.eventPublisher.publishLlmStart(this.context, "dialogNode", "role_dialog_v1");
+        this.eventPublisher.publishLlmDelta(this.context, "dialogNode", "这是完整回复");
         this.eventPublisher.updateLlmExecutionMetadata(
                 this.context,
                 "dialogNode",
@@ -233,7 +234,7 @@ class AgentEventPublisherTest {
                 Mockito.eq("deepseek-v4-flash"),
                 Mockito.eq("dialogNode"),
                 Mockito.eq("llm"),
-                Mockito.eq("模型调用成功"),
+                Mockito.eq("这是完整回复"),
                 Mockito.eq(1),
                 dataCaptor.capture()
         );
@@ -241,6 +242,7 @@ class AgentEventPublisherTest {
         Map<String, Object> output = castMap(data.get("output"));
         Map<String, Object> metrics = castMap(data.get("metrics"));
         Assertions.assertEquals("STOP", output.get("finishReason"));
+        Assertions.assertEquals("这是完整回复", output.get("content"));
         Assertions.assertNull(data.get("error"));
         Assertions.assertEquals(120, metrics.get("totalTokens"));
     }
@@ -271,6 +273,95 @@ class AgentEventPublisherTest {
         );
         Assertions.assertEquals("你好，我们继续创建角色。", payloadCaptor.getValue().getContent());
         Assertions.assertEquals("", this.eventPublisher.readBuffer(bufferKey));
+    }
+
+    @Test
+    void shouldPersistLlmSegmentsAroundToolInExecutionOrder() {
+        this.context.setEventMessageId("20002");
+        this.eventPublisher.publishLlmStart(this.context, "dialogNode", "role_dialog_v1");
+        this.eventPublisher.publishLlmDelta(this.context, "dialogNode", "先整理角色设定。");
+        this.eventPublisher.publishToolStart(
+                this.context,
+                "dialogNode",
+                "role_generate_role_image",
+                Map.of("toolArguments", Map.of())
+        );
+        this.eventPublisher.publishToolEnd(
+                this.context,
+                "dialogNode",
+                "role_generate_role_image",
+                true,
+                "图片生成完成",
+                Map.of("toolData", Map.of("imageUrl", "https://example.com/role.png"))
+        );
+        this.eventPublisher.publishLlmDelta(this.context, "dialogNode", "图片已经生成好啦。");
+        this.eventPublisher.publishLlmEnd(
+                this.context,
+                "dialogNode",
+                "role_dialog_v1",
+                true,
+                Map.of()
+        );
+
+        ArgumentCaptor<String> typeCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> contentCaptor = ArgumentCaptor.forClass(String.class);
+        Mockito.verify(this.eventService, Mockito.times(3)).saveEvent(
+                Mockito.anyString(),
+                Mockito.eq("20002"),
+                Mockito.eq(1001L),
+                Mockito.isNull(),
+                typeCaptor.capture(),
+                Mockito.anyString(),
+                Mockito.eq("dialogNode"),
+                Mockito.anyString(),
+                contentCaptor.capture(),
+                Mockito.anyInt(),
+                Mockito.anyMap()
+        );
+        Assertions.assertEquals(List.of("llm", "tool", "llm"), typeCaptor.getAllValues());
+        Assertions.assertEquals(
+                List.of("先整理角色设定。", "图片生成完成", "图片已经生成好啦。"),
+                contentCaptor.getAllValues()
+        );
+    }
+
+    @Test
+    void shouldAggregatePersistedAndCurrentLlmTextWhenInterrupted() {
+        this.eventPublisher.publishLlmStart(this.context, "dialogNode", "role_dialog_v1");
+        this.eventPublisher.publishLlmDelta(this.context, "dialogNode", "工具调用前的文字");
+        this.eventPublisher.publishToolStart(
+                this.context,
+                "dialogNode",
+                "role_generate_role_image",
+                Map.of()
+        );
+        this.eventPublisher.publishLlmDelta(this.context, "dialogNode", "停止前的部分文字");
+
+        this.eventPublisher.publishLlmEnd(
+                this.context,
+                "dialogNode",
+                "role_dialog_v1",
+                3,
+                Map.of()
+        );
+
+        Assertions.assertEquals(
+                "工具调用前的文字" + System.lineSeparator() + "停止前的部分文字",
+                this.context.getAttribute("interruptedLlmContent")
+        );
+        Mockito.verify(this.eventService).saveEvent(
+                Mockito.anyString(),
+                Mockito.eq("10001"),
+                Mockito.eq(1001L),
+                Mockito.isNull(),
+                Mockito.eq("llm"),
+                Mockito.anyString(),
+                Mockito.eq("dialogNode"),
+                Mockito.eq("llm"),
+                Mockito.eq("停止前的部分文字"),
+                Mockito.eq(3),
+                Mockito.anyMap()
+        );
     }
 
     @Test

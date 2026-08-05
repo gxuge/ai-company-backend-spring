@@ -13,7 +13,6 @@ import java.util.regex.Pattern;
 @Component
 public class SkillValidator {
     private static final Pattern CODE_PATTERN = Pattern.compile("^[a-z][a-z0-9-_.]{0,63}$");
-    private static final Pattern NAME_PATTERN = Pattern.compile("^[\\w\\-_.]{1,80}$");
 
     /**
      * 校验 Skill 定义。
@@ -25,7 +24,7 @@ public class SkillValidator {
             throw new JeecgBootException("Skill定义不能为空");
         }
         validateText("code", definition.getCode(), CODE_PATTERN);
-        validateText("name", definition.getName(), NAME_PATTERN);
+        validateText("name", definition.getName(), null);
         if (!StringUtils.hasText(definition.getDescription())) {
             throw new JeecgBootException("Skill description不能为空");
         }

@@ -73,6 +73,36 @@ public interface ITsAgentChatMessageService extends IService<TsAgentChatMessage>
                                             String extJson);
 
     /**
+     * 完成已创建的助手消息。
+     *
+     * @param userId 用户ID
+     * @param id 助手消息ID
+     * @param senderType 发送方类型
+     * @param agentCode 实际回复 Agent 编码
+     * @param sourceNodeName 生成消息的节点名称
+     * @param sourceEventId 关联的 SubAgent 完整事件ID
+     * @param content 消息内容
+     * @param messageStatus 消息状态
+     * @param promptCode 提示词编码
+     * @param modelId 模型ID
+     * @param tokenUsageJson Token统计
+     * @param extJson 扩展JSON
+     * @return 更新后的消息
+     */
+    TsAgentChatMessage completeAssistantMessage(String userId,
+                                                Long id,
+                                                String senderType,
+                                                String agentCode,
+                                                String sourceNodeName,
+                                                String sourceEventId,
+                                                String content,
+                                                String messageStatus,
+                                                String promptCode,
+                                                String modelId,
+                                                String tokenUsageJson,
+                                                String extJson);
+
+    /**
      * 分页查询会话消息。
      *
      * @param userId 用户ID

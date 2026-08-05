@@ -241,6 +241,24 @@ jeecg:
       upload-generated-media: ${AIRAG_MINIMAX_UPLOAD_GENERATED_MEDIA:true}
       image-upload-biz-path: ${AIRAG_MINIMAX_IMAGE_UPLOAD_BIZ_PATH:airag/minimax/image}
       audio-upload-biz-path: ${AIRAG_MINIMAX_AUDIO_UPLOAD_BIZ_PATH:airag/minimax/audio}
+  payment:
+    default-currency: ${PAYMENT_DEFAULT_CURRENCY:USD}
+    connect-timeout-ms: ${PAYMENT_CONNECT_TIMEOUT_MS:5000}
+    read-timeout-ms: ${PAYMENT_READ_TIMEOUT_MS:30000}
+    stripe:
+      enabled: ${STRIPE_PAYMENT_ENABLED:false}
+      secret-key: ${STRIPE_SECRET_KEY:}
+      webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+      api-base-url: ${STRIPE_API_BASE_URL:https://api.stripe.com}
+      webhook-tolerance-seconds: ${STRIPE_WEBHOOK_TOLERANCE_SECONDS:300}
+    paypal:
+      enabled: ${PAYPAL_PAYMENT_ENABLED:false}
+      client-id: ${PAYPAL_CLIENT_ID:}
+      client-secret: ${PAYPAL_CLIENT_SECRET:}
+      webhook-id: ${PAYPAL_WEBHOOK_ID:}
+      api-base-url: ${PAYPAL_API_BASE_URL:https://api-m.paypal.com}
+      return-url: ${PAYPAL_RETURN_URL:}
+      cancel-url: ${PAYPAL_CANCEL_URL:}
   # AIRag向量库
   ai-rag:
     # AI流程敏感节点(stdio=命令行节点, sql=SQL节点)

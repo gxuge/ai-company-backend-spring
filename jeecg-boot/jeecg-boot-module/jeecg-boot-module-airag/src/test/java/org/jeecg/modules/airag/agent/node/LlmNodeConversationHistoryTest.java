@@ -10,6 +10,8 @@ import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentConversationMessage;
 import org.jeecg.modules.airag.agent.runtime.AgentEventPublisher;
 import org.jeecg.modules.airag.agent.subagent.role.node.RoleCreateDialogNode;
+import org.jeecg.modules.airag.agent.subagent.role.node.RoleCreateImageNode;
+import org.jeecg.modules.airag.agent.subagent.story.node.StoryCreateBackgroundNode;
 import org.jeecg.modules.airag.agent.subagent.story.node.StoryCreateDialogNode;
 import org.jeecg.modules.airag.agent.tool.ToolCallRequest;
 import org.jeecg.modules.airag.agent.tool.ToolCallResult;
@@ -120,6 +122,13 @@ class LlmNodeConversationHistoryTest {
             Assertions.assertTrue(userPrompt.contains("{{user_input}}"));
             Assertions.assertFalse(userPrompt.contains("{{task_description}}"));
             Assertions.assertFalse(userPrompt.contains("主 Agent 初始委托"));
+        }
+    }
+
+    @Test
+    void shouldEnableConversationHistoryForInteractiveImageNodes() throws Exception {
+        for (Class<?> nodeType : List.of(RoleCreateImageNode.class, StoryCreateBackgroundNode.class)) {
+            Assertions.assertTrue(readDefinition(nodeType).isConversationHistoryEnabled());
         }
     }
 

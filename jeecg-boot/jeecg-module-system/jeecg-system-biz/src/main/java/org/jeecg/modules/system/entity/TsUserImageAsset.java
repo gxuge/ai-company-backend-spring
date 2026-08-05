@@ -39,6 +39,8 @@ public class TsUserImageAsset implements Serializable {
     private Integer height;
     @TableField("source_type")
     private String sourceType;
+    @TableField("source_key")
+    private String sourceKey;
     @TableField("status")
     private Integer status;
     @TableField("created_at")

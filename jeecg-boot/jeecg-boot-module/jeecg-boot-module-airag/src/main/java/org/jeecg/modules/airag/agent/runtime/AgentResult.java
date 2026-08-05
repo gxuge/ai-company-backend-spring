@@ -31,6 +31,10 @@ public class AgentResult {
          */
         FAILED,
         /**
+         * Execution was explicitly interrupted by the user.
+         */
+        INTERRUPTED,
+        /**
          * 等待用户继续输入。
          */
         WAITING_USER,
@@ -108,6 +112,14 @@ public class AgentResult {
      */
     public static AgentResult failed(AgentErrorCode errorCode, Map<String, Object> errorArgs) {
         return AgentErrorSupport.failed(errorCode, errorArgs);
+    }
+
+    public static AgentResult interrupted(String content) {
+        AgentResult result = new AgentResult();
+        result.setStatus(Status.INTERRUPTED);
+        result.setContent(content);
+        result.getData().put("stopReason", "user_stop");
+        return result;
     }
 
     /**

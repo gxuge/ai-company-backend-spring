@@ -70,6 +70,10 @@
         WHERE m.session_id = #{sessionId}
           AND m.is_deleted = 0
           AND (m.visible_to_user IS NULL OR m.visible_to_user = 1)
+          AND (
+              m.role_type != 'assistant'
+              OR m.message_status = 'success'
+          )
         ORDER BY m.message_no DESC, m.id DESC
         LIMIT #{limit}
     </select>

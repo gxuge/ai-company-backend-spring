@@ -17,6 +17,7 @@ import org.jeecg.modules.system.po.tsuserimageasset.TsUserImageAssetSavePo;
 import org.jeecg.modules.system.service.ITsUserImageAssetService;
 import org.jeecg.modules.system.vo.tsuserimageasset.TsUserImageAssetVo;
 import org.jeecg.modules.system.vo.tsuserimageasset.TsUserImageAssetVoConverter;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -65,17 +66,43 @@ public class TsUserImageAssetServiceImpl extends ServiceImpl<TsUserImageAssetMap
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Result<TsUserImageAssetVo> importAsset(LoginUser user, TsUserImageAssetImportDto request) {
+        Long userId = Long.valueOf(user.getId());
+        String sourceKey = trimToNull(request.getSourceKey());
+        if (sourceKey != null) {
+            TsUserImageAsset existing = baseMapper.selectBySourceKey(userId, sourceKey);
+            if (existing != null) {
+                return restoreOrReturnExisting(existing);
+            }
+        }
+
         String persistedUrl = miniMaxDemoService.persistGeneratedImage(request.getSourceImageUrl());
-        TsUserImageAssetSaveDto saveDto = new TsUserImageAssetSaveDto();
-        saveDto.setFileUrl(persistedUrl);
-        saveDto.setThumbnailUrl(persistedUrl);
-        saveDto.setFileName(StringUtils.hasText(request.getFileName())
+        Date now = new Date();
+        TsUserImageAsset entity = new TsUserImageAsset();
+        entity.setUserId(userId);
+        entity.setFileUrl(persistedUrl);
+        entity.setThumbnailUrl(persistedUrl);
+        entity.setFileName(StringUtils.hasText(request.getFileName())
                 ? request.getFileName().trim()
                 : "ai-image-" + System.currentTimeMillis() + ".png");
-        saveDto.setSourceType(StringUtils.hasText(request.getSourceType())
+        entity.setSourceType(StringUtils.hasText(request.getSourceType())
                 ? request.getSourceType().trim()
                 : "ai_generate");
-        return addAsset(user, saveDto);
+        entity.setSourceKey(sourceKey);
+        entity.setStatus(1);
+        entity.setCreatedAt(now);
+        entity.setUpdatedAt(now);
+
+        try {
+            this.save(entity);
+        } catch (DuplicateKeyException duplicateKeyException) {
+            TsUserImageAsset existing = baseMapper.selectBySourceKey(userId, sourceKey);
+            if (existing != null) {
+                return restoreOrReturnExisting(existing);
+            }
+            throw duplicateKeyException;
+        }
+
+        return buildImportResult(entity, false, "保存成功");
     }
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -100,5 +127,32 @@ public class TsUserImageAssetServiceImpl extends ServiceImpl<TsUserImageAssetMap
         entity.setUpdatedAt(new Date());
         this.updateById(entity);
         return Result.OK("删除成功");
+    }
+
+    private Result<TsUserImageAssetVo> restoreOrReturnExisting(TsUserImageAsset existing) {
+        if (existing.getStatus() != null && existing.getStatus() != 0) {
+            return buildImportResult(existing, true, "已保存到图库");
+        }
+        existing.setStatus(1);
+        existing.setUpdatedAt(new Date());
+        this.updateById(existing);
+        return buildImportResult(existing, false, "保存成功");
+    }
+
+    private Result<TsUserImageAssetVo> buildImportResult(
+            TsUserImageAsset entity,
+            boolean alreadySaved,
+            String message) {
+        TsUserImageAssetVo vo = TsUserImageAssetVoConverter.fromEntity(entity);
+        vo.setAlreadySaved(alreadySaved);
+        return Result.OK(message, vo);
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

@@ -38,4 +38,13 @@
         LIMIT 1
     </select>
 
+    <!-- 按 Agent 事件来源查询当前用户素材，用于幂等转存 -->
+    <select id="selectBySourceKey" resultType="org.jeecg.modules.system.entity.TsUserImageAsset">
+        SELECT *
+        FROM ts_user_image_asset
+        WHERE user_id = #{userId}
+          AND source_key = #{sourceKey}
+        LIMIT 1
+    </select>
+
 </mapper>

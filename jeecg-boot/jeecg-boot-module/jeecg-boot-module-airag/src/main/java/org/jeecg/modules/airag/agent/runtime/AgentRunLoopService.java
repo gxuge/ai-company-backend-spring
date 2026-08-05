@@ -48,6 +48,7 @@ public class AgentRunLoopService {
         List<AgentRunStep> steps = new ArrayList<>();
 
         for (int stepIndex = 1; stepIndex <= MAX_AGENT_STEPS; stepIndex++) {
+            AgentRunControlService.throwIfStopRequested(actualContext);
             Optional<Agent> agentOptional = this.agentRegistry.find(currentAgentCode);
             if (agentOptional.isEmpty()) {
                 AgentResult failed = AgentResult.failed(
@@ -62,6 +63,10 @@ public class AgentRunLoopService {
             actualContext.putAttribute("agentStepIndex", stepIndex);
             AgentResult stepResult = this.agentRuntimeService.execute(agentOptional.get(), actualContext);
             steps.add(new AgentRunStep(stepIndex, currentAgentCode, stepResult));
+            if (stepResult != null && stepResult.getStatus() == AgentResult.Status.INTERRUPTED) {
+                return new AgentRunOutcome(stepResult, currentAgentCode, steps);
+            }
+            AgentRunControlService.throwIfStopRequested(actualContext);
 
             if (stepResult == null || AgentResult.Status.HANDOFF != stepResult.getStatus()) {
                 return new AgentRunOutcome(stepResult, currentAgentCode, steps);

@@ -254,6 +254,30 @@
 - [x] 步骤 3
 - [x] 步骤 4
 
+### 任务 ID
+`20260804-ts-image-download`
+
+### 目标与边界
+- 新增 `POST /sys/ts-images/download`，代理下载公网图片并以附件流返回。
+- 下载不入库，不关联角色、故事或用户图片资产。
+- 限制协议、内网地址、响应类型、重定向次数和最大文件大小。
+
+### 执行步骤
+- [x] 新增下载 DTO、Service 与 Controller 映射。
+- [x] 同步 TS API 文档与变更记录。
+- [x] 完成 system-biz 编译与差异检查。
+
+### 风险与回滚
+- 风险：第三方图片服务响应慢、返回非图片内容或重定向到内网地址。
+- 缓解：连接/读取超时、逐跳地址校验、`image/*` 类型校验和 30MB 上限。
+- 回滚：移除下载 DTO、Service 和 Controller 方法；不涉及数据库或存量数据。
+
+### 验证记录
+- 联动编译：`mvn -pl jeecg-module-system/jeecg-system-biz -am -DskipTests compile`，结果 `BUILD SUCCESS`。
+- 定向测试源码：`TsImageServiceImplTest` 编译通过，覆盖内网地址与非 HTTP/HTTPS 协议拒绝。
+- 测试限制：根 POM 将 Surefire `skipTests` 固定为 `true`，测试用例未实际执行；不影响主代码编译。
+- 差异检查：本次后端文件 `git diff --check` 通过。
+
 ### 验证记录
 - 编译验证：已执行 `mvn -pl jeecg-module-system/jeecg-system-start -am -DskipTests compile`，结果 `BUILD SUCCESS`。
 

@@ -6,6 +6,11 @@ import jakarta.annotation.Resource;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.common.util.UUIDGenerator;
+import org.jeecg.modules.airag.usage.model.AiUsageFinishRequest;
+import org.jeecg.modules.airag.usage.model.AiUsageMetricValue;
+import org.jeecg.modules.airag.usage.model.AiUsageStartRequest;
+import org.jeecg.modules.airag.usage.service.AiUsageRecorderService;
 import org.jeecg.modules.aop.TsChatSessionOwnershipAspect;
 import org.jeecg.modules.aop.TsChatSessionOwnershipAspect.CheckTsChatSessionOwnership;
 import org.jeecg.modules.openapi.dto.MiniMaxChatRequestDto;
@@ -36,6 +41,7 @@ import org.jeecg.modules.system.mapper.TsStoryRoleRelMapper;
 import org.jeecg.modules.system.mapper.TsUserVoiceConfigMapper;
 import org.jeecg.modules.system.mapper.TsVoiceProfileMapper;
 import org.jeecg.modules.system.monitor.TsAiLogCollector;
+import org.jeecg.modules.system.monitor.TsMultimodalUsageRecorder;
 import org.jeecg.modules.system.service.ITsChatAiReplyService;
 import org.jeecg.modules.system.service.ITsChatTtsGatewayService;
 import org.jeecg.modules.system.util.ChatGenerateSnapshotUtil;
@@ -170,6 +176,10 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
     private RedisTemplate<String, Object> redisTemplate;
     @Resource
     private TsAiLogCollector tsAiLogCollector;
+    @Resource
+    private AiUsageRecorderService aiUsageRecorderService;
+    @Resource
+    private TsMultimodalUsageRecorder multimodalUsageRecorder;
 
     /**
      * 在会话内完成“用户消息入库 + AI 文本生成 + 语音合成 + 附件落库”的编排流程。
@@ -240,7 +250,17 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         MiniMaxChatRequestDto chatRequest = new MiniMaxChatRequestDto();
         chatRequest.setPrompt(TsPromptLanguageInjector.inject(promptBuilder.toString()));
         logPlainChatRequest(sessionId, request, historyMessages, userContent, chatRequest.getPrompt());
-        MiniMaxChatResponseVo chatResponse = miniMaxDemoService.chat(chatRequest);
+        String textInvocationId = UUIDGenerator.generate();
+        Date textStartedAt = new Date();
+        startPlainChatUsage(textInvocationId, user, sessionId, userMessage.getId(), textStartedAt);
+        MiniMaxChatResponseVo chatResponse;
+        try {
+            chatResponse = miniMaxDemoService.chat(chatRequest);
+            finishPlainChatUsage(textInvocationId, chatResponse, textStartedAt, null);
+        } catch (RuntimeException ex) {
+            finishPlainChatUsage(textInvocationId, null, textStartedAt, ex);
+            throw ex;
+        }
         String assistantContent = chatResponse == null ? null : chatResponse.getContent();
         logPlainChatResponse(assistantContent);
         if (!StringUtils.hasText(assistantContent)) {
@@ -269,7 +289,13 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
             ttsRequest.setPitch(request.getPitch());
             ttsRequest.setVolume(request.getVolume());
             logTtsRequest(ttsRequest, voiceMatchSource);
-            ttsResult = tsChatTtsGatewayService.synthesizeForChat(ttsRequest);
+            ttsResult = multimodalUsageRecorder.recordTts(
+                    user == null ? null : user.getId(),
+                    sessionId,
+                    userMessage.getId(),
+                    ttsRequest.getText(),
+                    () -> tsChatTtsGatewayService.synthesizeForChat(ttsRequest)
+            );
             audioUrl = ttsResult == null ? null : ttsResult.getAudioUrl();
             if (!StringUtils.hasText(resolvedVoiceId) && ttsResult != null && StringUtils.hasText(ttsResult.getVoiceId())) {
                 resolvedVoiceId = ttsResult.getVoiceId();
@@ -499,7 +525,13 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         ttsRequest.setPitch(dto.getPitch());
         ttsRequest.setVolume(dto.getVolume());
 
-        TsChatTtsResultVo ttsResult = tsChatTtsGatewayService.synthesizeForChat(ttsRequest);
+        TsChatTtsResultVo ttsResult = multimodalUsageRecorder.recordTts(
+                user.getId(),
+                sessionId,
+                message.getId(),
+                ttsRequest.getText(),
+                () -> tsChatTtsGatewayService.synthesizeForChat(ttsRequest)
+        );
         String audioUrl = ttsResult == null ? null : PromptRuntimeUtil.trimToNull(ttsResult.getAudioUrl());
         if (!StringUtils.hasText(audioUrl)) {
             throw new JeecgBootException("语音生成成功但未返回可播放地址");
@@ -1048,6 +1080,71 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
 
         private String getMatchSource() {
             return matchSource;
+        }
+    }
+
+    private void startPlainChatUsage(String invocationId,
+                                     LoginUser user,
+                                     Long sessionId,
+                                     Long messageId,
+                                     Date startedAt) {
+        AiUsageStartRequest usage = new AiUsageStartRequest();
+        usage.setInvocationId(invocationId);
+        usage.setTraceId(invocationId);
+        usage.setUserId(user == null ? null : user.getId());
+        usage.setSourceType("chat");
+        usage.setSceneCode("normal_chat");
+        usage.setModality("text");
+        usage.setOperationType("chat_completion");
+        usage.setProvider("MINIMAX");
+        usage.setSessionId(sessionId);
+        usage.setMessageId(messageId);
+        usage.setStartedAt(startedAt);
+        aiUsageRecorderService.start(usage);
+    }
+
+    private void finishPlainChatUsage(String invocationId,
+                                      MiniMaxChatResponseVo response,
+                                      Date startedAt,
+                                      RuntimeException error) {
+        AiUsageFinishRequest usage = new AiUsageFinishRequest();
+        usage.setInvocationId(invocationId);
+        usage.setStatus(error == null ? "success" : "failed");
+        usage.setModelName(response == null ? null : response.getModelName());
+        usage.setFinishedAt(new Date());
+        usage.setDurationMs(response != null && response.getDurationMs() != null
+                ? response.getDurationMs()
+                : Math.max(0L, System.currentTimeMillis() - startedAt.getTime()));
+        usage.setErrorCode(error == null ? null : "LLM_CALL_FAILED");
+        usage.setErrorMessage(error == null ? null : error.getMessage());
+        usage.setUsageRawJson(response == null ? null : response.getUsageRawJson());
+        List<AiUsageMetricValue> metrics = new ArrayList<>();
+        metrics.add(AiUsageMetricValue.of("request_count", 1, "count", "total"));
+        addUsageMetric(metrics, AiUsageMetricValue.of(
+                "input_tokens",
+                response == null ? null : response.getInputTokens(),
+                "token",
+                "input"
+        ));
+        addUsageMetric(metrics, AiUsageMetricValue.of(
+                "output_tokens",
+                response == null ? null : response.getOutputTokens(),
+                "token",
+                "output"
+        ));
+        addUsageMetric(metrics, AiUsageMetricValue.of(
+                "total_tokens",
+                response == null ? null : response.getTotalTokens(),
+                "token",
+                "total"
+        ));
+        usage.setMetrics(metrics);
+        aiUsageRecorderService.finish(usage);
+    }
+
+    private void addUsageMetric(List<AiUsageMetricValue> metrics, AiUsageMetricValue metric) {
+        if (metric != null) {
+            metrics.add(metric);
         }
     }
 

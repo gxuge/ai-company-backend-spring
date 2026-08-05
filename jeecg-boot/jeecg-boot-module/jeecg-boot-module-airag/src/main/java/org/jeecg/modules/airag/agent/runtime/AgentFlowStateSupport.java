@@ -17,11 +17,17 @@ import java.util.Map;
  * @date 2026/7/14
  */
 public final class AgentFlowStateSupport {
+    public static final String MAIN_AGENT_CODE = AgentRegistry.MAIN_AGENT_CODE;
     public static final String ROLE_AGENT_CODE = "role_task_agent";
+    public static final String ROLE_IMAGE_AGENT_CODE = "role_image_task_agent";
     public static final String STORY_AGENT_CODE = "story_task_agent";
+    public static final String STORY_BACKGROUND_AGENT_CODE = "story_background_task_agent";
     public static final String DATA_RESUME_NODE_NAME = "resumeNodeName";
     public static final String DATA_ACTIVE_STAGE = "activeStage";
 
+    private static final List<String> MAIN_STATE_KEYS = List.of(
+            "pendingUserInteraction"
+    );
     private static final List<String> ROLE_STATE_KEYS = List.of(
             "taskDescription",
             "transferDataJson",
@@ -33,6 +39,12 @@ public final class AgentFlowStateSupport {
             "roleConfirmationDecision",
             "pendingUserInteraction"
     );
+    private static final List<String> ROLE_IMAGE_STATE_KEYS = List.of(
+            "taskDescription",
+            "transferDataJson",
+            "roleImageResultJson",
+            "pendingUserInteraction"
+    );
     private static final List<String> STORY_STATE_KEYS = List.of(
             "taskDescription",
             "transferDataJson",
@@ -42,6 +54,14 @@ public final class AgentFlowStateSupport {
             "storyBackgroundResultJson",
             "storySceneResultJson",
             "storyConfirmationDecision",
+            "pendingUserInteraction"
+    );
+    private static final List<String> STORY_BACKGROUND_STATE_KEYS = List.of(
+            "taskDescription",
+            "transferDataJson",
+            "storyBackgroundResultJson",
+            "storySceneResultJson",
+            "storySceneImageResultJson",
             "pendingUserInteraction"
     );
 
@@ -144,10 +164,19 @@ public final class AgentFlowStateSupport {
         }
         context.setResumeNodeName(null);
         context.setActiveStage(null);
+        for (String key : MAIN_STATE_KEYS) {
+            context.removeAttribute(key);
+        }
         for (String key : ROLE_STATE_KEYS) {
             context.removeAttribute(key);
         }
         for (String key : STORY_STATE_KEYS) {
+            context.removeAttribute(key);
+        }
+        for (String key : ROLE_IMAGE_STATE_KEYS) {
+            context.removeAttribute(key);
+        }
+        for (String key : STORY_BACKGROUND_STATE_KEYS) {
             context.removeAttribute(key);
         }
     }
@@ -159,16 +188,28 @@ public final class AgentFlowStateSupport {
      * @return 是否支持
      */
     public static boolean supports(String agentCode) {
-        return ROLE_AGENT_CODE.equalsIgnoreCase(agentCode)
-                || STORY_AGENT_CODE.equalsIgnoreCase(agentCode);
+        return MAIN_AGENT_CODE.equalsIgnoreCase(agentCode)
+                || ROLE_AGENT_CODE.equalsIgnoreCase(agentCode)
+                || ROLE_IMAGE_AGENT_CODE.equalsIgnoreCase(agentCode)
+                || STORY_AGENT_CODE.equalsIgnoreCase(agentCode)
+                || STORY_BACKGROUND_AGENT_CODE.equalsIgnoreCase(agentCode);
     }
 
     private static List<String> stateKeys(String agentCode) {
+        if (MAIN_AGENT_CODE.equalsIgnoreCase(agentCode)) {
+            return MAIN_STATE_KEYS;
+        }
         if (ROLE_AGENT_CODE.equalsIgnoreCase(agentCode)) {
             return ROLE_STATE_KEYS;
         }
+        if (ROLE_IMAGE_AGENT_CODE.equalsIgnoreCase(agentCode)) {
+            return ROLE_IMAGE_STATE_KEYS;
+        }
         if (STORY_AGENT_CODE.equalsIgnoreCase(agentCode)) {
             return STORY_STATE_KEYS;
+        }
+        if (STORY_BACKGROUND_AGENT_CODE.equalsIgnoreCase(agentCode)) {
+            return STORY_BACKGROUND_STATE_KEYS;
         }
         return List.of();
     }

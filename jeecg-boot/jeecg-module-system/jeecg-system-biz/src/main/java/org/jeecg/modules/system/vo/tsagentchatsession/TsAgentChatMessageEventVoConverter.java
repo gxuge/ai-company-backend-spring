@@ -54,9 +54,36 @@ public final class TsAgentChatMessageEventVoConverter {
                     new TypeReference<LinkedHashMap<String, Object>>() {
                     }
             );
-            return data == null ? new LinkedHashMap<>() : data;
+            return sanitizeInternalUsage(data);
         } catch (RuntimeException ignored) {
             return new LinkedHashMap<>();
         }
+    }
+
+    private static Map<String, Object> sanitizeInternalUsage(Map<String, Object> data) {
+        if (data == null) {
+            return new LinkedHashMap<>();
+        }
+        Map<String, Object> sanitized = new LinkedHashMap<>(data);
+        Object rawMetrics = sanitized.get("metrics");
+        if (rawMetrics instanceof Map<?, ?> metrics) {
+            Map<String, Object> publicMetrics = new LinkedHashMap<>();
+            metrics.forEach((key, value) -> {
+                String metricName = key == null ? "" : String.valueOf(key);
+                if (!isInternalUsageMetric(metricName)) {
+                    publicMetrics.put(metricName, value);
+                }
+            });
+            sanitized.put("metrics", publicMetrics);
+        }
+        return sanitized;
+    }
+
+    private static boolean isInternalUsageMetric(String metricName) {
+        return "inputTokens".equals(metricName)
+                || "outputTokens".equals(metricName)
+                || "totalTokens".equals(metricName)
+                || "cacheHitTokens".equals(metricName)
+                || "cacheMissTokens".equals(metricName);
     }
 }

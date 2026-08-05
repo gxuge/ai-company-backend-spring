@@ -20,6 +20,8 @@ import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentEventPublisher;
 import org.jeecg.modules.airag.agent.runtime.AgentHandoffSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentModelResolver;
+import org.jeecg.modules.airag.agent.runtime.AgentRunControlService;
+import org.jeecg.modules.airag.agent.runtime.AgentRunInterruptedException;
 import org.jeecg.modules.airag.agent.runtime.DeepAgentsProperties;
 import org.jeecg.modules.airag.agent.skill.runtime.SkillProperties;
 import org.jeecg.modules.airag.agent.skill.model.SkillLoadResult;
@@ -30,16 +32,19 @@ import org.jeecg.modules.airag.agent.tool.ToolCallResult;
 import org.jeecg.modules.airag.agent.tool.ToolDefinition;
 import org.jeecg.modules.airag.agent.tool.ToolRegistry;
 import org.jeecg.modules.airag.agent.tool.control.AgentControlToolService;
+import org.jeecg.modules.airag.agent.tool.options.AgentOptionsToolService;
 import org.jeecg.modules.airag.agent.trace.AgentLlmTraceRequest;
 import org.jeecg.modules.airag.agent.trace.AgentLlmTraceResponse;
 import org.jeecg.modules.airag.agent.trace.AgentLlmTraceSink;
 import org.jeecg.modules.airag.common.handler.AIChatParams;
 import org.jeecg.modules.airag.common.handler.IAIChatHandler;
+import org.jeecg.modules.airag.llm.stream.ImmediateToolExecutor;
 import org.jeecg.modules.airag.prompts.service.IAiragPromptTemplateService;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -106,6 +111,16 @@ public abstract class LlmNode extends BaseAgentNode {
     @Autowired(required = false)
     private AgentControlToolService agentControlToolService;
     /**
+     * Agent 通用候选项工具。
+     */
+    @Autowired(required = false)
+    private AgentOptionsToolService agentOptionsToolService;
+    /**
+     * Tool 注册中心。
+     */
+    @Autowired(required = false)
+    private ToolRegistry toolRegistry;
+    /**
      * LLM trace sinks.
      */
     @Autowired(required = false)
@@ -153,6 +168,8 @@ public abstract class LlmNode extends BaseAgentNode {
         List<ChatMessage> messages = buildMessages(promptVariables, skillLoadResult, context);
         String modelId = this.modelResolver.resolveTextModelId(context.getAppId());
         AIChatParams params = buildChatParams(context, skillLoadResult);
+        String invocationId = UUIDGenerator.generate();
+        long llmStartedAt = System.currentTimeMillis();
         this.eventPublisher.updateLlmExecutionMetadata(
                 context,
                 nodeName(),
@@ -164,11 +181,13 @@ public abstract class LlmNode extends BaseAgentNode {
                 null,
                 null
         );
-        traceLlmRequest(context, modelId, messages, params);
+        traceLlmRequest(context, invocationId, new Date(llmStartedAt), modelId, messages, params);
         CountDownLatch done = new CountDownLatch(1);
         AtomicReference<Throwable> errorRef = new AtomicReference<>();
         AtomicReference<String> textRef = new AtomicReference<>("");
         AtomicReference<String> finishReasonRef = new AtomicReference<>();
+        AtomicReference<TokenUsage> tokenUsageRef = new AtomicReference<>();
+        AtomicReference<String> actualModelNameRef = new AtomicReference<>();
         AtomicBoolean terminalReceived = new AtomicBoolean(false);
         TokenStream tokenStream = this.aiChatHandler.chat(modelId, messages, params);
         this.eventPublisher.updateLlmExecutionMetadata(
@@ -187,6 +206,9 @@ public abstract class LlmNode extends BaseAgentNode {
             if (terminalReceived.get()) {
                 return;
             }
+            if (AgentRunControlService.isStopRequested(context)) {
+                return;
+            }
             if (!shouldPublishPartialResponse()) {
                 return;
             }
@@ -196,6 +218,11 @@ public abstract class LlmNode extends BaseAgentNode {
             String safeDelta = delta == null ? "" : delta;
             this.eventPublisher.publishLlmDelta(context, nodeName(), safeDelta);
         }).onCompleteResponse(response -> {
+            if (AgentRunControlService.isStopRequested(context)) {
+                terminalReceived.compareAndSet(false, true);
+                done.countDown();
+                return;
+            }
             if (!terminalReceived.compareAndSet(false, true)) {
                 return;
             }
@@ -209,6 +236,8 @@ public abstract class LlmNode extends BaseAgentNode {
             finishReasonRef.set(finishReason == null ? null : finishReason.name());
             TokenUsage tokenUsage = response == null ? null : response.tokenUsage();
             String actualModelName = response == null ? null : response.modelName();
+            tokenUsageRef.set(tokenUsage);
+            actualModelNameRef.set(actualModelName);
             this.eventPublisher.updateLlmExecutionMetadata(
                     context,
                     nodeName(),
@@ -231,6 +260,11 @@ public abstract class LlmNode extends BaseAgentNode {
             }
             done.countDown();
         }).onError(error -> {
+            if (AgentRunControlService.isStopRequested(context)) {
+                terminalReceived.compareAndSet(false, true);
+                done.countDown();
+                return;
+            }
             if (!terminalReceived.compareAndSet(false, true)) {
                 return;
             }
@@ -239,15 +273,38 @@ public abstract class LlmNode extends BaseAgentNode {
         }).start();
 
         done.await(300, TimeUnit.SECONDS);
+        AgentRunControlService.throwIfStopRequested(context);
         if (errorRef.get() != null) {
-            traceLlmResponse(context, modelId, null, finishReasonRef.get(), false, errorRef.get());
+            traceLlmResponse(
+                    context,
+                    invocationId,
+                    llmStartedAt,
+                    modelId,
+                    actualModelNameRef.get(),
+                    tokenUsageRef.get(),
+                    null,
+                    finishReasonRef.get(),
+                    false,
+                    errorRef.get()
+            );
             throw new RuntimeException(errorRef.get());
         }
         String finalText = textRef.get();
         if (oConvertUtils.isEmpty(finalText)) {
             finalText = this.eventPublisher.readBuffer(this.eventPublisher.buildLlmBufferKey(context, nodeName()));
         }
-        traceLlmResponse(context, modelId, finalText, finishReasonRef.get(), true, null);
+        traceLlmResponse(
+                context,
+                invocationId,
+                llmStartedAt,
+                modelId,
+                actualModelNameRef.get(),
+                tokenUsageRef.get(),
+                finalText,
+                finishReasonRef.get(),
+                true,
+                null
+        );
         context.setLatestContent(finalText);
         NodeResult nodeResult = parseResult(finalText, context);
         AgentHandoffSupport.attachToNodeResult(nodeResult, context);
@@ -342,7 +399,47 @@ public abstract class LlmNode extends BaseAgentNode {
                 params.getTools().putAll(controlToolsMap);
             }
         }
+        if (this.agentOptionsToolService != null && this.toolRegistry != null) {
+            if (params.getTools() == null) {
+                params.setTools(new LinkedHashMap<>());
+            }
+            params.getTools().put(
+                    this.agentOptionsToolService.buildSpecification(),
+                    ImmediateToolExecutor.wrap(buildAgentOptionsToolExecutor(context))
+            );
+        }
         return params;
+    }
+
+    private dev.langchain4j.service.tool.ToolExecutor buildAgentOptionsToolExecutor(AgentContext context) {
+        return (toolExecutionRequest, memoryId) -> {
+            ToolCallRequest request = new ToolCallRequest();
+            request.setToolName(AgentOptionsToolService.TOOL_NAME);
+            request.setArguments(parseToolArguments(
+                    toolExecutionRequest == null ? null : toolExecutionRequest.arguments()
+            ));
+            ToolCallResult result = executeToolWithSse(context, this.toolRegistry, request);
+            suppressRemainingLlmOutput(context);
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("success", result == null ? null : result.isSuccess());
+            payload.put("summary", result == null ? null : result.getSummary());
+            payload.put("data", result == null ? null : result.getData());
+            payload.put("errorMessage", result == null ? null : result.getErrorMessage());
+            return JSON.toJSONString(payload);
+        };
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parseToolArguments(String arguments) {
+        if (arguments == null || arguments.isBlank()) {
+            return new LinkedHashMap<>();
+        }
+        try {
+            Map<String, Object> parsed = JSON.parseObject(arguments, LinkedHashMap.class);
+            return parsed == null ? new LinkedHashMap<>() : parsed;
+        } catch (Exception ignored) {
+            return new LinkedHashMap<>();
+        }
     }
 
     /**
@@ -356,6 +453,7 @@ public abstract class LlmNode extends BaseAgentNode {
     protected ToolCallResult executeToolWithSse(AgentContext context,
                                                 ToolRegistry toolRegistry,
                                                 ToolCallRequest request) {
+        AgentRunControlService.throwIfStopRequested(context);
         String toolName = request == null ? null : request.getToolName();
         ToolDefinition toolDefinition = request == null ? null : toolRegistry.getDefinition(toolName);
         boolean asynchronous = toolDefinition != null
@@ -409,6 +507,29 @@ public abstract class LlmNode extends BaseAgentNode {
             );
             return result;
         } catch (RuntimeException ex) {
+            if (AgentRunControlService.isInterrupted(ex, context)) {
+                Map<String, Object> interruptedPayload = new LinkedHashMap<>(startPayload);
+                interruptedPayload.put("stopReason", "user_stop");
+                if (asynchronous) {
+                    this.eventPublisher.publishAsyncToolInterrupted(
+                            context,
+                            request.getEventId(),
+                            nodeName(),
+                            toolName,
+                            interruptedPayload
+                    );
+                } else {
+                    this.eventPublisher.publishToolEnd(
+                            context,
+                            nodeName(),
+                            toolName,
+                            3,
+                            "",
+                            interruptedPayload
+                    );
+                }
+                throw new AgentRunInterruptedException();
+            }
             Map<String, Object> errorPayload = new LinkedHashMap<>(startPayload);
             errorPayload.put("errorMessage", ex.getMessage());
             if (asynchronous) {
@@ -640,12 +761,19 @@ public abstract class LlmNode extends BaseAgentNode {
     /**
      * Trace LLM request.
      */
-    private void traceLlmRequest(AgentContext context, String modelId, List<ChatMessage> messages, AIChatParams params) {
+    private void traceLlmRequest(AgentContext context,
+                                 String invocationId,
+                                 Date startedAt,
+                                 String modelId,
+                                 List<ChatMessage> messages,
+                                 AIChatParams params) {
         if (this.llmTraceSinks == null || this.llmTraceSinks.isEmpty()) {
             return;
         }
         AgentLlmTraceRequest request = new AgentLlmTraceRequest();
         request.setContext(context);
+        request.setInvocationId(invocationId);
+        request.setStartedAt(startedAt);
         request.setNodeName(nodeName());
         request.setPromptCode(getPromptCode());
         request.setPromptVersion(getPromptVersion());
@@ -668,7 +796,11 @@ public abstract class LlmNode extends BaseAgentNode {
      * Trace LLM response.
      */
     private void traceLlmResponse(AgentContext context,
+                                  String invocationId,
+                                  long startedAt,
                                   String modelId,
+                                  String actualModelName,
+                                  TokenUsage tokenUsage,
                                   String responseRaw,
                                   String finishReason,
                                   boolean success,
@@ -678,12 +810,19 @@ public abstract class LlmNode extends BaseAgentNode {
         }
         AgentLlmTraceResponse response = new AgentLlmTraceResponse();
         response.setContext(context);
+        response.setInvocationId(invocationId);
+        response.setFinishedAt(new Date());
+        response.setDurationMs(Math.max(0L, System.currentTimeMillis() - startedAt));
         response.setNodeName(nodeName());
         response.setPromptCode(getPromptCode());
         response.setPromptVersion(getPromptVersion());
         response.setModelId(modelId);
         response.setResponseRaw(responseRaw);
         response.setFinishReason(finishReason);
+        response.setActualModelName(actualModelName);
+        response.setInputTokens(tokenUsage == null ? null : tokenUsage.inputTokenCount());
+        response.setOutputTokens(tokenUsage == null ? null : tokenUsage.outputTokenCount());
+        response.setTotalTokens(tokenUsage == null ? null : tokenUsage.totalTokenCount());
         response.setSuccess(success);
         response.setErrorMessage(error == null ? null : error.getMessage());
         Map<String, Object> extraInfo = new LinkedHashMap<>();
@@ -970,6 +1109,9 @@ public abstract class LlmNode extends BaseAgentNode {
         if (this.agentControlToolService != null && this.agentControlToolService.isEnabled(context)) {
             appendUnique(tools, AgentControlToolService.TOOL_HANDOFF_TO_MAIN);
         }
+        if (this.agentOptionsToolService != null) {
+            appendUnique(tools, AgentOptionsToolService.TOOL_NAME);
+        }
         return tools;
     }
 
@@ -984,6 +1126,9 @@ public abstract class LlmNode extends BaseAgentNode {
         appendUnique(permissions, this.definition == null ? null : this.definition.getPermissions());
         if (this.agentControlToolService != null && this.agentControlToolService.isEnabled(context)) {
             appendUnique(permissions, AgentControlToolService.TOOL_HANDOFF_TO_MAIN);
+        }
+        if (this.agentOptionsToolService != null) {
+            appendUnique(permissions, AgentOptionsToolService.TOOL_NAME);
         }
         return permissions;
     }

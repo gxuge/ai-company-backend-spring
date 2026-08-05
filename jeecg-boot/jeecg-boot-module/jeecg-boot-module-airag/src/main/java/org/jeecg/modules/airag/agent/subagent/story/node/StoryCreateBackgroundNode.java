@@ -67,6 +67,7 @@ public class StoryCreateBackgroundNode extends LlmNode {
         definition.setTools(List.of(StoryTaskToolSpec.STORY_GENERATE_SCENE_IMAGE));
         definition.setPermissions(List.of(StoryTaskToolSpec.STORY_GENERATE_SCENE_IMAGE));
         definition.setResponseFormat("text");
+        definition.setConversationHistoryEnabled(true);
         definition.setUserPromptTemplate("""
                 本轮输入：
                 {{user_input}}

@@ -1,0 +1,270 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsMemberQueryMapper">
+
+    <select id="selectEnabledPlans" resultType="org.jeecg.modules.system.entity.TsMemberPlan">
+        SELECT id, name, code, description, theme_color, status, sort, created_at
+        FROM member_plan
+        WHERE status = 1
+        ORDER BY sort ASC, id ASC
+    </select>
+
+    <select id="selectEnabledPlanById" resultType="org.jeecg.modules.system.entity.TsMemberPlan">
+        SELECT id, name, code, description, theme_color, status, sort, created_at
+        FROM member_plan
+        WHERE id = #{id}
+          AND status = 1
+        LIMIT 1
+    </select>
+
+    <select id="selectPlanById" resultType="org.jeecg.modules.system.entity.TsMemberPlan">
+        SELECT id, name, code, description, theme_color, status, sort, created_at
+        FROM member_plan
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="selectEnabledProducts" resultType="org.jeecg.modules.system.entity.TsMemberProduct">
+        SELECT id, plan_id, cycle_type, price, original_price, discount_text,
+               is_recommend, status, created_at
+        FROM member_product
+        WHERE status = 1
+        ORDER BY plan_id ASC,
+                 FIELD(cycle_type, 'WEEK', 'MONTH', 'QUARTER', 'YEAR'),
+                 id ASC
+    </select>
+
+    <select id="selectEnabledProductById" resultType="org.jeecg.modules.system.entity.TsMemberProduct">
+        SELECT id, plan_id, cycle_type, price, original_price, discount_text,
+               is_recommend, status, created_at
+        FROM member_product
+        WHERE id = #{id}
+          AND status = 1
+        LIMIT 1
+    </select>
+
+    <select id="selectProductById" resultType="org.jeecg.modules.system.entity.TsMemberProduct">
+        SELECT id, plan_id, cycle_type, price, original_price, discount_text,
+               is_recommend, status, created_at
+        FROM member_product
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="selectBenefits" resultType="org.jeecg.modules.system.entity.TsMemberBenefit">
+        SELECT id, code, name, description, icon, category, sort, created_at
+        FROM member_benefit
+        ORDER BY sort ASC, id ASC
+    </select>
+
+    <select id="selectBenefitByCode" resultType="org.jeecg.modules.system.entity.TsMemberBenefit">
+        SELECT id, code, name, description, icon, category, sort, created_at
+        FROM member_benefit
+        WHERE code = #{benefitCode}
+        LIMIT 1
+    </select>
+
+    <select id="selectPlanBenefits" resultType="org.jeecg.modules.system.entity.TsMemberPlanBenefit">
+        SELECT mpb.id, mpb.plan_id, mpb.benefit_id, mpb.value, mpb.unit,
+               mpb.limit_type, mpb.created_at
+        FROM member_plan_benefit mpb
+        INNER JOIN member_benefit mb ON mb.id = mpb.benefit_id
+        ORDER BY mpb.plan_id ASC, mb.sort ASC, mpb.id ASC
+    </select>
+
+    <select id="selectPlanBenefitsByPlanId" resultType="org.jeecg.modules.system.entity.TsMemberPlanBenefit">
+        SELECT mpb.id, mpb.plan_id, mpb.benefit_id, mpb.value, mpb.unit,
+               mpb.limit_type, mpb.created_at
+        FROM member_plan_benefit mpb
+        INNER JOIN member_benefit mb ON mb.id = mpb.benefit_id
+        WHERE mpb.plan_id = #{planId}
+        ORDER BY mb.sort ASC, mpb.id ASC
+    </select>
+
+    <select id="selectPlanBenefitByCode" resultType="org.jeecg.modules.system.entity.TsMemberPlanBenefit">
+        SELECT mpb.id, mpb.plan_id, mpb.benefit_id, mpb.value, mpb.unit,
+               mpb.limit_type, mpb.created_at
+        FROM member_plan_benefit mpb
+        INNER JOIN member_benefit mb ON mb.id = mpb.benefit_id
+        WHERE mpb.plan_id = #{planId}
+          AND mb.code = #{benefitCode}
+        LIMIT 1
+    </select>
+
+    <select id="selectGifts" resultType="org.jeecg.modules.system.entity.TsMemberGift">
+        SELECT id, plan_id, name, description, icon, sort
+        FROM member_gift
+        ORDER BY plan_id ASC, sort ASC, id ASC
+    </select>
+
+    <select id="selectCurrentMembership" resultType="org.jeecg.modules.system.entity.TsUserMembership">
+        SELECT id, user_id, plan_id, product_id, start_time, end_time,
+               status, auto_renew, created_at
+        FROM user_membership
+        WHERE user_id = #{userId}
+          AND status = 1
+          AND end_time &gt; #{now}
+        ORDER BY end_time DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectCurrentMembershipForUpdate" resultType="org.jeecg.modules.system.entity.TsUserMembership">
+        SELECT id, user_id, plan_id, product_id, start_time, end_time,
+               status, auto_renew, created_at
+        FROM user_membership
+        WHERE user_id = #{userId}
+          AND status = 1
+          AND end_time &gt; #{now}
+        ORDER BY end_time DESC, id DESC
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <select id="selectActiveUserQuotas" resultType="org.jeecg.modules.system.entity.TsUserBenefitQuota">
+        SELECT id, user_id, benefit_code, total_amount, used_amount, expire_time, created_at
+        FROM user_benefit_quota
+        WHERE user_id = #{userId}
+          AND (expire_time IS NULL OR expire_time &gt; #{now})
+        ORDER BY benefit_code ASC
+    </select>
+
+    <select id="selectQuotaForUpdate" resultType="org.jeecg.modules.system.entity.TsUserBenefitQuota">
+        SELECT id, user_id, benefit_code, total_amount, used_amount, expire_time, created_at
+        FROM user_benefit_quota
+        WHERE user_id = #{userId}
+          AND benefit_code = #{benefitCode}
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <select id="selectUserQuotasForUpdate" resultType="org.jeecg.modules.system.entity.TsUserBenefitQuota">
+        SELECT id, user_id, benefit_code, total_amount, used_amount, expire_time, created_at
+        FROM user_benefit_quota
+        WHERE user_id = #{userId}
+        ORDER BY id ASC
+        FOR UPDATE
+    </select>
+
+    <select id="selectOwnedOrder" resultType="org.jeecg.modules.system.entity.TsMemberOrder">
+        SELECT id, user_id, product_id, order_no, amount, payment_channel,
+               provider, transaction_id, payment_status, callback_time,
+               status, pay_time, created_at
+        FROM member_order
+        WHERE user_id = #{userId}
+          AND order_no = #{orderNo}
+        LIMIT 1
+    </select>
+
+    <select id="selectOwnedOrderForUpdate" resultType="org.jeecg.modules.system.entity.TsMemberOrder">
+        SELECT id, user_id, product_id, order_no, amount, payment_channel,
+               provider, transaction_id, payment_status, callback_time,
+               status, pay_time, created_at
+        FROM member_order
+        WHERE user_id = #{userId}
+          AND order_no = #{orderNo}
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <select id="selectOrderByOrderNoForUpdate"
+            resultType="org.jeecg.modules.system.entity.TsMemberOrder">
+        SELECT id, user_id, product_id, order_no, amount, payment_channel,
+               provider, transaction_id, payment_status, callback_time,
+               status, pay_time, created_at
+        FROM member_order
+        WHERE order_no = #{orderNo}
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <select id="selectOrderByIdForUpdate"
+            resultType="org.jeecg.modules.system.entity.TsMemberOrder">
+        SELECT id, user_id, product_id, order_no, amount, payment_channel,
+               provider, transaction_id, payment_status, callback_time,
+               status, pay_time, created_at
+        FROM member_order
+        WHERE id = #{id}
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <select id="selectUsageLog" resultType="org.jeecg.modules.system.entity.TsBenefitUsageLog">
+        SELECT id, user_id, benefit_code, consume_amount, biz_type, biz_id, created_at
+        FROM benefit_usage_log
+        WHERE user_id = #{userId}
+          AND benefit_code = #{benefitCode}
+          AND biz_type = #{bizType}
+          AND biz_id = #{bizId}
+        LIMIT 1
+    </select>
+
+    <select id="selectAdminMembershipPage"
+            resultType="org.jeecg.modules.system.vo.tsmemberadmin.TsMemberAdminMembershipVo">
+        SELECT um.id, um.user_id, su.username, su.realname, um.plan_id,
+               mp.code AS plan_code, mp.name AS plan_name, um.product_id,
+               mpr.cycle_type, um.start_time, um.end_time, um.status,
+               um.auto_renew, um.created_at
+        FROM user_membership um
+        LEFT JOIN sys_user su ON su.id = um.user_id
+        LEFT JOIN member_plan mp ON mp.id = um.plan_id
+        LEFT JOIN member_product mpr ON mpr.id = um.product_id
+        <where>
+            <if test="query.keyword != null and query.keyword != ''">
+                AND (
+                    um.user_id LIKE CONCAT('%', #{query.keyword}, '%')
+                    OR su.username LIKE CONCAT('%', #{query.keyword}, '%')
+                    OR su.realname LIKE CONCAT('%', #{query.keyword}, '%')
+                )
+            </if>
+            <if test="query.planId != null">
+                AND um.plan_id = #{query.planId}
+            </if>
+            <if test="query.status != null">
+                AND um.status = #{query.status}
+            </if>
+            <if test="query.endTimeStart != null">
+                AND um.end_time &gt;= #{query.endTimeStart}
+            </if>
+            <if test="query.endTimeEnd != null">
+                AND um.end_time &lt;= #{query.endTimeEnd}
+            </if>
+        </where>
+        ORDER BY um.created_at DESC, um.id DESC
+    </select>
+
+    <select id="selectAdminMembershipById"
+            resultType="org.jeecg.modules.system.vo.tsmemberadmin.TsMemberAdminMembershipVo">
+        SELECT um.id, um.user_id, su.username, su.realname, um.plan_id,
+               mp.code AS plan_code, mp.name AS plan_name, um.product_id,
+               mpr.cycle_type, um.start_time, um.end_time, um.status,
+               um.auto_renew, um.created_at
+        FROM user_membership um
+        LEFT JOIN sys_user su ON su.id = um.user_id
+        LEFT JOIN member_plan mp ON mp.id = um.plan_id
+        LEFT JOIN member_product mpr ON mpr.id = um.product_id
+        WHERE um.id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="selectOrdersByUserId"
+            resultType="org.jeecg.modules.system.entity.TsMemberOrder">
+        SELECT id, user_id, product_id, order_no, amount, payment_channel,
+               provider, transaction_id, payment_status, callback_time,
+               status, pay_time, created_at
+        FROM member_order
+        WHERE user_id = #{userId}
+        ORDER BY created_at DESC, id DESC
+        LIMIT 100
+    </select>
+
+    <select id="selectUsageLogsByUserId"
+            resultType="org.jeecg.modules.system.entity.TsBenefitUsageLog">
+        SELECT id, user_id, benefit_code, consume_amount, biz_type, biz_id, created_at
+        FROM benefit_usage_log
+        WHERE user_id = #{userId}
+        ORDER BY created_at DESC, id DESC
+        LIMIT 100
+    </select>
+
+</mapper>

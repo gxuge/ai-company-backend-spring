@@ -106,7 +106,7 @@ public class TsAgentChatMessage implements Serializable {
     private String contentFormat;
 
     /**
-     * 消息状态：streaming/success/failed。
+     * 消息状态：streaming/success/failed/interrupted。
      */
     @TableField("message_status")
     private String messageStatus;

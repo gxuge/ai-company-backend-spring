@@ -8,6 +8,8 @@ import org.jeecg.modules.airag.agent.graph.Agent;
 import org.jeecg.modules.airag.agent.graph.AgentNode;
 import org.jeecg.modules.airag.agent.graph.NodeResult;
 import org.jeecg.modules.airag.agent.graph.DeepAgentDefinitionRegistry;
+import org.jeecg.modules.airag.agent.interaction.AgentOptionsInteractionSupport;
+import org.jeecg.modules.airag.agent.interaction.UserInteractionSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 import org.jeecg.modules.airag.agent.runtime.AgentResult;
 import org.jeecg.modules.airag.agent.runtime.NodeRunner;
@@ -15,6 +17,7 @@ import org.jeecg.modules.airag.agent.tool.DeepAgentTaskToolService;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Agent 会话总入口。
@@ -62,6 +65,16 @@ public class TsAgentChatAgent implements Agent {
             context.putAttribute("availableSubAgentsPrompt", this.deepAgentDefinitionRegistry.describeAvailableDeepAgents());
             context.putAttribute("subAgentListPrompt", this.subAgentRegistry.describeAvailableSubAgents());
         }
+        Map<String, Object> pendingInteraction = UserInteractionSupport.getPending(context);
+        if (AgentOptionsInteractionSupport.isCandidateOptions(pendingInteraction)
+                && !AgentOptionsInteractionSupport.resumeConversation(context, pendingInteraction)) {
+            return AgentOptionsInteractionSupport.waitingResult(
+                    context,
+                    pendingInteraction,
+                    this.mainNode.nodeName(),
+                    "dialog"
+            );
+        }
         NodeResult nodeResult = this.nodeRunner.run(context, (AgentNode) this.mainNode);
         if (nodeResult == null) {
             return AgentResult.failed(AgentErrorCode.RUNTIME_AGENT_EMPTY_RESULT, null);
@@ -70,6 +83,17 @@ public class TsAgentChatAgent implements Agent {
         if (pendingTaskResult != null) {
             enrichResult(pendingTaskResult, nodeResult);
             return pendingTaskResult;
+        }
+        pendingInteraction = UserInteractionSupport.getPending(context);
+        if (AgentOptionsInteractionSupport.isCandidateOptions(pendingInteraction)) {
+            AgentResult waitingResult = AgentOptionsInteractionSupport.waitingResult(
+                    context,
+                    pendingInteraction,
+                    this.mainNode.nodeName(),
+                    "dialog"
+            );
+            enrichResult(waitingResult, nodeResult);
+            return waitingResult;
         }
         AgentResult result;
         if (nodeResult.isSuccess()) {

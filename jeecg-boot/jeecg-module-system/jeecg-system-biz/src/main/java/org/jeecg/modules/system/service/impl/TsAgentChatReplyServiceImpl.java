@@ -17,12 +17,15 @@ import org.jeecg.modules.airag.agent.runtime.AgentFlowStateSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentRegistry;
 import org.jeecg.modules.airag.agent.runtime.AgentResponseLanguageSupport;
 import org.jeecg.modules.airag.agent.runtime.AgentResult;
+import org.jeecg.modules.airag.agent.runtime.AgentRunControlService;
+import org.jeecg.modules.airag.agent.runtime.AgentRunInterruptedException;
 import org.jeecg.modules.airag.agent.runtime.AgentRunLoopService;
 import org.jeecg.modules.airag.agent.runtime.AgentRunOutcome;
 import org.jeecg.modules.airag.agent.runtime.AgentRunStep;
 import org.jeecg.modules.airag.agent.sse.SseConnectionManager;
 import org.jeecg.modules.airag.agent.sse.SsePayload;
 import org.jeecg.modules.system.dto.tsagentchatsession.TsAgentChatReplyDto;
+import org.jeecg.modules.system.dto.tsagentchatsession.TsAgentChatStopDto;
 import org.jeecg.modules.system.entity.TsAgentChatMessage;
 import org.jeecg.modules.system.entity.TsAgentChatSession;
 import org.jeecg.modules.system.service.ITsAgentChatMessageService;
@@ -82,6 +85,9 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
     @Resource
     private SseConnectionManager sseConnectionManager;
 
+    @Resource
+    private AgentRunControlService agentRunControlService;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Result<TsAgentChatReplyVo> createAiReply(LoginUser user, Long sessionId, TsAgentChatReplyDto request) {
@@ -90,10 +96,15 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
             return Result.error(validationError.code().defaultMessage(), buildErrorReply(validationError));
         }
         ReplyRuntime runtime = prepareRuntime(user, sessionId, request);
-        AgentRunOutcome runOutcome = executeAgentRun(runtime);
-        AgentResult agentResult = runOutcome.getResult();
-        TsAgentChatReplyVo vo = saveAssistantReply(runtime, agentResult, resolveAssistantContent(agentResult, runtime.context));
-        return Result.OK(vo);
+        this.agentRunControlService.register(runtime.context);
+        try {
+            AgentRunOutcome runOutcome = executeAgentRun(runtime);
+            AgentResult agentResult = runOutcome.getResult();
+            TsAgentChatReplyVo vo = saveAssistantReply(runtime, agentResult, resolveAssistantContent(agentResult, runtime.context));
+            return Result.OK(vo);
+        } finally {
+            this.agentRunControlService.unregister(runtime.context);
+        }
     }
 
     @Override
@@ -101,6 +112,7 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         SseEmitter emitter = new SseEmitter(0L);
         String connectionKey = UUIDGenerator.generate();
         this.sseConnectionManager.register(connectionKey, emitter);
+        ReplyRuntime runtime = null;
         try {
             AgentErrorSupport.ResolvedError validationError = validateRequest(user, sessionId, request);
             if (validationError != null) {
@@ -108,19 +120,53 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
                 completeEmitter(emitter);
                 return emitter;
             }
-            ReplyRuntime runtime = prepareRuntime(user, sessionId, request);
+            runtime = prepareRuntime(user, sessionId, request);
             runtime.context.setSseConnectionKey(connectionKey);
-            STREAM_EXECUTOR.submit(() -> runStreamReply(connectionKey, emitter, runtime));
+            this.agentRunControlService.register(runtime.context);
+            ReplyRuntime submittedRuntime = runtime;
+            STREAM_EXECUTOR.submit(() -> runStreamReply(connectionKey, emitter, submittedRuntime));
         } catch (JeecgBootException ex) {
+            unregisterPreparedRun(runtime);
             log.warn("Agent流式回复预处理失败，sessionId={}", sessionId, ex);
             sendStreamEnd(connectionKey, AgentErrorSupport.resolve(ex, AgentErrorCode.CHAT_EXECUTION_FAILED));
             completeEmitter(emitter);
         } catch (Exception ex) {
+            unregisterPreparedRun(runtime);
             log.error("Agent流式回复初始化失败，sessionId={}", sessionId, ex);
             sendStreamEnd(connectionKey, AgentErrorSupport.resolve(ex, AgentErrorCode.CHAT_EXECUTION_FAILED));
             completeEmitter(emitter);
         }
         return emitter;
+    }
+
+    private void unregisterPreparedRun(ReplyRuntime runtime) {
+        if (runtime != null && runtime.context != null) {
+            this.agentRunControlService.unregister(runtime.context);
+        }
+    }
+
+    @Override
+    public Result<String> stopAiReply(LoginUser user, TsAgentChatStopDto request) {
+        if (user == null || request == null) {
+            return Result.error("停止请求无效");
+        }
+        TsAgentChatSession session = this.tsAgentChatSessionService.getOwnedSession(
+                user.getId(),
+                request.getSessionId()
+        );
+        if (session == null) {
+            return Result.error("会话不存在或无权限访问");
+        }
+        AgentRunControlService.StopResult stopResult = this.agentRunControlService.requestStop(
+                request.getRunId(),
+                request.getSessionId(),
+                user.getId()
+        );
+        return switch (stopResult) {
+            case STOP_REQUESTED -> Result.OK("停止请求已提交");
+            case ALREADY_STOPPED -> Result.OK("当前任务已停止");
+            case NOT_FOUND -> Result.error("当前任务不存在或已经结束");
+        };
     }
 
     /**
@@ -170,14 +216,21 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
             AgentRunOutcome runOutcome = executeAgentRun(runtime);
             AgentResult agentResult = runOutcome.getResult();
             String assistantContent = resolveAssistantContent(agentResult, runtime.context);
-            if (!StringUtils.hasText(assistantContent)) {
+            if (!StringUtils.hasText(assistantContent)
+                    && (agentResult == null || agentResult.getStatus() != AgentResult.Status.INTERRUPTED)) {
                 throw new AgentErrorException(AgentErrorCode.CHAT_EMPTY_RESPONSE);
             }
             saveAssistantReply(runtime, agentResult, assistantContent);
         } catch (Exception ex) {
             log.error("Agent流式回复执行失败，sessionId={}, userMessageId={}", runtime.session.getId(), runtime.userMessage.getId(), ex);
-            sendStreamEnd(connectionKey, AgentErrorSupport.resolve(ex, AgentErrorCode.CHAT_EXECUTION_FAILED));
+            AgentErrorSupport.ResolvedError resolved = AgentErrorSupport.resolve(
+                    ex,
+                    AgentErrorCode.CHAT_EXECUTION_FAILED
+            );
+            markAssistantReplyFailed(runtime, resolved.code().defaultMessage());
+            sendStreamEnd(connectionKey, resolved);
         } finally {
+            this.agentRunControlService.unregister(runtime.context);
             this.sseConnectionManager.finishRun(connectionKey);
         }
     }
@@ -232,16 +285,41 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         );
         Map<String, String> variables = buildPromptVariables(session, userInput, recentMessages);
         AgentContext context = buildAgentContext(user, session, userInput, userMessage, recentMessages, variables);
+        context.normalize();
+        String startingAgentCode = normalizeActiveAgentCode(session.getActiveAgentCode());
+        String startingSenderType = AgentRegistry.MAIN_AGENT_CODE.equalsIgnoreCase(startingAgentCode)
+                ? SENDER_MAIN_AGENT
+                : SENDER_SUB_AGENT;
+        TsAgentChatMessage assistantMessage = tsAgentChatMessageService.saveAssistantMessage(
+                user.getId(),
+                sessionId,
+                startingSenderType,
+                startingAgentCode,
+                null,
+                null,
+                null,
+                "text",
+                "streaming",
+                userMessage.getId(),
+                context.getRunId(),
+                null,
+                null,
+                null,
+                null
+        );
+        context.setEventMessageId(String.valueOf(assistantMessage.getId()));
+        context.putAttribute("triggerMessageId", String.valueOf(userMessage.getId()));
         context.putAttribute("optionValue", normalizeText(request.getOptionValue()));
         context.putAttribute("interactionId", normalizeText(request.getInteractionId()));
         ReplyRuntime runtime = new ReplyRuntime();
         runtime.session = session;
         runtime.userMessage = userMessage;
+        runtime.assistantMessage = assistantMessage;
         runtime.recentMessages = recentMessages;
         runtime.variables = variables;
         runtime.context = context;
         runtime.userInput = userInput;
-        runtime.startingAgentCode = normalizeActiveAgentCode(session.getActiveAgentCode());
+        runtime.startingAgentCode = startingAgentCode;
         runtime.context.putAttribute("startingAgentCode", runtime.startingAgentCode);
         return runtime;
     }
@@ -253,7 +331,19 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
      * @return Run 结果
      */
     private AgentRunOutcome executeAgentRun(ReplyRuntime runtime) {
-        AgentRunOutcome outcome = this.agentRunLoopService.run(runtime.startingAgentCode, runtime.context);
+        AgentRunOutcome outcome;
+        try {
+            this.agentRunControlService.bindCurrentThread(runtime.context);
+            outcome = this.agentRunLoopService.run(runtime.startingAgentCode, runtime.context);
+        } catch (AgentRunInterruptedException ex) {
+            Thread.interrupted();
+            AgentResult interrupted = AgentResult.interrupted(
+                    normalizeText(oConvertUtils.getString(
+                            runtime.context.getAttribute("interruptedLlmContent")
+                    ))
+            );
+            outcome = new AgentRunOutcome(interrupted, runtime.context.getAgentCode(), List.of());
+        }
         runtime.runOutcome = outcome;
         runtime.context.putAttribute("agentRunSteps", buildRunStepSummary(outcome));
         if (outcome != null && StringUtils.hasText(outcome.getLastAgentCode())) {
@@ -284,9 +374,12 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         if (runtime == null) {
             throw new AgentErrorException(AgentErrorCode.CHAT_EXECUTION_FAILED);
         }
-        if (!StringUtils.hasText(assistantContent)) {
+        boolean interrupted = agentResult != null
+                && agentResult.getStatus() == AgentResult.Status.INTERRUPTED;
+        if (!StringUtils.hasText(assistantContent) && !interrupted) {
             throw new AgentErrorException(AgentErrorCode.CHAT_EMPTY_RESPONSE);
         }
+        String persistedContent = assistantContent == null ? "" : assistantContent;
         String promptCode = extractString(agentResult == null ? null : agentResult.getData(), "promptCode");
         String promptVersion = extractString(agentResult == null ? null : agentResult.getData(), "promptVersion");
         String messageStatus = toMessageStatus(agentResult == null ? null : agentResult.getStatus());
@@ -301,18 +394,15 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
                 ? runtime.context.getLastCompletedSubAgentEventId()
                 : null;
 
-        TsAgentChatMessage assistantMessage = tsAgentChatMessageService.saveAssistantMessage(
+        TsAgentChatMessage assistantMessage = tsAgentChatMessageService.completeAssistantMessage(
                 runtime.context.getUserId(),
-                runtime.session.getId(),
+                runtime.assistantMessage.getId(),
                 senderType,
                 lastAgentCode,
                 sourceNodeName,
                 sourceEventId,
-                assistantContent,
-                "text",
+                persistedContent,
                 messageStatus,
-                runtime.userMessage.getId(),
-                runtime.context.getRunId(),
                 promptCode,
                 runtime.session.getAppId(),
                 null,
@@ -323,12 +413,33 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         vo.setSessionId(runtime.session.getId());
         vo.setUserMessageId(runtime.userMessage.getId());
         vo.setAssistantMessageId(assistantMessage.getId());
-        vo.setContentText(assistantContent);
+        vo.setContentText(persistedContent);
         vo.setPromptCode(promptCode);
         vo.setPromptVersion(promptVersion);
         vo.setRenderedPrompt(null);
         vo.setCreatedAt(assistantMessage.getCreatedAt() == null ? new Date() : assistantMessage.getCreatedAt());
         return vo;
+    }
+
+    /**
+     * 将预创建的助手消息标记为失败。
+     *
+     * @param runtime 运行时上下文
+     * @param errorMessage 错误信息
+     */
+    private void markAssistantReplyFailed(ReplyRuntime runtime, String errorMessage) {
+        if (runtime == null || runtime.assistantMessage == null || runtime.assistantMessage.getId() == null) {
+            return;
+        }
+        try {
+            runtime.assistantMessage = tsAgentChatMessageService.markMessageFailed(
+                    runtime.context.getUserId(),
+                    runtime.assistantMessage.getId(),
+                    errorMessage
+            );
+        } catch (Exception ex) {
+            log.warn("标记助手消息失败，messageId={}", runtime.assistantMessage.getId(), ex);
+        }
     }
 
     /**
@@ -344,7 +455,8 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         }
         if (agentResult == null
                 || agentResult.getStatus() == null
-                || agentResult.getStatus() == AgentResult.Status.FAILED) {
+                || agentResult.getStatus() == AgentResult.Status.FAILED
+                || agentResult.getStatus() == AgentResult.Status.INTERRUPTED) {
             String currentNodeName = normalizeText(context.getCurrentNodeName());
             return StringUtils.hasText(currentNodeName)
                     ? currentNodeName
@@ -443,6 +555,13 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
                     : null;
         }
         String assistantContent = normalizeText(agentResult == null ? null : agentResult.getContent());
+        if (agentResult != null
+                && agentResult.getStatus() == AgentResult.Status.INTERRUPTED
+                && context != null) {
+            assistantContent = normalizeText(oConvertUtils.getString(
+                    context.getAttribute("interruptedLlmContent")
+            ));
+        }
         if (!StringUtils.hasText(assistantContent) && agentResult != null && agentResult.getData() != null) {
             assistantContent = normalizeText(extractString(agentResult.getData(), "formattedResult"));
         }
@@ -522,7 +641,8 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         if (!AgentFlowStateSupport.supports(lastAgentCode)
                 || result == null
                 || (result.getStatus() != AgentResult.Status.WAITING_USER
-                && result.getStatus() != AgentResult.Status.FAILED)) {
+                && result.getStatus() != AgentResult.Status.FAILED
+                && result.getStatus() != AgentResult.Status.INTERRUPTED)) {
             clearFlowResumeState(session);
             return;
         }
@@ -617,6 +737,10 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
             if (!ROLE_USER.equalsIgnoreCase(role) && !ROLE_ASSISTANT.equalsIgnoreCase(role)) {
                 continue;
             }
+            if (ROLE_ASSISTANT.equalsIgnoreCase(role)
+                    && !"success".equalsIgnoreCase(normalizeText(message.getMessageStatus()))) {
+                continue;
+            }
             messages.add(new AgentConversationMessage(
                     message.getId() == null ? null : String.valueOf(message.getId()),
                     message.getParentMessageId() == null ? null : String.valueOf(message.getParentMessageId()),
@@ -642,6 +766,9 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
                 continue;
             }
             if (ROLE_ASSISTANT.equalsIgnoreCase(normalizeText(message.getRoleType()))) {
+                if (!"success".equalsIgnoreCase(normalizeText(message.getMessageStatus()))) {
+                    continue;
+                }
                 return message.getContent().trim();
             }
         }
@@ -719,6 +846,7 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
         }
         return switch (status) {
             case FAILED -> "failed";
+            case INTERRUPTED -> "interrupted";
             case WAITING_USER -> "success";
             case HANDOFF -> "success";
             case SUCCESS -> "success";
@@ -840,6 +968,7 @@ public class TsAgentChatReplyServiceImpl implements ITsAgentChatReplyService {
     private static class ReplyRuntime {
         private TsAgentChatSession session;
         private TsAgentChatMessage userMessage;
+        private TsAgentChatMessage assistantMessage;
         private List<TsAgentChatMessage> recentMessages;
         private Map<String, String> variables;
         private AgentContext context;

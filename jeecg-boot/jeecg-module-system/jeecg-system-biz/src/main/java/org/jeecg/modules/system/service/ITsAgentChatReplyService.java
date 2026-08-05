@@ -3,6 +3,7 @@ package org.jeecg.modules.system.service;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.system.dto.tsagentchatsession.TsAgentChatReplyDto;
+import org.jeecg.modules.system.dto.tsagentchatsession.TsAgentChatStopDto;
 import org.jeecg.modules.system.vo.tsagentchatsession.TsAgentChatReplyVo;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -33,4 +34,6 @@ public interface ITsAgentChatReplyService {
      * @return SSE 发射器
      */
     SseEmitter createAiReplyStream(LoginUser user, Long sessionId, TsAgentChatReplyDto request);
+
+    Result<String> stopAiReply(LoginUser user, TsAgentChatStopDto request);
 }

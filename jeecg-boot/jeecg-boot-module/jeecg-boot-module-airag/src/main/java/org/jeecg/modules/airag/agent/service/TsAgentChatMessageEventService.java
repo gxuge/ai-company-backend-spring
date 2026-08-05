@@ -35,7 +35,7 @@ public class TsAgentChatMessageEventService {
      *
      * @param userId 用户ID
      * @param sessionId 会话ID
-     * @param messageId 触发 Run 的用户消息ID
+     * @param messageId 事件所属助手消息ID
      * @param type 事件类型
      * @param name 事件名称
      * @param nodeName 实际执行节点名称
@@ -98,7 +98,7 @@ public class TsAgentChatMessageEventService {
      * 保存一个完整执行事件，并允许调用方预分配事件ID。
      *
      * @param eventId 事件ID，为空时自动生成
-     * @param messageId 消息ID
+     * @param messageId 事件所属助手消息ID
      * @param sessionId 会话ID
      * @param agentSessionId Agent会话记录ID
      * @param type 节点类型

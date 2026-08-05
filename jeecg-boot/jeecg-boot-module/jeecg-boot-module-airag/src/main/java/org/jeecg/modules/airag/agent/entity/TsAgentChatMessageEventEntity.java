@@ -28,7 +28,7 @@ public class TsAgentChatMessageEventEntity implements Serializable {
     @TableId(type = IdType.INPUT)
     private String id;
     /**
-     * 触发当前 Run 的用户消息ID。
+     * 事件所属助手消息ID。
      */
     @TableField("message_id")
     private Long messageId;
@@ -100,7 +100,7 @@ public class TsAgentChatMessageEventEntity implements Serializable {
      */
     private String content;
     /**
-     * 状态值：1成功、0失败、2运行中或未知。
+     * 状态值：1成功、0失败、2运行中、3用户中断。
      */
     private Integer status;
     /**

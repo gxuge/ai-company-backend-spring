@@ -14,6 +14,25 @@ import org.mockito.Mockito;
 class RoleImageTaskSubAgentTest {
 
     @Test
+    void shouldStayInImageAgentWhileWaitingForMoreDetails() {
+        NodeRunner nodeRunner = Mockito.mock(NodeRunner.class);
+        RoleCreateImageNode imageNode = Mockito.mock(RoleCreateImageNode.class);
+        RoleImageTaskSubAgent subAgent = new RoleImageTaskSubAgent(nodeRunner, imageNode);
+        AgentContext context = new AgentContext();
+        NodeResult nodeResult = NodeResult.success("请继续描述角色的服装造型");
+        Mockito.when(imageNode.nodeName()).thenReturn("role_create_image");
+        Mockito.when(nodeRunner.run(context, imageNode)).thenReturn(nodeResult);
+
+        AgentResult result = subAgent.execute(context);
+
+        Assertions.assertEquals(AgentResult.Status.WAITING_USER, result.getStatus());
+        Assertions.assertNull(result.getHandoffTargetAgentCode());
+        Assertions.assertEquals("role_create_image", result.getData().get("resumeNodeName"));
+        Assertions.assertEquals("image", result.getData().get("activeStage"));
+        Assertions.assertEquals("请继续描述角色的服装造型", result.getContent());
+    }
+
+    @Test
     void shouldRunOnlyImageNodeAndHandoffAfterCompletion() {
         NodeRunner nodeRunner = Mockito.mock(NodeRunner.class);
         RoleCreateImageNode imageNode = Mockito.mock(RoleCreateImageNode.class);

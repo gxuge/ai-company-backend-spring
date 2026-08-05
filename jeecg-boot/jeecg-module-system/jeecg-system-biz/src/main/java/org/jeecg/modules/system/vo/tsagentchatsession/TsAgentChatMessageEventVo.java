@@ -22,12 +22,12 @@ public class TsAgentChatMessageEventVo {
     private String id;
 
     /**
-     * 事件类型：subagent/tool。
+     * 事件类型：llm/tool。
      */
     private String type;
 
     /**
-     * SubAgent 或 Tool 名称。
+     * 模型或 Tool 名称。
      */
     private String name;
 

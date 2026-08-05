@@ -4,6 +4,7 @@ import lombok.Data;
 import org.jeecg.modules.airag.agent.runtime.AgentContext;
 
 import java.util.Map;
+import java.util.Date;
 
 /**
  * Agent LLM request trace payload.
@@ -11,6 +12,8 @@ import java.util.Map;
 @Data
 public class AgentLlmTraceRequest {
     private AgentContext context;
+    private String invocationId;
+    private Date startedAt;
     private String nodeName;
     private String promptCode;
     private String promptVersion;

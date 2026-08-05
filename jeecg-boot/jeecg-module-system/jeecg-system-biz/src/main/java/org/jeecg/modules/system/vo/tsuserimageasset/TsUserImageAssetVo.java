@@ -16,6 +16,7 @@ public class TsUserImageAssetVo {
     private Integer height;
     private String sourceType;
     private Integer status;
+    private Boolean alreadySaved;
     private Date createdAt;
     private Date updatedAt;
 }

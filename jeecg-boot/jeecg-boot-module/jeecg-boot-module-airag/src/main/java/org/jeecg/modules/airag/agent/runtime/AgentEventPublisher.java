@@ -51,6 +51,11 @@ public class AgentEventPublisher {
     private static final String ATTR_LLM_EVENT_STATES = AgentEventPublisher.class.getName() + ".llmEventStates";
 
     /**
+     * 当前 Run 已在 Tool 前落库的 LLM 文本段集合键。
+     */
+    private static final String ATTR_LLM_PERSISTED_CONTENT = AgentEventPublisher.class.getName() + ".llmPersistedContent";
+
+    /**
      * 事件落库服务。
      */
     private final TsAgentChatMessageEventService eventService;
@@ -199,7 +204,7 @@ public class AgentEventPublisher {
     }
 
     /**
-     * 更新 LLM 调用元数据，不保存 Prompt、消息或回复正文。
+     * 更新 LLM 调用元数据，Prompt 和消息上下文不进入事件表。
      */
     public void updateLlmExecutionMetadata(AgentContext context,
                                            String nodeName,
@@ -273,7 +278,7 @@ public class AgentEventPublisher {
     }
 
     /**
-     * 发送 llm.end，并将轻量 LLM 执行信息写入事件表。
+     * 发送 llm.end，并将本次完整文本段落与执行信息写入事件表。
      *
      * @param context 运行上下文
      * @param nodeName 节点名
@@ -286,15 +291,33 @@ public class AgentEventPublisher {
                               String promptCode,
                               boolean success,
                               Map<String, Object> payload) {
+        publishLlmEnd(context, nodeName, promptCode, success ? 1 : 0, payload);
+    }
+
+    public void publishLlmEnd(AgentContext context,
+                              String nodeName,
+                              String promptCode,
+                              int status,
+                              Map<String, Object> payload) {
         String bufferKey = buildLlmBufferKey(context, nodeName);
         String content = readBuffer(bufferKey);
-        if (content == null || content.isBlank()) {
-            content = extractText(payload, "reply", "content", "rawText", "text", "summary");
+        clearBuffer(bufferKey);
+        LlmEventState state = removeLlmState(context, nodeName, promptCode);
+        String fallbackContent = extractText(payload, "reply", "content", "rawText", "text", "summary");
+        if ((content == null || content.isBlank()) && !state.hasPersistedSegment()) {
+            content = fallbackContent;
         }
-        if (content == null || content.isBlank()) {
+        if ((content == null || content.isBlank()) && status == 1 && !state.hasPersistedSegment()) {
             content = context.getLatestContent();
         }
-        clearBuffer(bufferKey);
+        String persistedContent = removePersistedLlmContent(context, nodeName);
+        if (status == 3) {
+            context.putAttribute("interruptedLlmContent", joinLlmContent(persistedContent, content));
+        }
+        String sseContent = content;
+        if (sseContent == null || sseContent.isBlank()) {
+            sseContent = fallbackContent;
+        }
         Map<String, Object> dbData = buildEventData(
                 "llm.end",
                 NodeKind.LLM,
@@ -303,32 +326,14 @@ public class AgentEventPublisher {
                 null,
                 null,
                 content,
-                success ? 1 : 0,
+                status,
                 payload
         );
         recordEventTrail(context, dbData);
-        LlmEventState state = removeLlmState(context, nodeName, promptCode);
-        Map<String, Object> completeData = buildCompleteLlmData(success, state);
-        fillContextFields(completeData, context);
-        String eventContent = success ? "Model call completed" : "Model call failed";
-        try {
-            this.eventService.saveEvent(
-                    state.eventId(),
-                    context.getMessageId(),
-                    context.getSessionId(),
-                    context.getAgentSessionId(),
-                    "llm",
-                    safeText(state.modelName(), safeText(state.modelId(), nodeName)),
-                    nodeName,
-                    NodeKind.LLM.name().toLowerCase(),
-                    eventContent,
-                    success ? 1 : 0,
-                    completeData
-            );
-        } catch (Exception ex) {
-            log.warn("保存轻量 LLM 事件失败，nodeName={}, modelId={}", nodeName, state.modelId(), ex);
+        if ((content != null && !content.isBlank()) || status != 1) {
+            persistLlmSegment(context, nodeName, state.eventId(), state, content, status);
         }
-        sendOnlyCompact(context, "llm.end", NodeKind.LLM, nodeName, content, success ? 1 : 0, null);
+        sendOnlyCompact(context, "llm.end", NodeKind.LLM, nodeName, sseContent, status, null);
     }
 
     /**
@@ -540,6 +545,7 @@ public class AgentEventPublisher {
      * @param payload 扩展数据
      */
     public void publishToolStart(AgentContext context, String nodeName, String toolName, Map<String, Object> payload) {
+        flushLlmSegmentBeforeTool(context, nodeName);
         CompleteEventState toolState = new CompleteEventState(
                 UUIDGenerator.generate(),
                 System.currentTimeMillis(),
@@ -579,6 +585,7 @@ public class AgentEventPublisher {
                                       String nodeName,
                                       String toolName,
                                       Map<String, Object> payload) {
+        flushLlmSegmentBeforeTool(context, nodeName);
         CompleteEventState toolState = new CompleteEventState(
                 eventId,
                 System.currentTimeMillis(),
@@ -602,7 +609,7 @@ public class AgentEventPublisher {
         fillContextFields(completeData, context);
         this.eventService.saveEvent(
                 eventId,
-                context.getMessageId(),
+                eventMessageId(context),
                 context.getSessionId(),
                 context.getAgentSessionId(),
                 "tool",
@@ -728,6 +735,46 @@ public class AgentEventPublisher {
         }
     }
 
+    public void publishAsyncToolInterrupted(AgentContext context,
+                                            String eventId,
+                                            String nodeName,
+                                            String toolName,
+                                            Map<String, Object> payload) {
+        String summary = "Interrupted " + safeText(toolName, "Tool");
+        try {
+            CompleteEventState state = removeToolState(context, nodeName, toolName);
+            Map<String, Object> completeData = buildCompleteToolData(false, summary, payload, state);
+            completeData.put("error", null);
+            completeData.put("async", Boolean.TRUE);
+            fillContextFields(completeData, context);
+            this.eventService.updateEventResult(eventId, summary, 3, completeData);
+
+            Map<String, Object> dbData = buildEventData(
+                    "tool.end",
+                    NodeKind.TOOL,
+                    nodeName,
+                    null,
+                    toolName,
+                    null,
+                    summary,
+                    3,
+                    payload
+            );
+            recordEventTrail(context, dbData);
+            Map<String, Object> sseData = buildCompactToolEventData(
+                    "tool.end",
+                    toolName,
+                    summary,
+                    3,
+                    payload,
+                    null
+            );
+            sendOnlyCompact(context, "tool.end", NodeKind.TOOL, nodeName, summary, 3, sseData);
+        } finally {
+            this.sseConnectionManager.release(context == null ? null : context.getSseConnectionKey());
+        }
+    }
+
     /**
      * 发送 tool.error，并暂存完整 Tool 事件的错误信息。
      *
@@ -792,6 +839,15 @@ public class AgentEventPublisher {
                                boolean success,
                                String content,
                                Map<String, Object> payload) {
+        publishToolEnd(context, nodeName, toolName, success ? 1 : 0, content, payload);
+    }
+
+    public void publishToolEnd(AgentContext context,
+                               String nodeName,
+                               String toolName,
+                               int status,
+                               String content,
+                               Map<String, Object> payload) {
         String summary = safeText(summarize(content), "Completed " + safeText(toolName, "Tool"));
         Map<String, Object> dbData = buildEventData(
                 "tool.end",
@@ -801,14 +857,14 @@ public class AgentEventPublisher {
                 toolName,
                 null,
                 summary,
-                success ? 1 : 0,
+                status,
                 payload
         );
         Map<String, Object> sseData = buildCompactToolEventData(
                 "tool.end",
                 toolName,
                 summary,
-                success ? 1 : 0,
+                status,
                 payload,
                 content
         );
@@ -817,11 +873,14 @@ public class AgentEventPublisher {
         if (isInternalTaskToolEvent(NodeKind.TOOL, dbData)) {
             return;
         }
-        Map<String, Object> completeData = buildCompleteToolData(success, content, payload, state);
+        Map<String, Object> completeData = buildCompleteToolData(status == 1, content, payload, state);
+        if (status == 3) {
+            completeData.put("error", null);
+        }
         fillContextFields(completeData, context);
         this.eventService.saveEvent(
                 state.eventId(),
-                context.getMessageId(),
+                eventMessageId(context),
                 context.getSessionId(),
                 context.getAgentSessionId(),
                 "tool",
@@ -829,10 +888,10 @@ public class AgentEventPublisher {
                 nodeName,
                 NodeKind.TOOL.name().toLowerCase(),
                 summarize(summary),
-                success ? 1 : 0,
+                status,
                 completeData
         );
-        sendOnlyCompact(context, "tool.end", NodeKind.TOOL, nodeName, summary, success ? 1 : 0, sseData);
+        sendOnlyCompact(context, "tool.end", NodeKind.TOOL, nodeName, summary, status, sseData);
     }
 
     /**
@@ -986,7 +1045,7 @@ public class AgentEventPublisher {
         fillContextFields(completeData, context);
         this.eventService.saveEvent(
                 UUIDGenerator.generate(),
-                context.getMessageId(),
+                eventMessageId(context),
                 context.getSessionId(),
                 context.getAgentSessionId(),
                 nodeType,
@@ -1035,7 +1094,7 @@ public class AgentEventPublisher {
         }
         this.eventService.saveEvent(
                 UUIDGenerator.generate(),
-                context.getMessageId(),
+                eventMessageId(context),
                 context.getSessionId(),
                 context.getAgentSessionId(),
                 nodeType,
@@ -1276,9 +1335,11 @@ public class AgentEventPublisher {
     }
 
     /**
-     * 构建不包含 Prompt、消息和回复正文的轻量 LLM 执行数据。
+     * 构建不包含 Prompt 和消息上下文的完整 LLM 执行数据。
      */
-    private Map<String, Object> buildCompleteLlmData(boolean success, LlmEventState state) {
+    private Map<String, Object> buildCompleteLlmData(int status,
+                                                     LlmEventState state,
+                                                     String content) {
         Map<String, Object> input = new LinkedHashMap<>();
         putString(input, "modelId", state.modelId());
         putString(input, "provider", state.provider());
@@ -1287,14 +1348,18 @@ public class AgentEventPublisher {
 
         Map<String, Object> complete = new LinkedHashMap<>();
         complete.put("input", input);
-        if (success) {
+        if (status == 1 || status == 3) {
             Map<String, Object> output = new LinkedHashMap<>();
             putString(output, "finishReason", state.finishReason());
+            putString(output, "content", content);
+            if (status == 3) {
+                output.put("interrupted", Boolean.TRUE);
+            }
             complete.put("output", output);
         } else {
             complete.put("output", null);
         }
-        complete.put("error", state.error());
+        complete.put("error", status == 3 ? null : state.error());
 
         Map<String, Object> metrics = new LinkedHashMap<>();
         metrics.put("durationMs", elapsedMillis(state.startedAt()));
@@ -1303,6 +1368,108 @@ public class AgentEventPublisher {
         putNumber(metrics, "totalTokens", state.totalTokens());
         complete.put("metrics", metrics);
         return complete;
+    }
+
+    /**
+     * Tool 开始前保存已经输出的 LLM 文本段，保留文字与 Tool 的真实顺序。
+     */
+    private void flushLlmSegmentBeforeTool(AgentContext context, String nodeName) {
+        Object rawStates = context == null ? null : context.getAttribute(ATTR_LLM_EVENT_STATES);
+        if (!(rawStates instanceof Map<?, ?> rawMap)) {
+            return;
+        }
+        Object rawState = rawMap.get(buildLlmStateKey(nodeName));
+        if (!(rawState instanceof LlmEventState state)) {
+            return;
+        }
+        String bufferKey = buildLlmBufferKey(context, nodeName);
+        String content = readBuffer(bufferKey);
+        if (content == null || content.isBlank()) {
+            return;
+        }
+        clearBuffer(bufferKey);
+        appendPersistedLlmContent(context, nodeName, content);
+        if (persistLlmSegment(context, nodeName, UUIDGenerator.generate(), state, content, 1)) {
+            state.markSegmentPersisted();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void appendPersistedLlmContent(AgentContext context, String nodeName, String content) {
+        if (context == null || content == null || content.isBlank()) {
+            return;
+        }
+        Object rawContents = context.getAttribute(ATTR_LLM_PERSISTED_CONTENT);
+        Map<String, String> contents;
+        if (rawContents instanceof Map<?, ?>) {
+            contents = (Map<String, String>) rawContents;
+        } else {
+            contents = new ConcurrentHashMap<>();
+            context.putAttribute(ATTR_LLM_PERSISTED_CONTENT, contents);
+        }
+        contents.merge(buildLlmStateKey(nodeName), content, this::joinLlmContent);
+    }
+
+    @SuppressWarnings("unchecked")
+    private String removePersistedLlmContent(AgentContext context, String nodeName) {
+        if (context == null) {
+            return null;
+        }
+        Object rawContents = context.getAttribute(ATTR_LLM_PERSISTED_CONTENT);
+        if (!(rawContents instanceof Map<?, ?>)) {
+            return null;
+        }
+        return ((Map<String, String>) rawContents).remove(buildLlmStateKey(nodeName));
+    }
+
+    private String joinLlmContent(String first, String second) {
+        if (first == null || first.isBlank()) {
+            return second == null ? "" : second;
+        }
+        if (second == null || second.isBlank()) {
+            return first;
+        }
+        return first + System.lineSeparator() + second;
+    }
+
+    /**
+     * 保存一段完整 LLM 输出及其执行指标。
+     */
+    private boolean persistLlmSegment(AgentContext context,
+                                      String nodeName,
+                                      String eventId,
+                                      LlmEventState state,
+                                      String content,
+                                      int status) {
+        Map<String, Object> completeData = buildCompleteLlmData(status, state, content);
+        fillContextFields(completeData, context);
+        String eventContent = content;
+        if (eventContent == null || eventContent.isBlank()) {
+            eventContent = switch (status) {
+                case 1 -> "Model call completed";
+                case 3 -> "Model call interrupted";
+                default -> "Model call failed";
+            };
+        }
+        try {
+            this.eventService.saveEvent(
+                    eventId,
+                    eventMessageId(context),
+                    context.getSessionId(),
+                    context.getAgentSessionId(),
+                    "llm",
+                    safeText(state.modelName(), safeText(state.modelId(), nodeName)),
+                    nodeName,
+                    NodeKind.LLM.name().toLowerCase(),
+                    eventContent,
+                    status,
+                    completeData
+            );
+            return true;
+        } catch (Exception ex) {
+            log.warn("保存 LLM 段落事件失败，nodeName={}, modelId={}", nodeName, state.modelId(), ex);
+            return false;
+        }
     }
 
     /**
@@ -1792,6 +1959,10 @@ public class AgentEventPublisher {
         Map<String, Object> data = new LinkedHashMap<>();
         putString(data, "agentName", agentName);
         putString(data, "status", status);
+        putString(data, "runId", context == null ? null : context.getRunId());
+        if (context != null && context.getSessionId() != null) {
+            data.put("sessionId", context.getSessionId());
+        }
         if (error != null) {
             putString(data, "error", error);
         }
@@ -1894,6 +2065,7 @@ public class AgentEventPublisher {
         return switch (result.getStatus()) {
             case SUCCESS -> "Completed";
             case FAILED -> "Failed";
+            case INTERRUPTED -> "Interrupted";
             case WAITING_USER -> "Waiting for user input";
             case HANDOFF -> "Handed off to the main agent";
         };
@@ -1909,6 +2081,7 @@ public class AgentEventPublisher {
         String base = switch (result.getStatus()) {
             case SUCCESS -> "Sub-agent completed";
             case FAILED -> "Sub-agent failed";
+            case INTERRUPTED -> "Sub-agent interrupted";
             case WAITING_USER -> "Sub-agent is waiting for user input";
             case HANDOFF -> "Sub-agent handed off to the main agent";
         };
@@ -1922,7 +2095,10 @@ public class AgentEventPublisher {
         if (result == null || result.getStatus() == null) {
             return 0;
         }
-        return result.getStatus() == AgentResult.Status.FAILED ? 0 : 1;
+        if (result.getStatus() == AgentResult.Status.FAILED) {
+            return 0;
+        }
+        return result.getStatus() == AgentResult.Status.INTERRUPTED ? 3 : 1;
     }
 
     /**
@@ -2117,7 +2293,7 @@ public class AgentEventPublisher {
         if (data == null || context == null) {
             return;
         }
-        putString(data, "messageId", context.getMessageId());
+        putString(data, "messageId", eventMessageId(context));
         if (context.getSessionId() != null) {
             data.put("sessionId", context.getSessionId());
         }
@@ -2130,6 +2306,16 @@ public class AgentEventPublisher {
         putString(data, "turnId", context.getTurnId());
         putString(data, "senderType", context.getSenderType());
         putString(data, "agentCode", context.getAgentCode());
+    }
+
+    /**
+     * 获取事件所属助手消息ID，兼容未设置独立事件消息ID的调用场景。
+     */
+    private String eventMessageId(AgentContext context) {
+        if (context == null) {
+            return null;
+        }
+        return safeText(context.getEventMessageId(), context.getMessageId());
     }
 
     /**
@@ -2201,7 +2387,7 @@ public class AgentEventPublisher {
     }
 
     /**
-     * LLM 事件只保留模型、执行结果和 Token 指标。
+     * LLM 事件暂存模型、执行结果和 Token 指标。
      */
     private static final class LlmEventState {
         private final String eventId;
@@ -2215,6 +2401,7 @@ public class AgentEventPublisher {
         private Integer outputTokens;
         private Integer totalTokens;
         private Map<String, Object> error;
+        private boolean persistedSegment;
 
         private LlmEventState(String eventId, long startedAt, String promptCode) {
             this.eventId = eventId;
@@ -2250,6 +2437,14 @@ public class AgentEventPublisher {
             if (totalTokens != null) {
                 this.totalTokens = totalTokens;
             }
+        }
+
+        private boolean hasPersistedSegment() {
+            return this.persistedSegment;
+        }
+
+        private void markSegmentPersisted() {
+            this.persistedSegment = true;
         }
 
         private String eventId() {

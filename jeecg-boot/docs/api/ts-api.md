@@ -262,6 +262,7 @@ Agent SSE 确认交互说明：
 | POST | `/ts-user-image-assets` | 新增用户图片资产 |
 | PUT | `/ts-user-image-assets` | 编辑用户图片资产 |
 | DELETE | `/ts-user-image-assets` | 删除用户图片资产 |
+| POST | `/ts-images/download` | 代理下载公网图片；仅返回附件流，不入库或关联业务资源 |
 | GET | `/ts-voice-tags` | 音色标签分页查询 |
 | POST | `/ts-voice-tags` | 新增音色标签 |
 | DELETE | `/ts-voice-tags` | 删除音色标签 |
@@ -276,6 +277,14 @@ Agent SSE 确认交互说明：
 | POST | `/ts/mcp/sse` | TS MCP Streamable HTTP 端点 |
 | POST | `/ts/mcp/message` | TS MCP 消息处理 |
 | GET | `/ts/mcp/info` | TS MCP 说明与工具信息 |
+
+### 3.9 会员与支付后台
+以下接口仅允许管理员访问，查询参数统一通过 JSON Body 传递。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/sys/ts-member-admin/payment/page` | 按订单号、用户、支付渠道和支付状态分页查询支付流水 |
+| POST | `/sys/ts-member-admin/payment/detail` | 查询支付流水、关联会员订单及脱敏后的渠道响应 |
 
 ## 4. AI Prompt 与 ToolCall 接口
 

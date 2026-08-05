@@ -14,12 +14,31 @@ import org.mockito.Mockito;
 class StoryBackgroundTaskSubAgentTest {
 
     @Test
+    void shouldStayInBackgroundAgentWhileWaitingForMoreDetails() {
+        NodeRunner nodeRunner = Mockito.mock(NodeRunner.class);
+        StoryCreateBackgroundNode backgroundNode = Mockito.mock(StoryCreateBackgroundNode.class);
+        StoryBackgroundTaskSubAgent subAgent = new StoryBackgroundTaskSubAgent(nodeRunner, backgroundNode);
+        AgentContext context = new AgentContext();
+        NodeResult nodeResult = NodeResult.success("请继续描述场景的环境氛围");
+        Mockito.when(backgroundNode.nodeName()).thenReturn("story_create_background");
+        Mockito.when(nodeRunner.run(context, backgroundNode)).thenReturn(nodeResult);
+
+        AgentResult result = subAgent.execute(context);
+
+        Assertions.assertEquals(AgentResult.Status.WAITING_USER, result.getStatus());
+        Assertions.assertNull(result.getHandoffTargetAgentCode());
+        Assertions.assertEquals("story_create_background", result.getData().get("resumeNodeName"));
+        Assertions.assertEquals("background", result.getData().get("activeStage"));
+        Assertions.assertEquals("请继续描述场景的环境氛围", result.getContent());
+    }
+
+    @Test
     void shouldRunOnlyBackgroundNodeAndHandoffAfterCompletion() {
         NodeRunner nodeRunner = Mockito.mock(NodeRunner.class);
         StoryCreateBackgroundNode backgroundNode = Mockito.mock(StoryCreateBackgroundNode.class);
         StoryBackgroundTaskSubAgent subAgent = new StoryBackgroundTaskSubAgent(nodeRunner, backgroundNode);
         AgentContext context = new AgentContext();
-        context.putAttribute("storyBackgroundResultJson", "{\"sceneSummary\":\"夜色港口\"}");
+        context.putAttribute("storySceneImageResultJson", "{\"imageUrl\":\"image\"}");
         NodeResult nodeResult = NodeResult.success("故事背景已生成");
         Mockito.when(nodeRunner.run(context, backgroundNode)).thenReturn(nodeResult);
 
