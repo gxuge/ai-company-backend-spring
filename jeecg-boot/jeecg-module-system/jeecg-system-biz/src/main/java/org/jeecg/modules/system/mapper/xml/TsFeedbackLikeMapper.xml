@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsFeedbackLikeMapper">
+
+    <!-- 唯一键冲突时忽略，保证点赞接口并发幂等 -->
+    <insert id="insertIgnore">
+        INSERT IGNORE INTO ts_feedback_like (
+            user_id,
+            target_type,
+            target_id,
+            created_at
+        ) VALUES (
+            #{userId},
+            #{targetType},
+            #{targetId},
+            CURRENT_TIMESTAMP
+        )
+    </insert>
+
+</mapper>

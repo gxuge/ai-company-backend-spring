@@ -19,6 +19,8 @@
 | `TsChatMessageAttachmentController` | `/sys/ts-chat-message-attachments` | 聊天附件 CRUD |
 | `TsChatMessageController` | `/sys/ts-chat-messages` | 聊天消息 CRUD |
 | `TsChatSessionController` | `/sys/ts-chat-sessions` | 聊天会话 CRUD + AI 回复/语音/候选建议 |
+| `TsFeedbackController` | `/sys` | 反馈发布、分页、详情、点赞、评论、回复与追加 |
+| `TsFeedbackAdminController` | `/sys` | 反馈状态管理与官方回复 |
 | `TsMcpServerController` | `/ts/mcp` | TS MCP SSE / HTTP 入口 |
 | `TsPresetController` | `/sys/tsPreset` | 生成预设主表 CRUD |
 | `TsPresetTagController` | `/sys/tsPresetTag` | 预设-标签关联 CRUD |
@@ -193,7 +195,51 @@ Agent SSE 确认交互说明：
 - 当前草稿箱按较小分页读取完整 JSON，不额外维护重复的 `cardData`。
 - 删除设置 `status=0`；已删除草稿不会出现在列表或详情中。
 
-### 3.5 公开浏览与公开管理
+### 3.5 用户收藏
+
+角色与故事共用同一收藏资源，通过 `resourceType` 区分类型。所有接口仅访问当前登录用户的数据，且收藏列表只返回仍在线公开的资源。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/ts-user-favorites` | 分页查询当前用户收藏，支持全部、角色、故事和关键字筛选 |
+| GET | `/ts-user-favorites/status` | 查询当前用户是否已收藏指定资源 |
+| POST | `/ts-user-favorites` | 收藏在线公开的角色或故事 |
+| DELETE | `/ts-user-favorites` | 取消指定角色或故事收藏 |
+
+分页查询参数：
+- `pageNo/pageSize`：默认 `1/10`，`pageSize` 最大为 `100`。
+- `resourceType`：可选，只允许 `role` 或 `story`。
+- `keyword`：可选，按角色名称或故事标题模糊查询。
+
+收藏、取消和状态查询参数：
+- `resourceType`：必填，只允许 `role` 或 `story`。
+- `resourceId`：必填，角色或故事主表 ID。
+
+收藏与取消操作均为幂等操作。资源不存在、已删除或没有在线公开记录时禁止新增收藏。
+
+### 3.6 用户浏览记录
+
+角色与故事共用同一浏览记录资源，通过 `resourceType` 区分类型。重复浏览不会新增记录，而是累加浏览次数并更新最近浏览时间。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/ts-user-browse-history` | 分页查询当前用户浏览记录，支持全部、角色、故事和关键字筛选 |
+| POST | `/ts-user-browse-history` | 记录一次在线公开角色或故事浏览行为 |
+| DELETE | `/ts-user-browse-history` | 删除指定角色或故事浏览记录 |
+| DELETE | `/ts-user-browse-history/clear` | 清空当前用户全部浏览记录 |
+
+分页查询参数：
+- `pageNo/pageSize`：默认 `1/10`，`pageSize` 最大为 `100`。
+- `resourceType`：可选，只允许 `role` 或 `story`。
+- `keyword`：可选，按角色名称或故事标题模糊查询。
+
+记录和单条删除参数：
+- `resourceType`：必填，只允许 `role` 或 `story`。
+- `resourceId`：必填，角色或故事主表 ID。
+
+列表按 `lastViewedAt` 倒序，只返回仍在线公开的资源。删除和清空均为软删除；删除后的资源再次被浏览时，从一次浏览重新记录。
+
+### 3.7 公开浏览与公开管理
 公开浏览接口默认用于前台访问；公开管理接口用于上架、审核、下架流程。
 
 | 方法 | 路径 | 说明 |
@@ -327,6 +373,29 @@ Agent SSE 确认交互说明：
 - 模板来源通过 AI 应用 metadata 的 `code + version` 定位。
 - ToolCall required 字段校验失败时，必须进入 JSON Repair 修复链路。
 - 当前修复链路应与工具 schema 保持一致，避免输出字段漂移。
+
+### 4.6 反馈中心
+
+用户端接口均要求登录。`GET` 接口的资源 ID 使用查询参数传递，`POST/PUT` 接口的资源 ID 使用 JSON Body 传递：
+
+- `POST /sys/ts-feedback`：发布反馈，支持 `image/screenshot/log` 附件引用。
+- `GET /sys/ts-feedback`：反馈分页，支持 `type/status/sort/keyword/pageNo/pageSize`。
+- `GET /sys/ts-feedback/detail?feedbackId=1`：反馈详情、追加内容与附件。
+- `GET /sys/ts-my-feedback`：当前用户反馈分页。
+- `POST /sys/ts-feedback/like`：幂等点赞反馈，Body：`{"feedbackId":1}`。
+- `POST /sys/ts-feedback/append`：反馈发起人追加内容，Body：`{"feedbackId":1,"content":"补充内容"}`。
+- `GET /sys/ts-feedback/comments?feedbackId=1`：一级评论分页，每条默认附带前 2 条回复。
+- `POST /sys/ts-feedback/comments`：发布一级评论，Body：`{"feedbackId":1,"content":"评论内容"}`。
+- `GET /sys/ts-comments/replies?commentId=1`：指定一级评论的二级回复分页。
+- `POST /sys/ts-comments/reply`：回复评论，Body：`{"commentId":1,"content":"回复内容"}`；回复二级评论时仍归入其一级评论。
+- `POST /sys/ts-comments/like`：幂等点赞评论，Body：`{"commentId":1}`。
+
+管理端接口：
+
+- `PUT /sys/ts-admin-feedback/status`：更新状态，Body：`{"feedbackId":1,"status":"processing"}`，权限 `feedback:admin:status`。
+- `POST /sys/ts-admin-feedback/reply`：发布官方回复，Body：`{"feedbackId":1,"content":"官方回复"}`，权限 `feedback:admin:reply`。
+
+反馈类型为 `feature/bug/experience`，状态为 `received/processing/completed`，排序支持 `latest/hot`。反馈、评论、回复、官方回复和状态变化均维护冗余计数或预留通知事件。
 
 ## 5. 权限约定
 - 当前 `Ts*Controller` 代码未统一显式标注 `@RequiresPermissions`。

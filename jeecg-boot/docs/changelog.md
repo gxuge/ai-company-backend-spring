@@ -6,6 +6,10 @@
 `type` 推荐值：`feat`、`fix`、`refactor`、`breaking`、`security`、`docs`
 
 ## 记录
+- [2026-08-13] [refactor] [ts-feedback] 反馈中心 `POST/PUT` 接口的 `feedbackId/commentId` 统一改为通过 JSON Body 传递，`GET` 查询接口继续使用查询参数
+- [2026-08-13] [feat] [ts-feedback] 新增反馈中心五张业务表及 `/sys/ts-feedback`、`/sys/ts-comments`、`/sys/ts-admin-feedback` 接口，支持反馈发布、幂等点赞、两层评论、追加反馈、官方回复、状态管理与通知事件扩展
+- [2026-08-12] [feat] [ts-browse-history] 新增角色与故事统一浏览记录表及 `/sys/ts-user-browse-history` 记录、分页、单条删除和清空接口；重复浏览累加次数并更新最近浏览时间
+- [2026-08-12] [feat] [ts-favorite] 新增角色与故事统一收藏表及 `/sys/ts-user-favorites` 收藏、取消、状态和分页查询接口；所有操作按当前用户过滤，并隐藏已下架或删除资源
 - [2026-08-04] [feat] [ts-member] 新增管理员支付流水分页与详情接口，并提供 `system/tanshi/payment/index` 只读管理页面；渠道原始响应在展示前二次脱敏
 - [2026-08-04] [feat] [ts-image] 新增 `POST /sys/ts-images/download` 公网图片代理下载接口；限制协议、内网地址、重定向、图片类型和 30MB 文件大小，不执行图片入库或角色/故事关联
 - [2026-07-30] [feat] [ts-draft] 新增角色与故事统一草稿表及 `/sys/ts-drafts` 增删改查；`draftType` 区分 `role/story`，列表返回摘要，详情返回完整 JSON 快照，所有操作按当前用户归属过滤

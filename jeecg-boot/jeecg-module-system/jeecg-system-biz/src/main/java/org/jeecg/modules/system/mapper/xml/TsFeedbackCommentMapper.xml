@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsFeedbackCommentMapper">
+
+    <!-- 分页查询一级评论，并聚合回复总数 -->
+    <select id="selectFirstLevelCommentPage"
+            resultType="org.jeecg.modules.system.vo.tsfeedback.TsFeedbackCommentVo">
+        SELECT
+            c.id AS id,
+            c.feedback_id AS feedbackId,
+            c.user_id AS userId,
+            COALESCE(NULLIF(u.realname, ''), u.username) AS userName,
+            u.avatar AS userAvatar,
+            c.parent_id AS parentId,
+            c.reply_to_user_id AS replyToUserId,
+            NULL AS replyToUserName,
+            c.content AS content,
+            c.like_count AS likeCount,
+            CASE WHEN EXISTS (
+                SELECT 1
+                FROM ts_feedback_like fl
+                WHERE fl.user_id = #{query.currentUserId}
+                  AND fl.target_type = 'comment'
+                  AND fl.target_id = c.id
+            ) THEN 1 ELSE 0 END AS liked,
+            c.is_official AS official,
+            COALESCE(reply_stat.replyCount, 0) AS replyCount,
+            c.created_at AS createdAt
+        FROM ts_feedback_comment c
+        LEFT JOIN sys_user u ON u.id = c.user_id
+        LEFT JOIN (
+            SELECT parent_id, COUNT(1) AS replyCount
+            FROM ts_feedback_comment
+            WHERE parent_id IS NOT NULL
+              AND is_deleted = 0
+            GROUP BY parent_id
+        ) reply_stat ON reply_stat.parent_id = c.id
+        WHERE c.feedback_id = #{query.feedbackId}
+          AND c.parent_id IS NULL
+          AND c.is_deleted = 0
+        <choose>
+            <when test="query.sort == 'hot'">
+                ORDER BY c.like_count DESC, c.created_at DESC, c.id DESC
+            </when>
+            <otherwise>
+                ORDER BY c.created_at DESC, c.id DESC
+            </otherwise>
+        </choose>
+    </select>
+
+    <!-- 批量查询当前页每条一级评论的前若干条回复 -->
+    <select id="selectReplyPreviews"
+            resultType="org.jeecg.modules.system.vo.tsfeedback.TsFeedbackCommentVo">
+        SELECT
+            reply_data.id,
+            reply_data.feedbackId,
+            reply_data.userId,
+            reply_data.userName,
+            reply_data.userAvatar,
+            reply_data.parentId,
+            reply_data.replyToUserId,
+            reply_data.replyToUserName,
+            reply_data.content,
+            reply_data.likeCount,
+            reply_data.liked,
+            reply_data.official,
+            reply_data.createdAt
+        FROM (
+            SELECT
+                c.id AS id,
+                c.feedback_id AS feedbackId,
+                c.user_id AS userId,
+                COALESCE(NULLIF(u.realname, ''), u.username) AS userName,
+                u.avatar AS userAvatar,
+                c.parent_id AS parentId,
+                c.reply_to_user_id AS replyToUserId,
+                COALESCE(NULLIF(reply_user.realname, ''), reply_user.username) AS replyToUserName,
+                c.content AS content,
+                c.like_count AS likeCount,
+                CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM ts_feedback_like fl
+                    WHERE fl.user_id = #{currentUserId}
+                      AND fl.target_type = 'comment'
+                      AND fl.target_id = c.id
+                ) THEN 1 ELSE 0 END AS liked,
+                c.is_official AS official,
+                c.created_at AS createdAt,
+                ROW_NUMBER() OVER (
+                    PARTITION BY c.parent_id
+                    ORDER BY c.created_at ASC, c.id ASC
+                ) AS replyRowNumber
+            FROM ts_feedback_comment c
+            LEFT JOIN sys_user u ON u.id = c.user_id
+            LEFT JOIN sys_user reply_user ON reply_user.id = c.reply_to_user_id
+            WHERE c.parent_id IN
+            <foreach collection="parentIds" item="parentId" open="(" separator="," close=")">
+                #{parentId}
+            </foreach>
+              AND c.is_deleted = 0
+        ) reply_data
+        WHERE reply_data.replyRowNumber &lt;= #{previewSize}
+        ORDER BY reply_data.parentId ASC, reply_data.createdAt ASC, reply_data.id ASC
+    </select>
+
+    <!-- 分页查询指定一级评论的全部二级回复 -->
+    <select id="selectReplyPage"
+            resultType="org.jeecg.modules.system.vo.tsfeedback.TsFeedbackCommentVo">
+        SELECT
+            c.id AS id,
+            c.feedback_id AS feedbackId,
+            c.user_id AS userId,
+            COALESCE(NULLIF(u.realname, ''), u.username) AS userName,
+            u.avatar AS userAvatar,
+            c.parent_id AS parentId,
+            c.reply_to_user_id AS replyToUserId,
+            COALESCE(NULLIF(reply_user.realname, ''), reply_user.username) AS replyToUserName,
+            c.content AS content,
+            c.like_count AS likeCount,
+            CASE WHEN EXISTS (
+                SELECT 1
+                FROM ts_feedback_like fl
+                WHERE fl.user_id = #{query.currentUserId}
+                  AND fl.target_type = 'comment'
+                  AND fl.target_id = c.id
+            ) THEN 1 ELSE 0 END AS liked,
+            c.is_official AS official,
+            0 AS replyCount,
+            c.created_at AS createdAt
+        FROM ts_feedback_comment c
+        LEFT JOIN sys_user u ON u.id = c.user_id
+        LEFT JOIN sys_user reply_user ON reply_user.id = c.reply_to_user_id
+        WHERE c.feedback_id = #{query.feedbackId}
+          AND c.parent_id = #{query.parentId}
+          AND c.is_deleted = 0
+        <choose>
+            <when test="query.sort == 'hot'">
+                ORDER BY c.like_count DESC, c.created_at DESC, c.id DESC
+            </when>
+            <otherwise>
+                ORDER BY c.created_at DESC, c.id DESC
+            </otherwise>
+        </choose>
+    </select>
+
+    <!-- 原子增加评论点赞数 -->
+    <update id="incrementLikeCount">
+        UPDATE ts_feedback_comment
+        SET like_count = like_count + 1
+        WHERE id = #{commentId}
+          AND is_deleted = 0
+    </update>
+
+    <!-- 查询评论最新点赞数 -->
+    <select id="selectLikeCount" resultType="java.lang.Integer">
+        SELECT like_count
+        FROM ts_feedback_comment
+        WHERE id = #{commentId}
+          AND is_deleted = 0
+        LIMIT 1
+    </select>
+
+</mapper>

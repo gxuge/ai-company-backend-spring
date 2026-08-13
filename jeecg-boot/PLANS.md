@@ -255,6 +255,66 @@
 - [x] 步骤 4
 
 ### 任务 ID
+`20260812-ts-user-favorite`
+
+### 目标与边界
+- 新增当前登录用户的角色、故事统一收藏能力。
+- 支持收藏、取消、状态查询和分页列表，所有数据按用户归属过滤。
+- 仅允许收藏在线公开资源，列表隐藏已删除或下架内容。
+- 范围外：前端接入、浏览历史、收藏数量统计和后台管理。
+
+### 执行步骤
+1. 新增收藏 Entity、DTO、PO、VO、Mapper、Service 与 Controller。
+2. 新增 `ts_user_favorite` 表和用户资源唯一索引，保证收藏幂等。
+3. 同步 API 文档与变更记录，执行 XML、编译和权限边界检查。
+
+### 进度
+- [x] 步骤 1：接口与业务分层实现
+- [x] 步骤 2：数据库迁移与唯一索引实现
+- [x] 步骤 3：编译和验证证据回写
+
+### 验证记录
+- Mapper XML：PowerShell XML 解析成功。
+- 后端编译：`mvn -pl jeecg-module-system/jeecg-system-biz -am -DskipTests compile`，结果 `BUILD SUCCESS`。
+- 权限边界：Controller 强制认证，用户 ID 仅从登录态读取；Mapper 的列表、状态和取消 SQL 均显式包含 `user_id` 条件。
+- 数据边界：新增收藏前校验在线公开记录；分页查询过滤角色停用、故事删除和公开记录下架状态。
+
+### 风险与回滚
+- 风险：同一资源存在多个在线公开渠道时，收藏列表只展示排序最靠前的一条公开记录。
+- 缓解：收藏关系绑定角色或故事主资源，不绑定渠道；后续可按产品需要扩展 `public_id`。
+- 回滚：移除收藏业务新增文件，并执行 `DROP TABLE IF EXISTS ts_user_favorite`。
+
+### 任务 ID
+`20260812-ts-user-browse-history`
+
+### 目标与边界
+- 新增当前登录用户的角色、故事统一浏览记录能力。
+- 重复浏览累加次数并刷新最近浏览时间，列表按最近浏览时间倒序。
+- 支持分页查询、单条删除和全部清空，所有数据按用户归属过滤。
+- 范围外：前端自动上报、短时间防抖、浏览量公共统计和后台管理。
+
+### 执行步骤
+1. 新增浏览记录 Entity、DTO、PO、VO、Mapper、Service 与 Controller。
+2. 新增 `ts_user_browse_history` 表和用户资源唯一索引，实现并发幂等写入。
+3. 同步 API 文档与变更记录，执行 XML、编译和权限边界检查。
+
+### 进度
+- [x] 步骤 1：接口与业务分层实现
+- [x] 步骤 2：数据库迁移与唯一索引实现
+- [x] 步骤 3：编译和验证证据回写
+
+### 验证记录
+- Mapper XML：PowerShell XML 解析成功。
+- 后端编译：`mvn -pl jeecg-module-system/jeecg-system-biz -am -DskipTests compile`，结果 `BUILD SUCCESS`。
+- 权限边界：Controller 强制认证，用户 ID 仅从登录态读取；分页、单条删除和清空 SQL 均显式包含 `user_id` 条件。
+- 数据边界：新增记录前校验在线公开资源；分页查询过滤角色停用、故事删除和公开记录下架状态。
+
+### 风险与回滚
+- 风险：前端在页面刷新或重复挂载时多次上报，会正常累加 `view_count`。
+- 缓解：当前接口按一次调用视为一次浏览；需要防抖时可后续增加时间窗口。
+- 回滚：移除浏览记录业务新增文件，并执行 `DROP TABLE IF EXISTS ts_user_browse_history`。
+
+### 任务 ID
 `20260804-ts-image-download`
 
 ### 目标与边界
@@ -672,3 +732,47 @@
 - [x] 步骤 2
 - [x] 步骤 3
 - [x] 步骤 4
+# 20260813-ts-feedback-center-v1
+
+## 元信息
+- 任务名称：反馈中心后端接口
+- 分级：H2
+- 负责人：Codex
+- 开始时间：2026-08-13
+
+## 目标与非目标
+- 目标：实现反馈发布、分页、详情、点赞、评论、两层回复、追加、官方回复和状态管理。
+- 目标：所有新接口使用 `ts` 前缀；`GET` 的资源 ID 使用查询参数，`POST/PUT` 的资源 ID 使用 JSON Body。
+- 目标：分页查询无 N+1，计数更新支持并发，通知事件可扩展。
+- 非目标：本轮不实现前端页面、不实现附件二进制上传、不新增评论删除接口。
+
+## 任务分解
+- [x] T1：完成迁移 SQL、Entity、DTO、PO、VO。
+- [x] T2：完成反馈分页、详情、一级评论和回复预览 Mapper XML。
+- [x] T3：完成事务、归属校验、两层评论、点赞幂等和通知事件。
+- [x] T4：完成用户端与管理端 Controller、API 文档和变更记录。
+- [x] T5：完成编译、XML、编码、边界与权限验证。
+
+## 验收标准
+- 接口均位于 `/sys/ts-*`，ID 参数不使用路径变量；写接口 ID 统一放在 JSON Body。
+- 点赞唯一索引与 `INSERT IGNORE` 保证并发幂等，只有首次点赞增加计数。
+- 二级回复的 `parent_id` 始终指向一级评论。
+- 一级评论分页只附带前 2 条回复，全部回复通过独立分页接口加载。
+- 追加反馈仅允许反馈发起人操作，管理接口必须有权限注解。
+- system-biz 及依赖模块 Maven 编译成功。
+
+## 风险与回退
+- 风险：回复预览使用 MySQL 8 窗口函数；低版本 MySQL 需改为批量查询后分组截取。
+- 风险：冗余计数依赖所有写入口统一维护；后续删除接口必须同步扣减或执行校正。
+- 回退：回退本任务 Java/XML/文档文件，并删除 `V3.9.1_36__create_ts_feedback_center.sql` 创建的五张表。
+
+## 验证记录
+- 主代码编译：`D:\maven\bin\mvn.cmd -pl jeecg-module-system/jeecg-system-biz -DskipTests compile`，结果 `BUILD SUCCESS`。
+- 测试源码编译：`D:\maven\bin\mvn.cmd -pl jeecg-module-system/jeecg-system-biz -DskipTests test-compile`，结果 `BUILD SUCCESS`。
+- 定向测试：通过 JUnit Launcher 执行 `TsFeedbackLikeServiceImplTest` 与 `TsFeedbackCommentServiceImplTest`，共 3 条测试成功、0 失败。
+- Mapper XML：`TsFeedbackMapper.xml`、`TsFeedbackCommentMapper.xml`、`TsFeedbackLikeMapper.xml` 均通过 XML 解析。
+- 路由检查：反馈中心 13 个接口全部使用 `/sys/ts-*`，无 `@PathVariable`；`GET` 资源 ID 使用 `@RequestParam`，`POST/PUT` 资源 ID 使用 `@RequestBody` DTO。
+- 代码检查：`git diff --check` 无空白错误；新增 SQL 与源码保持 UTF-8 无 BOM。
+
+## 未完成项
+- 未执行真实数据库迁移与接口冒烟；本轮按代码级验证完成。

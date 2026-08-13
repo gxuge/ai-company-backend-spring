@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsFeedbackMapper">
+
+    <!-- 反馈列表公共字段，联查作者和当前用户点赞状态 -->
+    <sql id="feedbackListColumns">
+        f.id AS id,
+        f.user_id AS userId,
+        COALESCE(NULLIF(u.realname, ''), u.username) AS userName,
+        u.avatar AS userAvatar,
+        f.type AS type,
+        f.title AS title,
+        f.content AS content,
+        f.status AS status,
+        f.like_count AS likeCount,
+        f.comment_count AS commentCount,
+        CASE WHEN EXISTS (
+            SELECT 1
+            FROM ts_feedback_like fl
+            WHERE fl.user_id = #{query.currentUserId}
+              AND fl.target_type = 'feedback'
+              AND fl.target_id = f.id
+        ) THEN 1 ELSE 0 END AS liked,
+        f.created_at AS createdAt,
+        f.updated_at AS updatedAt
+    </sql>
+
+    <!-- 分页查询公开反馈或当前用户反馈 -->
+    <select id="selectFeedbackPage"
+            resultType="org.jeecg.modules.system.vo.tsfeedback.TsFeedbackListVo">
+        SELECT
+            <include refid="feedbackListColumns"/>
+        FROM ts_feedback f
+        LEFT JOIN sys_user u ON u.id = f.user_id
+        WHERE f.is_deleted = 0
+        <if test="query.ownerUserId != null and query.ownerUserId != ''">
+            AND f.user_id = #{query.ownerUserId}
+        </if>
+        <if test="query.type != null and query.type != ''">
+            AND f.type = #{query.type}
+        </if>
+        <if test="query.status != null and query.status != ''">
+            AND f.status = #{query.status}
+        </if>
+        <if test="query.keyword != null and query.keyword != ''">
+            AND (
+                f.title LIKE CONCAT('%', #{query.keyword}, '%')
+                OR f.content LIKE CONCAT('%', #{query.keyword}, '%')
+            )
+        </if>
+        <choose>
+            <when test="query.sort == 'hot'">
+                ORDER BY f.like_count DESC, f.created_at DESC, f.id DESC
+            </when>
+            <otherwise>
+                ORDER BY f.created_at DESC, f.id DESC
+            </otherwise>
+        </choose>
+    </select>
+
+    <!-- 查询反馈详情 -->
+    <select id="selectFeedbackDetail"
+            resultType="org.jeecg.modules.system.vo.tsfeedback.TsFeedbackDetailVo">
+        SELECT
+            f.id AS id,
+            f.user_id AS userId,
+            COALESCE(NULLIF(u.realname, ''), u.username) AS userName,
+            u.avatar AS userAvatar,
+            f.type AS type,
+            f.title AS title,
+            f.content AS content,
+            f.status AS status,
+            f.like_count AS likeCount,
+            f.comment_count AS commentCount,
+            CASE WHEN EXISTS (
+                SELECT 1
+                FROM ts_feedback_like fl
+                WHERE fl.user_id = #{currentUserId}
+                  AND fl.target_type = 'feedback'
+                  AND fl.target_id = f.id
+            ) THEN 1 ELSE 0 END AS liked,
+            f.created_at AS createdAt,
+            f.updated_at AS updatedAt
+        FROM ts_feedback f
+        LEFT JOIN sys_user u ON u.id = f.user_id
+        WHERE f.id = #{feedbackId}
+          AND f.is_deleted = 0
+        LIMIT 1
+    </select>
+
+    <!-- 查询反馈追加内容 -->
+    <select id="selectFeedbackAppends"
+            resultType="org.jeecg.modules.system.vo.tsfeedback.TsFeedbackAppendVo">
+        SELECT
+            id,
+            feedback_id AS feedbackId,
+            user_id AS userId,
+            content,
+            created_at AS createdAt
+        FROM ts_feedback_append
+        WHERE feedback_id = #{feedbackId}
+          AND is_deleted = 0
+        ORDER BY created_at ASC, id ASC
+    </select>
+
+    <!-- 查询反馈附件 -->
+    <select id="selectFeedbackAttachments"
+            resultType="org.jeecg.modules.system.vo.tsfeedback.TsFeedbackAttachmentVo">
+        SELECT
+            id,
+            file_url AS fileUrl,
+            file_type AS fileType,
+            created_at AS createdAt
+        FROM ts_feedback_attachment
+        WHERE feedback_id = #{feedbackId}
+          AND is_deleted = 0
+        ORDER BY created_at ASC, id ASC
+    </select>
+
+    <!-- 原子增加反馈点赞数 -->
+    <update id="incrementLikeCount">
+        UPDATE ts_feedback
+        SET like_count = like_count + 1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = #{feedbackId}
+          AND is_deleted = 0
+    </update>
+
+    <!-- 原子增加反馈评论及回复总数 -->
+    <update id="incrementCommentCount">
+        UPDATE ts_feedback
+        SET comment_count = comment_count + 1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = #{feedbackId}
+          AND is_deleted = 0
+    </update>
+
+    <!-- 查询反馈最新点赞数 -->
+    <select id="selectLikeCount" resultType="java.lang.Integer">
+        SELECT like_count
+        FROM ts_feedback
+        WHERE id = #{feedbackId}
+          AND is_deleted = 0
+        LIMIT 1
+    </select>
+
+</mapper>
