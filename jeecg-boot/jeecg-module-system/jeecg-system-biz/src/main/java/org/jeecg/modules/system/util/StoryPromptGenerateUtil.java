@@ -6,7 +6,6 @@ import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickOutlineGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneImageGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSettingGenerateDto;
-import org.jeecg.modules.system.dto.tsstory.TsStorySceneImagePromptOptimizeDto;
 import org.jeecg.modules.system.dto.tsstory.TsStorySceneOptionDto;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineChapterVo;
 import org.springframework.util.StringUtils;
@@ -112,19 +111,6 @@ public class StoryPromptGenerateUtil {
         variables.put("style_name", PromptRuntimeUtil.nullableToken(dto.getStyleName()));
         variables.put("aspect_ratio", PromptRuntimeUtil.nullableToken(dto.getAspectRatio()));
         variables.put("reference_image_url", PromptRuntimeUtil.nullableToken(dto.getReferenceImageUrl()));
-        putSceneOptionVariables(variables, "time", dto.getTime());
-        putSceneOptionVariables(variables, "weather", dto.getWeather());
-        putSceneOptionVariables(variables, "mood", dto.getMood());
-        return variables;
-    }
-
-    /**
-     * 构建故事场景图片提示词优化的模板变量。
-     */
-    public static Map<String, String> buildSceneImagePromptOptimizeVars(
-            TsStorySceneImagePromptOptimizeDto dto) {
-        Map<String, String> variables = new java.util.LinkedHashMap<>();
-        variables.put("prompt_text", PromptRuntimeUtil.nullableToken(dto.getPromptText()));
         putSceneOptionVariables(variables, "time", dto.getTime());
         putSceneOptionVariables(variables, "weather", dto.getWeather());
         putSceneOptionVariables(variables, "mood", dto.getMood());

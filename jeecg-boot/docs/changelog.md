@@ -6,7 +6,7 @@
 `type` 推荐值：`feat`、`fix`、`refactor`、`breaking`、`security`、`docs`
 
 ## 记录
-- [2026-08-24] [feat] [ts-story] 场景生图与提示词优化接口支持 `time/weather/mood` 的英文 `key + description` 结构，并注入对应数据库 Prompt 模板
+- [2026-08-24] [feat] [ts-story] 场景生图接口支持 `time/weather/mood` 的英文 `key + description` 结构，并注入数据库 Prompt 模板
 - [2026-08-24] [feat] [ts-ad] 扩展运营内容管理为自有/外部图片、视频、卡片和深层动作，新增统一媒体预览、投放响应字段及兼容迁移
 - [2026-08-24] [feat] [infra] 两套 Docker Compose 增加单节点 Kafka Broker、持久化目录、共享网络和后台连接配置，行为 Kafka 默认保持关闭
 - [2026-08-23] [feat] [ts-ad-admin] 新增 Vue3 运营内容管理页面，覆盖广告位、广告内容、投放规则和曝光点击统计，并补充探拾管理员菜单

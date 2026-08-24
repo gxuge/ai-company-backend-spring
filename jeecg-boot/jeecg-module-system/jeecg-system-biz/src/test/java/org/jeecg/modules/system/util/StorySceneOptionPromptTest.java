@@ -1,7 +1,6 @@
 package org.jeecg.modules.system.util;
 
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneImageGenerateDto;
-import org.jeecg.modules.system.dto.tsstory.TsStorySceneImagePromptOptimizeDto;
 import org.jeecg.modules.system.dto.tsstory.TsStorySceneOptionDto;
 import org.junit.jupiter.api.Test;
 
@@ -53,25 +52,4 @@ class StorySceneOptionPromptTest {
         assertNull(dto.getTime());
     }
 
-    @Test
-    void mapsSceneOptionsToPromptOptimizationVariables() {
-        TsStorySceneImagePromptOptimizeDto dto = new TsStorySceneImagePromptOptimizeDto();
-        dto.setPromptText("A moonlit forest path");
-
-        TsStorySceneOptionDto mood = new TsStorySceneOptionDto();
-        mood.setKey("mystic");
-        mood.setDescription("Mysterious atmosphere with subtle, enigmatic lighting");
-        dto.setMood(mood);
-        dto.normalize();
-
-        Map<String, String> variables =
-                StoryPromptGenerateUtil.buildSceneImagePromptOptimizeVars(dto);
-
-        assertEquals("A moonlit forest path", variables.get("prompt_text"));
-        assertEquals("mystic", variables.get("mood_key"));
-        assertEquals(
-                "Mysterious atmosphere with subtle, enigmatic lighting",
-                variables.get("mood_description")
-        );
-    }
 }

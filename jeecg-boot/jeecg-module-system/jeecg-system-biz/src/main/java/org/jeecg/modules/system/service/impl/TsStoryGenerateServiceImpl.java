@@ -405,7 +405,7 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
                 PROMPT_CODE_STORY_SCENE_IMAGE_PROMPT_OPTIMIZE,
                 PROMPT_VERSION_STORY_SCENE_IMAGE_PROMPT_OPTIMIZE,
-                StoryPromptGenerateUtil.buildSceneImagePromptOptimizeVars(dto)
+                Map.of("prompt_text", PromptRuntimeUtil.nullableToken(dto.getPromptText()))
         );
         String renderedPrompt = promptSections.getRenderedPrompt();
         JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, "scene-image-prompt-optimize");

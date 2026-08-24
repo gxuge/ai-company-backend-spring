@@ -359,7 +359,7 @@ Agent SSE 确认交互说明：
 
 `POST /sys/ts-stories/one-click-scene-image` 接收 `title/storySetting/siteSetting/plotOutline/styleName/aspectRatio/referenceImageUrl`，以及可选的 `time/weather/mood` 场景选项对象。每个场景选项只包含英文 `key` 与 `description`，例如 `{ "key": "day", "description": "Bright natural daylight with clear visual layers" }`。其中 `storySetting`、`siteSetting` 与三个选项描述均可作为场景上下文；默认风格为“写实影视级场景概念图”，默认比例为 `9:16`。接口只返回供应商原始 `imageUrl`、`promptCode` 和 `promptVersion`，不导入用户素材，也不更新故事 `sceneImageUrl`。
 
-`POST /sys/ts-stories/optimize-scene-image-prompt` 接收 `promptText` 和可选的 `time/weather/mood` 场景选项对象，读取模板 `story_scene_image_prompt_optimize::v1`，返回润色后的 `visualPrompt`、`negativePrompt`、`promptCode`、`promptVersion`、`renderedPrompt` 和 `snapshotKey`。场景选项的非法 `key` 会被忽略，`description` 会去除首尾空白并限制为最多 300 个字符。
+`POST /sys/ts-stories/optimize-scene-image-prompt` 仅接收 `promptText`，读取模板 `story_scene_image_prompt_optimize::v1`，返回润色后的 `visualPrompt`、`negativePrompt`、`promptCode`、`promptVersion`、`renderedPrompt` 和 `snapshotKey`。
 
 ### 4.3 聊天生成
 - `POST /ts-chat-sessions/ai-reply`
