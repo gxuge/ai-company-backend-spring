@@ -1,0 +1,273 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsActivityQueryMapper">
+
+    <select id="selectActiveTasks"
+            resultType="org.jeecg.modules.system.entity.TsActivityTask">
+        SELECT id, task_name, task_type, task_category, description,
+               condition_type, condition_value, reward_type, reward_value,
+               start_time, end_time, status, sort, created_at, updated_at
+        FROM activity_task
+        WHERE status = 'ENABLED'
+          AND (start_time IS NULL OR start_time &lt;= #{now})
+          AND (end_time IS NULL OR end_time &gt;= #{now})
+        <if test="taskType != null and taskType != ''">
+            AND task_type = #{taskType}
+        </if>
+        <if test="category != null and category != ''">
+            AND task_category = #{category}
+        </if>
+        <if test="conditionType != null and conditionType != ''">
+            AND condition_type = #{conditionType}
+        </if>
+        ORDER BY sort ASC, id ASC
+    </select>
+
+    <select id="selectActiveSignTask"
+            resultType="org.jeecg.modules.system.entity.TsActivityTask">
+        SELECT id, task_name, task_type, task_category, description,
+               condition_type, condition_value, reward_type, reward_value,
+               start_time, end_time, status, sort, created_at, updated_at
+        FROM activity_task
+        WHERE task_type = 'SIGN'
+          AND task_category = 'DAILY'
+          AND status = 'ENABLED'
+          AND (start_time IS NULL OR start_time &lt;= #{now})
+          AND (end_time IS NULL OR end_time &gt;= #{now})
+        ORDER BY sort ASC, id ASC
+        LIMIT 1
+    </select>
+
+    <insert id="insertProgressIgnore" useGeneratedKeys="true" keyProperty="id">
+        INSERT IGNORE INTO user_task_progress (
+            user_id, task_id, cycle_key, current_value, target_value,
+            status, reward_status, created_at, updated_at
+        ) VALUES (
+            #{userId}, #{taskId}, #{cycleKey}, #{currentValue}, #{targetValue},
+            #{status}, #{rewardStatus}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <select id="selectProgress"
+            resultType="org.jeecg.modules.system.entity.TsUserTaskProgress">
+        SELECT id, user_id, task_id, cycle_key, current_value, target_value,
+               status, reward_status, complete_time, reward_time,
+               created_at, updated_at
+        FROM user_task_progress
+        WHERE user_id = #{userId}
+          AND task_id = #{taskId}
+          AND cycle_key = #{cycleKey}
+        LIMIT 1
+    </select>
+
+    <select id="selectProgressForUpdate"
+            resultType="org.jeecg.modules.system.entity.TsUserTaskProgress">
+        SELECT id, user_id, task_id, cycle_key, current_value, target_value,
+               status, reward_status, complete_time, reward_time,
+               created_at, updated_at
+        FROM user_task_progress
+        WHERE user_id = #{userId}
+          AND task_id = #{taskId}
+          AND cycle_key = #{cycleKey}
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <update id="incrementProgress">
+        UPDATE user_task_progress
+        SET current_value = LEAST(target_value, current_value + #{count}),
+            status = CASE
+                WHEN current_value + #{count} &gt;= target_value
+                    THEN 'COMPLETED'
+                ELSE status
+            END,
+            complete_time = CASE
+                WHEN complete_time IS NULL
+                     AND current_value + #{count} &gt;= target_value
+                    THEN #{now}
+                ELSE complete_time
+            END,
+            updated_at = #{now}
+        WHERE id = #{id}
+          AND status = 'DOING'
+    </update>
+
+    <insert id="insertProgressEventIgnore">
+        INSERT IGNORE INTO activity_progress_event (
+            user_id, condition_type, biz_id, count_value, created_at
+        ) VALUES (
+            #{userId}, #{conditionType}, #{bizId}, #{count}, #{now}
+        )
+    </insert>
+
+    <insert id="insertSignIgnore" useGeneratedKeys="true" keyProperty="id">
+        INSERT IGNORE INTO user_sign_record (
+            user_id, task_id, sign_date, continuous_days,
+            base_reward_amount, extra_reward_amount, reward_amount,
+            points_transaction_no, created_at
+        ) VALUES (
+            #{userId}, #{taskId}, #{signDate}, #{continuousDays},
+            #{baseRewardAmount}, #{extraRewardAmount}, #{rewardAmount},
+            #{pointsTransactionNo}, #{createdAt}
+        )
+    </insert>
+
+    <select id="selectSignByDate"
+            resultType="org.jeecg.modules.system.entity.TsUserSignRecord">
+        SELECT id, user_id, task_id, sign_date, continuous_days,
+               base_reward_amount, extra_reward_amount, reward_amount,
+               points_transaction_no, created_at
+        FROM user_sign_record
+        WHERE user_id = #{userId}
+          AND sign_date = #{signDate}
+        LIMIT 1
+    </select>
+
+    <select id="selectPreviousSign"
+            resultType="org.jeecg.modules.system.entity.TsUserSignRecord">
+        SELECT id, user_id, task_id, sign_date, continuous_days,
+               base_reward_amount, extra_reward_amount, reward_amount,
+               points_transaction_no, created_at
+        FROM user_sign_record
+        WHERE user_id = #{userId}
+          AND sign_date &lt; #{signDate}
+        ORDER BY sign_date DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectRewardByIdempotency"
+            resultType="org.jeecg.modules.system.entity.TsActivityRewardRecord">
+        SELECT id, user_id, task_id, reward_type, base_reward_value,
+               extra_reward_value, reward_value, source_type, source_id,
+               member_level, idempotency_key, points_transaction_no, created_at
+        FROM activity_reward_record
+        WHERE user_id = #{userId}
+          AND idempotency_key = #{idempotencyKey}
+        LIMIT 1
+    </select>
+
+    <select id="selectRewardRule"
+            resultType="org.jeecg.modules.system.entity.TsActivityTaskRewardRule">
+        SELECT id, task_id, member_level, extra_reward_type,
+               extra_reward_value, status, created_at, updated_at
+        FROM activity_task_reward_rule
+        WHERE task_id = #{taskId}
+          AND member_level = #{memberLevel}
+          AND status = 1
+        LIMIT 1
+    </select>
+
+    <select id="selectCurrentMemberPlanCode" resultType="java.lang.String">
+        SELECT mp.code
+        FROM user_membership um
+        INNER JOIN member_plan mp ON mp.id = um.plan_id
+        WHERE um.user_id = #{userId}
+          AND um.status = 1
+          AND um.end_time &gt; #{now}
+        ORDER BY um.end_time DESC, um.id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectAdminTaskPage"
+            resultType="org.jeecg.modules.system.vo.tsactivity.TsActivityAdminTaskVo">
+        SELECT id, task_name, task_type, task_category AS category,
+               description, condition_type, condition_value, reward_type,
+               reward_value, start_time, end_time, status, sort,
+               created_at, updated_at
+        FROM activity_task
+        <where>
+            <if test="query.keyword != null and query.keyword != ''">
+                AND task_name LIKE CONCAT('%', #{query.keyword}, '%')
+            </if>
+            <if test="query.taskType != null and query.taskType != ''">
+                AND task_type = #{query.taskType}
+            </if>
+            <if test="query.category != null and query.category != ''">
+                AND task_category = #{query.category}
+            </if>
+            <if test="query.status != null and query.status != ''">
+                AND status = #{query.status}
+            </if>
+        </where>
+        ORDER BY sort ASC, id DESC
+    </select>
+
+    <select id="selectAdminUserTaskPage"
+            resultType="org.jeecg.modules.system.vo.tsactivity.TsActivityAdminUserTaskVo">
+        SELECT utp.id, utp.user_id, su.username, su.realname,
+               utp.task_id, at.task_name, utp.cycle_key,
+               utp.current_value, utp.target_value, utp.status,
+               utp.reward_status, utp.complete_time, utp.reward_time,
+               utp.updated_at
+        FROM user_task_progress utp
+        INNER JOIN activity_task at ON at.id = utp.task_id
+        LEFT JOIN sys_user su ON su.id = utp.user_id
+        <where>
+            <if test="query.userKeyword != null and query.userKeyword != ''">
+                AND (
+                    utp.user_id LIKE CONCAT('%', #{query.userKeyword}, '%')
+                    OR su.username LIKE CONCAT('%', #{query.userKeyword}, '%')
+                    OR su.realname LIKE CONCAT('%', #{query.userKeyword}, '%')
+                )
+            </if>
+            <if test="query.taskId != null">
+                AND utp.task_id = #{query.taskId}
+            </if>
+            <if test="query.status != null and query.status != ''">
+                AND utp.status = #{query.status}
+            </if>
+            <if test="query.rewardStatus != null and query.rewardStatus != ''">
+                AND utp.reward_status = #{query.rewardStatus}
+            </if>
+        </where>
+        ORDER BY utp.updated_at DESC, utp.id DESC
+    </select>
+
+    <select id="selectAdminRewardPage"
+            resultType="org.jeecg.modules.system.vo.tsactivity.TsActivityRewardRecordVo">
+        SELECT arr.id, arr.user_id, su.username, su.realname,
+               arr.task_id, at.task_name, arr.reward_type,
+               arr.base_reward_value, arr.extra_reward_value, arr.reward_value,
+               arr.source_type, arr.source_id, arr.member_level,
+               arr.points_transaction_no, arr.created_at
+        FROM activity_reward_record arr
+        LEFT JOIN activity_task at ON at.id = arr.task_id
+        LEFT JOIN sys_user su ON su.id = arr.user_id
+        <where>
+            <if test="query.userKeyword != null and query.userKeyword != ''">
+                AND (
+                    arr.user_id LIKE CONCAT('%', #{query.userKeyword}, '%')
+                    OR su.username LIKE CONCAT('%', #{query.userKeyword}, '%')
+                    OR su.realname LIKE CONCAT('%', #{query.userKeyword}, '%')
+                )
+            </if>
+            <if test="query.rewardType != null and query.rewardType != ''">
+                AND arr.reward_type = #{query.rewardType}
+            </if>
+            <if test="query.startTime != null">
+                AND arr.created_at &gt;= #{query.startTime}
+            </if>
+            <if test="query.endTime != null">
+                AND arr.created_at &lt;= #{query.endTime}
+            </if>
+        </where>
+        ORDER BY arr.created_at DESC, arr.id DESC
+    </select>
+
+    <select id="selectUserRewardPage"
+            resultType="org.jeecg.modules.system.vo.tsactivity.TsActivityRewardRecordVo">
+        SELECT arr.id, arr.user_id, arr.task_id, at.task_name,
+               arr.reward_type, arr.base_reward_value, arr.extra_reward_value,
+               arr.reward_value, arr.source_type, arr.source_id,
+               arr.member_level, arr.points_transaction_no, arr.created_at
+        FROM activity_reward_record arr
+        LEFT JOIN activity_task at ON at.id = arr.task_id
+        WHERE arr.user_id = #{userId}
+        <if test="query.rewardType != null and query.rewardType != ''">
+            AND arr.reward_type = #{query.rewardType}
+        </if>
+        ORDER BY arr.created_at DESC, arr.id DESC
+    </select>
+
+</mapper>

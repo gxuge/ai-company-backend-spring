@@ -1,6 +1,7 @@
 package org.jeecg.modules.airag.agent.runtime;
 
 import lombok.extern.slf4j.Slf4j;
+import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.modules.airag.agent.error.AgentErrorCode;
 import org.jeecg.modules.airag.agent.error.AgentErrorException;
 import org.jeecg.modules.airag.agent.graph.AgentNode;
@@ -11,7 +12,9 @@ import org.jeecg.modules.airag.agent.node.ConfirmationNode;
 import org.jeecg.modules.airag.agent.node.LlmNode;
 import org.jeecg.modules.airag.agent.node.OptionsNode;
 import org.jeecg.modules.airag.agent.node.ToolNode;
+import org.jeecg.modules.airag.agent.safety.GlobalSafetySkillPromptProvider;
 import org.jeecg.modules.airag.agent.skill.registry.SkillRegistry;
+import org.jeecg.modules.airag.safety.moderation.ModerationGuard;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -49,6 +52,14 @@ public class NodeRunner {
      * Skill 注册中心，用于执行前准备节点上下文。
      */
     private final SkillRegistry skillRegistry;
+    /**
+     * 全局安全 Skill Prompt 提供器。
+     */
+    private final GlobalSafetySkillPromptProvider globalSafetySkillPromptProvider;
+    /**
+     * 统一文本审核门禁。
+     */
+    private final ModerationGuard moderationGuard;
 
     /**
      * 构造函数。
@@ -56,9 +67,13 @@ public class NodeRunner {
      * @param eventPublisher 事件发布器
      */
     public NodeRunner(AgentEventPublisher eventPublisher,
-                      SkillRegistry skillRegistry) {
+                      SkillRegistry skillRegistry,
+                      GlobalSafetySkillPromptProvider globalSafetySkillPromptProvider,
+                      ModerationGuard moderationGuard) {
         this.eventPublisher = eventPublisher;
         this.skillRegistry = skillRegistry;
+        this.globalSafetySkillPromptProvider = globalSafetySkillPromptProvider;
+        this.moderationGuard = moderationGuard;
     }
 
     /**
@@ -134,14 +149,23 @@ public class NodeRunner {
      */
     private void prepareNodeSkillContext(AgentContext context, LlmNode node) {
         if (context == null) {
-            return;
+            throw new JeecgBootException("Agent运行上下文为空，禁止执行LLM节点");
         }
         context.putAttribute("loadedNodeSkillCodes", new ArrayList<>());
         context.putAttribute("nodeSkillPrompt", "");
-        if (this.skillRegistry == null || node == null || node.getDefinition() == null) {
-            return;
+        context.putAttribute("safetySkillPrompt", "");
+        if (this.moderationGuard == null) {
+            throw new JeecgBootException("AI审核服务不可用，禁止执行LLM节点");
+        }
+        context.putAttribute("moderationGuard", this.moderationGuard);
+        if (this.skillRegistry == null
+                || this.globalSafetySkillPromptProvider == null
+                || node == null
+                || node.getDefinition() == null) {
+            throw new JeecgBootException("全局安全Skill加载器不可用，禁止执行LLM节点");
         }
         LlmNodeDefinition definition = node.getDefinition();
+        String safetySkillPrompt = loadRequiredSafetySkill(node);
         List<String> skillCodes = new ArrayList<>();
         skillCodes.add(AGENT_RESPONSE_LANGUAGE_SKILL);
         skillCodes.add(AGENT_CANDIDATE_OPTIONS_SKILL);
@@ -152,6 +176,7 @@ public class NodeRunner {
             skillCodes.addAll(definition.getSkills());
         }
         List<String> loadedSkillCodes = new ArrayList<>();
+        loadedSkillCodes.add(GlobalSafetySkillPromptProvider.SKILL_CODE);
         StringBuilder prompt = new StringBuilder();
         for (String skillCode : skillCodes) {
             if (!StringUtils.hasText(skillCode) || loadedSkillCodes.contains(skillCode)) {
@@ -176,6 +201,23 @@ public class NodeRunner {
         }
         context.putAttribute("loadedNodeSkillCodes", loadedSkillCodes);
         context.putAttribute("nodeSkillPrompt", prompt.toString().trim());
+        context.putAttribute("safetySkillPrompt", safetySkillPrompt);
+    }
+
+    /**
+     * 强制读取全局安全 Skill，缺失或空正文时禁止继续调用模型。
+     *
+     * @param node 当前 LLM 节点
+     * @return 可直接注入 System Prompt 的安全规则正文
+     */
+    private String loadRequiredSafetySkill(LlmNode node) {
+        try {
+            return this.globalSafetySkillPromptProvider.requiredSafetyPrompt();
+        } catch (Exception ex) {
+            log.error("加载全局安全Skill失败，nodeName={}, skillCode={}",
+                    node == null ? null : node.nodeName(), GlobalSafetySkillPromptProvider.SKILL_CODE, ex);
+            throw new JeecgBootException("全局安全Skill加载失败，禁止执行LLM节点");
+        }
     }
 
     /**

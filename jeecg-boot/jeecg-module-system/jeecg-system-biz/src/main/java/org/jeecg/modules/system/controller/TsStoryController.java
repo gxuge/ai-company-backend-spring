@@ -15,12 +15,14 @@ import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSettingGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryQueryDto;
 import org.jeecg.modules.system.dto.tsstory.TsStorySaveDto;
+import org.jeecg.modules.system.dto.tsstory.TsStorySceneImagePromptOptimizeDto;
 import org.jeecg.modules.system.service.ITsStoryService;
 import org.jeecg.modules.system.vo.tsstory.TsStoryFullGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneImageGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSettingGenerateVo;
+import org.jeecg.modules.system.vo.tsstory.TsStorySceneImagePromptOptimizeVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryVo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
@@ -84,6 +86,14 @@ public class TsStoryController {
     public Result<TsStoryOneClickSceneImageGenerateVo> generateStorySceneImage(
             @RequestBody TsStoryOneClickSceneImageGenerateDto request) {
         return tsStoryService.generateStorySceneImage(
+                ((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
+    }
+
+    @Operation(summary = "故事场景图片提示词优化")
+    @PostMapping("/ts-stories/optimize-scene-image-prompt")
+    public Result<TsStorySceneImagePromptOptimizeVo> optimizeStorySceneImagePrompt(
+            @Validated @RequestBody TsStorySceneImagePromptOptimizeDto request) {
+        return tsStoryService.optimizeStorySceneImagePrompt(
                 ((LoginUser) SecurityUtils.getSubject().getPrincipal()), request);
     }
 

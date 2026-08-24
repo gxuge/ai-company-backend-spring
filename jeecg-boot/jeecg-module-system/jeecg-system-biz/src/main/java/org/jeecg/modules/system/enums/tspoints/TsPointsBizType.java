@@ -1,0 +1,8 @@
+package org.jeecg.modules.system.enums.tspoints;
+
+/** 积分业务类型。 */
+public enum TsPointsBizType {
+    RECHARGE, MEMBER_GIFT, ACTIVITY_REWARD, SIGN_IN, COMPENSATION, REFUND,
+    AI_CHAT, IMAGE_GENERATE, VOICE_GENERATE, STORY_GENERATE, ROLE_CREATE,
+    THREE_D_GENERATE, ADVANCED_FEATURE, ADMIN_ADD, ADMIN_DEDUCT
+}

@@ -13,6 +13,9 @@
         f.title AS title,
         f.content AS content,
         f.status AS status,
+        f.audit_status AS auditStatus,
+        f.audit_reason AS auditReason,
+        f.audited_at AS auditedAt,
         f.like_count AS likeCount,
         f.comment_count AS commentCount,
         CASE WHEN EXISTS (
@@ -34,9 +37,14 @@
         FROM ts_feedback f
         LEFT JOIN sys_user u ON u.id = f.user_id
         WHERE f.is_deleted = 0
-        <if test="query.ownerUserId != null and query.ownerUserId != ''">
-            AND f.user_id = #{query.ownerUserId}
-        </if>
+        <choose>
+            <when test="query.ownerUserId != null and query.ownerUserId != ''">
+                AND f.user_id = #{query.ownerUserId}
+            </when>
+            <otherwise>
+                AND f.audit_status = 'approved'
+            </otherwise>
+        </choose>
         <if test="query.type != null and query.type != ''">
             AND f.type = #{query.type}
         </if>
@@ -71,6 +79,9 @@
             f.title AS title,
             f.content AS content,
             f.status AS status,
+            f.audit_status AS auditStatus,
+            f.audit_reason AS auditReason,
+            f.audited_at AS auditedAt,
             f.like_count AS likeCount,
             f.comment_count AS commentCount,
             CASE WHEN EXISTS (
@@ -86,6 +97,10 @@
         LEFT JOIN sys_user u ON u.id = f.user_id
         WHERE f.id = #{feedbackId}
           AND f.is_deleted = 0
+          AND (
+              f.audit_status = 'approved'
+              OR f.user_id = #{currentUserId}
+          )
         LIMIT 1
     </select>
 
@@ -97,10 +112,17 @@
             feedback_id AS feedbackId,
             user_id AS userId,
             content,
+            audit_status AS auditStatus,
+            audit_reason AS auditReason,
+            audited_at AS auditedAt,
             created_at AS createdAt
         FROM ts_feedback_append
         WHERE feedback_id = #{feedbackId}
           AND is_deleted = 0
+          AND (
+              audit_status = 'approved'
+              OR user_id = #{currentUserId}
+          )
         ORDER BY created_at ASC, id ASC
     </select>
 
@@ -125,6 +147,7 @@
             updated_at = CURRENT_TIMESTAMP
         WHERE id = #{feedbackId}
           AND is_deleted = 0
+          AND audit_status = 'approved'
     </update>
 
     <!-- 原子增加反馈评论及回复总数 -->
@@ -136,12 +159,23 @@
           AND is_deleted = 0
     </update>
 
+    <!-- 原子减少反馈评论及回复总数，最低保持为 0 -->
+    <update id="decrementCommentCount">
+        UPDATE ts_feedback
+        SET comment_count = comment_count - 1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = #{feedbackId}
+          AND is_deleted = 0
+          AND comment_count &gt; 0
+    </update>
+
     <!-- 查询反馈最新点赞数 -->
     <select id="selectLikeCount" resultType="java.lang.Integer">
         SELECT like_count
         FROM ts_feedback
         WHERE id = #{feedbackId}
           AND is_deleted = 0
+          AND audit_status = 'approved'
         LIMIT 1
     </select>
 

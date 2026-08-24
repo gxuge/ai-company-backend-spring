@@ -40,6 +40,10 @@ import org.jeecg.modules.airag.common.handler.AIChatParams;
 import org.jeecg.modules.airag.common.handler.IAIChatHandler;
 import org.jeecg.modules.airag.llm.stream.ImmediateToolExecutor;
 import org.jeecg.modules.airag.prompts.service.IAiragPromptTemplateService;
+import org.jeecg.modules.airag.safety.moderation.ModerationAction;
+import org.jeecg.modules.airag.safety.moderation.ModerationContextMessage;
+import org.jeecg.modules.airag.safety.moderation.ModerationGuard;
+import org.jeecg.modules.airag.safety.moderation.ModerationResult;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.lang.reflect.Method;
@@ -167,6 +171,17 @@ public abstract class LlmNode extends BaseAgentNode {
         SkillLoadResult skillLoadResult = prepareSkillLoadResult(context);
         List<ChatMessage> messages = buildMessages(promptVariables, skillLoadResult, context);
         String modelId = this.modelResolver.resolveTextModelId(context.getAppId());
+        ModerationGuard moderationGuard = resolveModerationGuard(context);
+        ModerationResult inputModeration = moderationGuard.reviewInput(
+                modelId,
+                nodeName(),
+                resolveModerationInput(context, messages),
+                buildModerationContext(context),
+                resolveModerationRequestId(context)
+        );
+        if (!moderationGuard.isAllowed(inputModeration)) {
+            return buildModerationSafeReply(context, inputModeration);
+        }
         AIChatParams params = buildChatParams(context, skillLoadResult);
         String invocationId = UUIDGenerator.generate();
         long llmStartedAt = System.currentTimeMillis();
@@ -213,6 +228,9 @@ public abstract class LlmNode extends BaseAgentNode {
                 return;
             }
             if (shouldSuppressRemainingLlmOutput(context)) {
+                return;
+            }
+            if (moderationGuard != null) {
                 return;
             }
             String safeDelta = delta == null ? "" : delta;
@@ -293,6 +311,16 @@ public abstract class LlmNode extends BaseAgentNode {
         if (oConvertUtils.isEmpty(finalText)) {
             finalText = this.eventPublisher.readBuffer(this.eventPublisher.buildLlmBufferKey(context, nodeName()));
         }
+        if (!shouldSuppressRemainingLlmOutput(context)) {
+            finalText = moderationGuard.reviewOutput(
+                    modelId,
+                    nodeName(),
+                    finalText,
+                    buildModerationContext(context),
+                    resolveModerationRequestId(context),
+                    unsafeOutput -> rewriteUnsafeOutput(modelId, unsafeOutput, context)
+            );
+        }
         traceLlmResponse(
                 context,
                 invocationId,
@@ -306,9 +334,114 @@ public abstract class LlmNode extends BaseAgentNode {
                 null
         );
         context.setLatestContent(finalText);
-        NodeResult nodeResult = parseResult(finalText, context);
+        boolean moderationSafeReply = ModerationGuard.SAFE_REPLY.equals(finalText);
+        if (!moderationSafeReply
+                && shouldPublishPartialResponse()
+                && !shouldSuppressRemainingLlmOutput(context)
+                && this.eventPublisher != null
+                && oConvertUtils.isNotEmpty(finalText)) {
+            this.eventPublisher.publishLlmDelta(context, nodeName(), finalText);
+        }
+        NodeResult nodeResult = moderationSafeReply
+                ? buildModerationSafeReply(context, null)
+                : parseResult(finalText, context);
         AgentHandoffSupport.attachToNodeResult(nodeResult, context);
         return nodeResult;
+    }
+
+    /**
+     * 从节点运行上下文读取统一审核门禁。
+     */
+    private ModerationGuard resolveModerationGuard(AgentContext context) {
+        ModerationGuard moderationGuard = context == null
+                ? null
+                : context.getAttribute("moderationGuard", ModerationGuard.class);
+        if (moderationGuard == null) {
+            throw new org.jeecg.common.exception.JeecgBootException("AI审核服务不可用，禁止调用主模型");
+        }
+        return moderationGuard;
+    }
+
+    /**
+     * 选择主模型调用前需要审核的用户输入。
+     */
+    private String resolveModerationInput(AgentContext context, List<ChatMessage> messages) {
+        if (context != null && oConvertUtils.isNotEmpty(context.getUserInput())) {
+            return context.getUserInput();
+        }
+        return extractMessageText(messages, "USER");
+    }
+
+    /**
+     * 将最近对话转换为审核服务的独立上下文结构。
+     */
+    private List<ModerationContextMessage> buildModerationContext(AgentContext context) {
+        if (context == null
+                || context.getConversationMessages() == null
+                || context.getConversationMessages().isEmpty()) {
+            return List.of();
+        }
+        List<AgentConversationMessage> source = context.getConversationMessages();
+        int start = Math.max(0, source.size() - 6);
+        List<ModerationContextMessage> result = new ArrayList<>();
+        for (int i = start; i < source.size(); i++) {
+            AgentConversationMessage message = source.get(i);
+            if (message == null || oConvertUtils.isEmpty(message.getContent())) {
+                continue;
+            }
+            result.add(new ModerationContextMessage(message.getRole(), message.getContent()));
+        }
+        return result;
+    }
+
+    /**
+     * 使用同一文本模型执行一次安全重写，保持原输出结构但移除风险细节。
+     */
+    private String rewriteUnsafeOutput(String modelId, String unsafeOutput, AgentContext context) {
+        String safetyPrompt = buildSafetySkillPrompt(context);
+        String rewritePrompt =
+                "请安全改写下面的模型输出。保持原有语言、JSON结构、字段和有效信息，"
+                        + "删除或概括不安全细节，不新增敏感内容。只返回改写后的结果。\n\n"
+                        + unsafeOutput;
+        List<ChatMessage> messages = List.of(
+                SystemMessage.from(safetyPrompt),
+                UserMessage.from(rewritePrompt)
+        );
+        AIChatParams params = new AIChatParams();
+        params.setTemperature(0.2D);
+        params.setNoThinking(true);
+        params.setReturnThinking(false);
+        return this.aiChatHandler.completions(modelId, messages, params);
+    }
+
+    /**
+     * 构建被审核门禁直接处理的节点结果。
+     */
+    private NodeResult buildModerationSafeReply(AgentContext context, ModerationResult moderationResult) {
+        String safeReply = ModerationGuard.SAFE_REPLY;
+        if (context != null) {
+            context.setLatestContent(safeReply);
+        }
+        if (shouldPublishPartialResponse() && this.eventPublisher != null) {
+            this.eventPublisher.publishLlmDelta(context, nodeName(), safeReply);
+        }
+        NodeResult result = NodeResult.success(safeReply);
+        result.setAction(ModerationAction.SAFE_REPLY.name());
+        result.put("moderationAction", moderationResult == null
+                ? ModerationAction.SAFE_REPLY.name()
+                : moderationResult.getAction().name());
+        result.put("moderationCategory", moderationResult == null
+                ? null
+                : moderationResult.getCategory().name().toLowerCase());
+        result.put("moderationScore", moderationResult == null ? null : moderationResult.getScore());
+        return result;
+    }
+
+    private String resolveModerationRequestId(AgentContext context) {
+        if (context == null) {
+            return null;
+        }
+        return oConvertUtils.isNotEmpty(context.getRunId()) ? context.getRunId() : context.getMessageId();
     }
 
     /**
@@ -645,6 +778,14 @@ public abstract class LlmNode extends BaseAgentNode {
                 } else {
                     developerPrompt = skillIndexPrompt;
                 }
+            }
+        }
+        String safetySkillPrompt = replaceVariables(buildSafetySkillPrompt(context), promptVariables);
+        if (oConvertUtils.isNotEmpty(safetySkillPrompt)) {
+            if (oConvertUtils.isNotEmpty(developerPrompt)) {
+                developerPrompt = safetySkillPrompt + "\n\n" + developerPrompt;
+            } else {
+                developerPrompt = safetySkillPrompt;
             }
         }
         String userPrompt = renderUserPrompt(promptVariables);
@@ -1095,6 +1236,16 @@ public abstract class LlmNode extends BaseAgentNode {
      */
     protected String buildNodeSkillPrompt(AgentContext context) {
         return oConvertUtils.getString(context == null ? null : context.getAttribute("nodeSkillPrompt"));
+    }
+
+    /**
+     * 构建所有 LLM 节点强制注入的全局安全 Skill 提示词。
+     *
+     * @param context 运行上下文
+     * @return 安全规则正文
+     */
+    protected String buildSafetySkillPrompt(AgentContext context) {
+        return oConvertUtils.getString(context == null ? null : context.getAttribute("safetySkillPrompt"));
     }
 
     /**

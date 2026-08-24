@@ -40,6 +40,24 @@ public class TsFeedbackAppend implements Serializable {
     /** 追加内容。 */
     private String content;
 
+    /** 审核状态：pending、approved、rejected。 */
+    @TableField("audit_status")
+    private String auditStatus;
+
+    /** 审核驳回原因。 */
+    @TableField("audit_reason")
+    private String auditReason;
+
+    /** 审核人 ID。 */
+    @TableField("audited_by")
+    private String auditedBy;
+
+    /** 审核时间。 */
+    @TableField("audited_at")
+    @JsonFormat(timezone = "GMT+8", pattern = "yyyy-MM-dd HH:mm:ss")
+    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date auditedAt;
+
     /** 逻辑删除：0 正常，1 已删除。 */
     @TableLogic(value = "0", delval = "1")
     @TableField("is_deleted")

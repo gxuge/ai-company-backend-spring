@@ -6,6 +6,8 @@ import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickOutlineGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneImageGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSettingGenerateDto;
+import org.jeecg.modules.system.dto.tsstory.TsStorySceneImagePromptOptimizeDto;
+import org.jeecg.modules.system.dto.tsstory.TsStorySceneOptionDto;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineChapterVo;
 import org.springframework.util.StringUtils;
 
@@ -102,15 +104,42 @@ public class StoryPromptGenerateUtil {
      * 构建故事场景背景图片生成的模板变量。
      */
     public static Map<String, String> buildSceneImageVars(TsStoryOneClickSceneImageGenerateDto dto) {
-        return Map.of(
-                "title", PromptRuntimeUtil.nullableToken(dto.getTitle()),
-                "story_setting", PromptRuntimeUtil.nullableToken(dto.getStorySetting()),
-                "site_setting", PromptRuntimeUtil.nullableToken(dto.getSiteSetting()),
-                "plot_outline", PromptRuntimeUtil.nullableToken(dto.getPlotOutline()),
-                "style_name", PromptRuntimeUtil.nullableToken(dto.getStyleName()),
-                "aspect_ratio", PromptRuntimeUtil.nullableToken(dto.getAspectRatio()),
-                "reference_image_url", PromptRuntimeUtil.nullableToken(dto.getReferenceImageUrl())
-        );
+        Map<String, String> variables = new java.util.LinkedHashMap<>();
+        variables.put("title", PromptRuntimeUtil.nullableToken(dto.getTitle()));
+        variables.put("story_setting", PromptRuntimeUtil.nullableToken(dto.getStorySetting()));
+        variables.put("site_setting", PromptRuntimeUtil.nullableToken(dto.getSiteSetting()));
+        variables.put("plot_outline", PromptRuntimeUtil.nullableToken(dto.getPlotOutline()));
+        variables.put("style_name", PromptRuntimeUtil.nullableToken(dto.getStyleName()));
+        variables.put("aspect_ratio", PromptRuntimeUtil.nullableToken(dto.getAspectRatio()));
+        variables.put("reference_image_url", PromptRuntimeUtil.nullableToken(dto.getReferenceImageUrl()));
+        putSceneOptionVariables(variables, "time", dto.getTime());
+        putSceneOptionVariables(variables, "weather", dto.getWeather());
+        putSceneOptionVariables(variables, "mood", dto.getMood());
+        return variables;
+    }
+
+    /**
+     * 构建故事场景图片提示词优化的模板变量。
+     */
+    public static Map<String, String> buildSceneImagePromptOptimizeVars(
+            TsStorySceneImagePromptOptimizeDto dto) {
+        Map<String, String> variables = new java.util.LinkedHashMap<>();
+        variables.put("prompt_text", PromptRuntimeUtil.nullableToken(dto.getPromptText()));
+        putSceneOptionVariables(variables, "time", dto.getTime());
+        putSceneOptionVariables(variables, "weather", dto.getWeather());
+        putSceneOptionVariables(variables, "mood", dto.getMood());
+        return variables;
+    }
+
+    /**
+     * 写入场景选项的 key 与英文描述模板变量。
+     */
+    private static void putSceneOptionVariables(
+            Map<String, String> variables, String field, TsStorySceneOptionDto option) {
+        variables.put(field + "_key", PromptRuntimeUtil.nullableToken(
+                option == null ? null : option.getKey()));
+        variables.put(field + "_description", PromptRuntimeUtil.nullableToken(
+                option == null ? null : option.getDescription()));
     }
 
     /**

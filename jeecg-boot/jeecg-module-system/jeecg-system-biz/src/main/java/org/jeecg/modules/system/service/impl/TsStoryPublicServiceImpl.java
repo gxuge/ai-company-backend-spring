@@ -7,9 +7,11 @@ import jakarta.annotation.Resource;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.modules.system.annotation.TsBehaviorTrack;
 import org.jeecg.modules.system.dto.tsstorypublic.TsStoryPublicActionDto;
 import org.jeecg.modules.system.dto.tsstorypublic.TsStoryPublicQueryDto;
 import org.jeecg.modules.system.dto.tsstorypublic.TsStoryPublicSaveDto;
+import org.jeecg.modules.system.constant.TsWorkReviewConstants;
 import org.jeecg.modules.system.entity.TsPublicAuditLog;
 import org.jeecg.modules.system.entity.TsPublicChannel;
 import org.jeecg.modules.system.entity.TsStory;
@@ -108,6 +110,11 @@ public class TsStoryPublicServiceImpl extends ServiceImpl<TsStoryPublicMapper, T
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    @TsBehaviorTrack(
+            eventType = "publish",
+            resourceType = "story",
+            userIdExpression = "#result.result.ownerUserId",
+            resourceIdExpression = "#result.result.storyId")
     public Result<TsStoryPublicVo> approvePublic(LoginUser user, TsStoryPublicActionDto request) {
         return changeStatus(user, request, "online", "approve");
     }
@@ -120,6 +127,11 @@ public class TsStoryPublicServiceImpl extends ServiceImpl<TsStoryPublicMapper, T
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    @TsBehaviorTrack(
+            eventType = "publish",
+            resourceType = "story",
+            userIdExpression = "#result.result.ownerUserId",
+            resourceIdExpression = "#result.result.storyId")
     public Result<TsStoryPublicVo> onlinePublic(LoginUser user, TsStoryPublicActionDto request) {
         return changeStatus(user, request, "online", "online");
     }
@@ -201,6 +213,9 @@ public class TsStoryPublicServiceImpl extends ServiceImpl<TsStoryPublicMapper, T
         TsStory story = storyId == null ? null : tsStoryMapper.selectById(storyId);
         if (story == null || !Integer.valueOf(0).equals(story.getIsDeleted()) || (story.getStatus() != null && story.getStatus() == 9)) {
             throw new JeecgBootException("故事不存在或不可公开");
+        }
+        if (!TsWorkReviewConstants.APPROVED.equals(story.getReviewStatus())) {
+            throw new JeecgBootException("故事当前版本尚未通过作品审核");
         }
         String normalizedOwnerUserId = trimToNull(ownerUserId);
         if (StringUtils.hasText(normalizedOwnerUserId) && !normalizedOwnerUserId.equals(story.getUserId())) {

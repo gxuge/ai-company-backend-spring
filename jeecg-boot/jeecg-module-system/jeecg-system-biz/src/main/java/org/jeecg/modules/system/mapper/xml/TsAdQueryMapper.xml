@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsAdQueryMapper">
+
+    <sql id="slotColumns">
+        s.id, s.slot_code, s.slot_name, s.slot_type, s.width, s.height,
+        s.max_items, s.status, s.description, s.created_at, s.updated_at,
+        COUNT(c.id) AS content_count
+    </sql>
+
+    <select id="selectSlotPage"
+            resultType="org.jeecg.modules.system.vo.tsad.TsAdSlotVo">
+        SELECT <include refid="slotColumns"/>
+        FROM ts_ad_slot s
+        LEFT JOIN ts_ad_content c
+          ON c.slot_id = s.id
+         AND c.is_deleted = 0
+        <where>
+            s.is_deleted = 0
+            <if test="query.keyword != null and query.keyword != ''">
+                AND (
+                    s.slot_code LIKE CONCAT('%', #{query.keyword}, '%')
+                    OR s.slot_name LIKE CONCAT('%', #{query.keyword}, '%')
+                )
+            </if>
+            <if test="query.slotType != null and query.slotType != ''">
+                AND s.slot_type = #{query.slotType}
+            </if>
+            <if test="query.status != null and query.status != ''">
+                AND s.status = #{query.status}
+            </if>
+        </where>
+        GROUP BY s.id, s.slot_code, s.slot_name, s.slot_type, s.width, s.height,
+                 s.max_items, s.status, s.description, s.created_at, s.updated_at
+        ORDER BY s.updated_at DESC, s.id DESC
+    </select>
+
+    <select id="selectSlotDetail"
+            resultType="org.jeecg.modules.system.vo.tsad.TsAdSlotVo">
+        SELECT <include refid="slotColumns"/>
+        FROM ts_ad_slot s
+        LEFT JOIN ts_ad_content c
+          ON c.slot_id = s.id
+         AND c.is_deleted = 0
+        WHERE s.id = #{id}
+          AND s.is_deleted = 0
+        GROUP BY s.id, s.slot_code, s.slot_name, s.slot_type, s.width, s.height,
+                 s.max_items, s.status, s.description, s.created_at, s.updated_at
+        LIMIT 1
+    </select>
+
+    <sql id="contentColumns">
+        c.id, c.slot_id, s.slot_code, s.slot_name, c.content_code,
+        c.title, c.subtitle, c.source_type, c.media_type, c.media_url,
+        c.poster_url, c.card_type, c.payload_json, c.image_url,
+        c.action_type, c.action_payload, c.link_type,
+        c.link_value, c.status, c.sort_order, c.start_time, c.end_time,
+        c.ext_json, c.publish_at, c.offline_at, c.created_at, c.updated_at
+    </sql>
+
+    <select id="selectContentPage"
+            resultType="org.jeecg.modules.system.vo.tsad.TsAdContentVo">
+        SELECT <include refid="contentColumns"/>
+        FROM ts_ad_content c
+        INNER JOIN ts_ad_slot s
+          ON s.id = c.slot_id
+         AND s.is_deleted = 0
+        <where>
+            c.is_deleted = 0
+            <if test="query.keyword != null and query.keyword != ''">
+                AND (
+                    c.content_code LIKE CONCAT('%', #{query.keyword}, '%')
+                    OR c.title LIKE CONCAT('%', #{query.keyword}, '%')
+                )
+            </if>
+            <if test="query.slotId != null">
+                AND c.slot_id = #{query.slotId}
+            </if>
+            <if test="query.status != null and query.status != ''">
+                AND c.status = #{query.status}
+            </if>
+        </where>
+        ORDER BY c.updated_at DESC, c.id DESC
+    </select>
+
+    <select id="selectContentDetail"
+            resultType="org.jeecg.modules.system.vo.tsad.TsAdContentVo">
+        SELECT <include refid="contentColumns"/>
+        FROM ts_ad_content c
+        INNER JOIN ts_ad_slot s
+          ON s.id = c.slot_id
+         AND s.is_deleted = 0
+        WHERE c.id = #{id}
+          AND c.is_deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="selectDeliveryCandidates"
+            resultType="org.jeecg.modules.system.po.tsad.TsAdDeliveryCandidatePo">
+        SELECT s.id AS slot_id, s.slot_code, s.slot_type, s.width, s.height,
+               s.max_items, c.id AS content_id, c.content_code, c.title,
+               c.subtitle, c.source_type, c.media_type, c.media_url,
+               c.poster_url, c.card_type, c.payload_json, c.image_url,
+               c.action_type, c.action_payload, c.link_type,
+               c.link_value, c.ext_json, r.platform_json, r.audience_type,
+               r.member_level_json, r.user_id_json
+        FROM ts_ad_slot s
+        INNER JOIN ts_ad_content c
+          ON c.slot_id = s.id
+         AND c.is_deleted = 0
+         AND c.status = 'PUBLISHED'
+         AND (c.start_time IS NULL OR c.start_time &lt;= #{now})
+         AND (c.end_time IS NULL OR c.end_time &gt;= #{now})
+        LEFT JOIN ts_ad_delivery_rule r ON r.content_id = c.id
+        WHERE s.is_deleted = 0
+          AND s.status = 'ENABLED'
+          AND s.slot_code IN
+          <foreach collection="slotCodes" item="slotCode" open="(" separator="," close=")">
+              #{slotCode}
+          </foreach>
+        ORDER BY s.id ASC, c.sort_order ASC, c.id DESC
+    </select>
+
+    <insert id="insertEventIgnore">
+        INSERT IGNORE INTO ts_ad_event (
+            event_id, content_id, slot_code, event_type, user_id,
+            visitor_id, platform, occurred_at, created_at
+        ) VALUES (
+            #{eventId}, #{contentId}, #{slotCode}, #{eventType}, #{userId},
+            #{visitorId}, #{platform}, #{occurredAt}, #{createdAt}
+        )
+    </insert>
+
+    <select id="selectStats"
+            resultType="org.jeecg.modules.system.vo.tsad.TsAdStatsVo">
+        SELECT
+            COALESCE(SUM(CASE WHEN event_type = 'IMPRESSION' THEN 1 ELSE 0 END), 0)
+                AS impressions,
+            COALESCE(SUM(CASE WHEN event_type = 'CLICK' THEN 1 ELSE 0 END), 0)
+                AS clicks,
+            CASE
+                WHEN SUM(CASE WHEN event_type = 'IMPRESSION' THEN 1 ELSE 0 END) = 0
+                    THEN 0
+                ELSE ROUND(
+                    SUM(CASE WHEN event_type = 'CLICK' THEN 1 ELSE 0 END)
+                    / SUM(CASE WHEN event_type = 'IMPRESSION' THEN 1 ELSE 0 END),
+                    6
+                )
+            END AS click_through_rate
+        FROM ts_ad_event
+        <where>
+            <if test="query.slotCode != null and query.slotCode != ''">
+                AND slot_code = #{query.slotCode}
+            </if>
+            <if test="query.contentId != null">
+                AND content_id = #{query.contentId}
+            </if>
+            <if test="query.startTime != null">
+                AND occurred_at &gt;= #{query.startTime}
+            </if>
+            <if test="query.endTime != null">
+                AND occurred_at &lt;= #{query.endTime}
+            </if>
+        </where>
+    </select>
+
+</mapper>

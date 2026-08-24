@@ -23,6 +23,16 @@ public class TsFeedbackAppendVo {
     /** 追加内容。 */
     private String content;
 
+    /** 审核状态：pending、approved、rejected。 */
+    private String auditStatus;
+
+    /** 审核驳回原因。 */
+    private String auditReason;
+
+    /** 审核时间。 */
+    @JsonFormat(timezone = "GMT+8", pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date auditedAt;
+
     /** 创建时间。 */
     @JsonFormat(timezone = "GMT+8", pattern = "yyyy-MM-dd HH:mm:ss")
     private Date createdAt;

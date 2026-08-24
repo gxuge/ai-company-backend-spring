@@ -103,6 +103,7 @@
         WHERE sp.status = 'online'
           AND s.is_deleted = 0
           AND (s.status IS NULL OR s.status != 9)
+          AND s.review_status = 'APPROVED'
         <if test="query != null and query.channelCode != null and query.channelCode != ''">
             AND sp.channel_code = #{query.channelCode}
         </if>
@@ -143,6 +144,7 @@
         WHERE sp.status = 'online'
           AND s.is_deleted = 0
           AND (s.status IS NULL OR s.status != 9)
+          AND s.review_status = 'APPROVED'
         <if test="id != null">
             AND s.id = #{id}
         </if>

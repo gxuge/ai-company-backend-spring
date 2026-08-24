@@ -7,6 +7,7 @@ import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.aop.TsStoryOwnershipAspect;
 import org.jeecg.modules.aop.TsStoryOwnershipAspect.CheckTsStoryOwnership;
+import org.jeecg.modules.system.annotation.TsBehaviorTrack;
 import org.jeecg.modules.system.dto.tsstory.TsStoryFullGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickOutlineGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneImageGenerateDto;
@@ -15,6 +16,8 @@ import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSettingGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryQueryDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryRoleBindingDto;
 import org.jeecg.modules.system.dto.tsstory.TsStorySaveDto;
+import org.jeecg.modules.system.dto.tsstory.TsStorySceneImagePromptOptimizeDto;
+import org.jeecg.modules.system.constant.TsWorkReviewConstants;
 import org.jeecg.modules.system.entity.TsStory;
 import org.jeecg.modules.system.entity.TsStoryRoleRel;
 import org.jeecg.modules.system.entity.TsStoryStat;
@@ -27,11 +30,13 @@ import org.jeecg.modules.system.po.tsstory.TsStoryQueryPo;
 import org.jeecg.modules.system.po.tsstory.TsStorySavePo;
 import org.jeecg.modules.system.service.ITsStoryGenerateService;
 import org.jeecg.modules.system.service.ITsStoryService;
+import org.jeecg.modules.system.service.ITsWorkReviewService;
 import org.jeecg.modules.system.vo.tsstory.TsStoryFullGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneImageGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSettingGenerateVo;
+import org.jeecg.modules.system.vo.tsstory.TsStorySceneImagePromptOptimizeVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryVoConverter;
 import org.springframework.stereotype.Service;
@@ -62,6 +67,8 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
 
     @Resource
     private ITsStoryGenerateService tsStoryGenerateService;
+    @Resource
+    private ITsWorkReviewService tsWorkReviewService;
     @Override
     public Result<Page<TsStoryVo>> pageStories(LoginUser user, TsStoryQueryDto request) {
         String userId = user.getId();
@@ -127,6 +134,9 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
                 + "_"
                 + ThreadLocalRandom.current().nextInt(1000, 10000);
         savePo.applyForCreate(story, user, userId, storyCode, now);
+        story.setContentVersion(0);
+        story.setReviewStatus(TsWorkReviewConstants.PENDING_AI);
+        story.setDesiredPublic(request.getIsPublic());
         this.save(story);
 
         TsStoryStat stat = new TsStoryStat();
@@ -162,7 +172,9 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
         }
 
         List<TsStoryRoleRel> roleRelList = tsStoryRoleRelMapper.selectByStoryId(story.getId());
-        return Result.OK("创建成功", TsStoryVoConverter.fromEntity(story, stat, roleRelList));
+        tsWorkReviewService.submitStory(story.getId(), request.getIsPublic());
+        return Result.OK("创建成功", TsStoryVoConverter.fromEntity(
+                this.getById(story.getId()), stat, roleRelList));
     }
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -171,6 +183,9 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
         String userId = user.getId();
 
         TsStory story = TsStoryOwnershipAspect.STORY_CONTEXT.get();
+        Integer requestedPublic = request.getIsPublic() != null
+                ? request.getIsPublic()
+                : (story.getDesiredPublic() != null ? story.getDesiredPublic() : story.getIsPublic());
         TsStorySavePo savePo = TsStorySavePo.fromRequest(request);
         savePo.applyForUpdate(story, user, userId, new Date());
         this.updateById(story);
@@ -206,7 +221,9 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
 
         TsStoryStat stat = tsStoryStatMapper.selectById(story.getId());
         List<TsStoryRoleRel> roleRelList = tsStoryRoleRelMapper.selectByStoryId(story.getId());
-        return Result.OK("更新成功", TsStoryVoConverter.fromEntity(story, stat, roleRelList));
+        tsWorkReviewService.submitStory(story.getId(), requestedPublic);
+        return Result.OK("更新成功", TsStoryVoConverter.fromEntity(
+                this.getById(story.getId()), stat, roleRelList));
     }
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -229,11 +246,13 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
     }
 
     @Override
+    @TsBehaviorTrack(eventType = "generate", resourceType = "story")
     public Result<TsStoryOneClickSettingGenerateVo> generateStorySetting(LoginUser user, TsStoryOneClickSettingGenerateDto request) {
         return Result.OK(tsStoryGenerateService.generateStorySetting(user, request));
     }
 
     @Override
+    @TsBehaviorTrack(eventType = "generate", resourceType = "story")
     public Result<TsStoryOneClickSceneGenerateVo> generateStoryScene(LoginUser user, TsStoryOneClickSceneGenerateDto request) {
         return Result.OK(tsStoryGenerateService.generateStoryScene(user, request));
     }
@@ -242,22 +261,35 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
      * 生成临时故事场景背景图片，不保存素材或关联故事。
      */
     @Override
+    @TsBehaviorTrack(eventType = "generate", resourceType = "story")
     public Result<TsStoryOneClickSceneImageGenerateVo> generateStorySceneImage(
             LoginUser user, TsStoryOneClickSceneImageGenerateDto request) {
         return Result.OK(tsStoryGenerateService.generateStorySceneImage(user, request));
     }
 
+    /**
+     * 润色故事场景图片提示词。
+     */
     @Override
+    public Result<TsStorySceneImagePromptOptimizeVo> optimizeStorySceneImagePrompt(
+            LoginUser user, TsStorySceneImagePromptOptimizeDto request) {
+        return Result.OK(tsStoryGenerateService.optimizeStorySceneImagePrompt(user, request));
+    }
+
+    @Override
+    @TsBehaviorTrack(eventType = "generate", resourceType = "story")
     public Result<TsStoryOneClickOutlineGenerateVo> generateStoryOutline(LoginUser user, TsStoryOneClickOutlineGenerateDto request) {
         return Result.OK(tsStoryGenerateService.generateStoryOutline(user, request));
     }
 
     @Override
+    @TsBehaviorTrack(eventType = "generate", resourceType = "story")
     public Result<TsStoryFullGenerateVo> generateStoryFull(LoginUser user, TsStoryFullGenerateDto request) {
         return Result.OK(tsStoryGenerateService.generateStoryFull(user, request));
     }
 
     @Override
+    @TsBehaviorTrack(eventType = "generate", resourceType = "story")
     public Result<TsStoryFullGenerateVo> generateStoryFullPreset(LoginUser user, TsStoryFullGenerateDto request) {
         return Result.OK(tsStoryGenerateService.generateStoryFullPreset(user, request));
     }

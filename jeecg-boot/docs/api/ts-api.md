@@ -157,6 +157,7 @@ Agent SSE 确认交互说明：
 | POST | `/ts-stories/story-setting-generate` | 故事设定生成 |
 | POST | `/ts-stories/story--scene-generate` | 故事场景生成 |
 | POST | `/ts-stories/one-click-scene-image` | 故事场景背景图片生成，仅返回原始图片地址，不保存或关联故事 |
+| POST | `/ts-stories/optimize-scene-image-prompt` | 故事场景图片提示词优化（读取数据库模板 `story_scene_image_prompt_optimize::v1`，通过 tool call + schema 修复返回 `visualPrompt` / `negativePrompt`） |
 | POST | `/ts-stories/story--outline-generate` | 故事大纲生成 |
 | POST | `/ts-stories/story-full-generate-preset` | 故事全量生成预设版 |
 | GET | `/ts-story-chapters` | 章节分页查询 |
@@ -356,7 +357,9 @@ Agent SSE 确认交互说明：
 
 `POST /sys/ts-stories/story-full-generate` 支持可选请求字段 `extraInfo`，并兼容 `extra_info`。该字段映射到 `story_core_fill` 的 `{{extra_info}}`；未传、`null` 或空白字符串时按 `null` 处理。preset 接口因复用 DTO 可以接收该字段，但不会传入 `story_core_fill_preset`。
 
-`POST /sys/ts-stories/one-click-scene-image` 接收 `title/storySetting/sceneSetting/plotOutline/styleName/aspectRatio/referenceImageUrl`。其中 `storySetting` 与 `sceneSetting` 不能同时为空；默认风格为“写实影视级场景概念图”，默认比例为 `9:16`。接口只返回供应商原始 `imageUrl`、`promptCode` 和 `promptVersion`，不导入用户素材，也不更新故事 `sceneImageUrl`。
+`POST /sys/ts-stories/one-click-scene-image` 接收 `title/storySetting/siteSetting/plotOutline/styleName/aspectRatio/referenceImageUrl`，以及可选的 `time/weather/mood` 场景选项对象。每个场景选项只包含英文 `key` 与 `description`，例如 `{ "key": "day", "description": "Bright natural daylight with clear visual layers" }`。其中 `storySetting`、`siteSetting` 与三个选项描述均可作为场景上下文；默认风格为“写实影视级场景概念图”，默认比例为 `9:16`。接口只返回供应商原始 `imageUrl`、`promptCode` 和 `promptVersion`，不导入用户素材，也不更新故事 `sceneImageUrl`。
+
+`POST /sys/ts-stories/optimize-scene-image-prompt` 接收 `promptText` 和可选的 `time/weather/mood` 场景选项对象，读取模板 `story_scene_image_prompt_optimize::v1`，返回润色后的 `visualPrompt`、`negativePrompt`、`promptCode`、`promptVersion`、`renderedPrompt` 和 `snapshotKey`。场景选项的非法 `key` 会被忽略，`description` 会去除首尾空白并限制为最多 300 个字符。
 
 ### 4.3 聊天生成
 - `POST /ts-chat-sessions/ai-reply`
@@ -378,24 +381,145 @@ Agent SSE 确认交互说明：
 
 用户端接口均要求登录。`GET` 接口的资源 ID 使用查询参数传递，`POST/PUT` 接口的资源 ID 使用 JSON Body 传递：
 
-- `POST /sys/ts-feedback`：发布反馈，支持 `image/screenshot/log` 附件引用。
-- `GET /sys/ts-feedback`：反馈分页，支持 `type/status/sort/keyword/pageNo/pageSize`。
+- `POST /sys/ts-feedback`：发布反馈，支持 `image/screenshot/log` 附件引用；新内容默认进入 `pending` 审核状态。
+- `GET /sys/ts-feedback`：公开反馈分页，支持 `type/status/sort/keyword/pageNo/pageSize`，仅返回审核通过内容。
 - `GET /sys/ts-feedback/detail?feedbackId=1`：反馈详情、追加内容与附件。
-- `GET /sys/ts-my-feedback`：当前用户反馈分页。
-- `POST /sys/ts-feedback/like`：幂等点赞反馈，Body：`{"feedbackId":1}`。
-- `POST /sys/ts-feedback/append`：反馈发起人追加内容，Body：`{"feedbackId":1,"content":"补充内容"}`。
+- `GET /sys/ts-my-feedback`：当前用户反馈分页，包含本人待审核或已驳回内容及审核原因。
+- `POST /sys/ts-feedback/like`：幂等点赞已审核通过的反馈，Body：`{"feedbackId":1}`。
+- `POST /sys/ts-feedback/append`：反馈发起人追加内容并进入审核，Body：`{"feedbackId":1,"content":"补充内容"}`。
 - `GET /sys/ts-feedback/comments?feedbackId=1`：一级评论分页，每条默认附带前 2 条回复。
-- `POST /sys/ts-feedback/comments`：发布一级评论，Body：`{"feedbackId":1,"content":"评论内容"}`。
+- `POST /sys/ts-feedback/comments`：发布一级评论并进入审核，Body：`{"feedbackId":1,"content":"评论内容"}`。
 - `GET /sys/ts-comments/replies?commentId=1`：指定一级评论的二级回复分页。
-- `POST /sys/ts-comments/reply`：回复评论，Body：`{"commentId":1,"content":"回复内容"}`；回复二级评论时仍归入其一级评论。
-- `POST /sys/ts-comments/like`：幂等点赞评论，Body：`{"commentId":1}`。
+- `POST /sys/ts-comments/reply`：回复已通过审核的评论并进入审核，Body：`{"commentId":1,"content":"回复内容"}`；回复二级评论时仍归入其一级评论。
+- `POST /sys/ts-comments/like`：幂等点赞已审核通过的评论，Body：`{"commentId":1}`。
 
 管理端接口：
 
 - `PUT /sys/ts-admin-feedback/status`：更新状态，Body：`{"feedbackId":1,"status":"processing"}`，权限 `feedback:admin:status`。
 - `POST /sys/ts-admin-feedback/reply`：发布官方回复，Body：`{"feedbackId":1,"content":"官方回复"}`，权限 `feedback:admin:reply`。
+- `GET /sys/ts-admin-feedback/audit`：统一审核队列，支持 `targetType/auditStatus/keyword/pageNo/pageSize`，权限 `feedback:admin:audit`。
+- `PUT /sys/ts-admin-feedback/audit`：审核反馈、评论/回复或追加内容，Body：`{"targetType":"comment","targetId":1,"auditStatus":"rejected","auditReason":"原因"}`，权限 `feedback:admin:audit`。
 
-反馈类型为 `feature/bug/experience`，状态为 `received/processing/completed`，排序支持 `latest/hot`。反馈、评论、回复、官方回复和状态变化均维护冗余计数或预留通知事件。
+反馈类型为 `feature/bug/experience`，业务处理状态为 `received/processing/completed`，审核状态为 `pending/approved/rejected`，排序支持 `latest/hot`。审核通过或驳回均写入审核日志；官方回复默认通过。反馈的 `commentCount` 只统计审核通过的评论及回复，评论进入或离开 `approved` 时原子增减。
+
+### 4.7 积分、充值与统一账单
+
+用户积分接口均要求登录，用户 ID 只从当前登录态读取：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/sys/ts-points/account` | 查询当前用户积分账户，不存在时创建零余额账户 |
+| GET | `/sys/ts-points/transactions` | 分页查询当前用户积分流水 |
+| GET | `/sys/ts-points/transactions/detail?id=1` | 查询当前用户积分流水详情 |
+| GET | `/sys/ts-points-recharge/products` | 查询启用的积分充值商品 |
+| POST | `/sys/ts-points-recharge/order` | 创建积分充值订单和第三方支付 |
+| POST | `/sys/ts-points-recharge/order/detail` | 查询当前用户积分充值订单及渠道状态 |
+| GET | `/sys/ts-billing/records` | 查询用户视角统一账单 |
+| GET | `/sys/ts-billing/records/detail` | 查询用户视角账单详情 |
+
+可信业务模块优先直接调用 `ITsPointsService`；HTTP 内部接口要求
+`ts:points:internal` 权限：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/sys/internal/ts-points/add` | 增加积分 |
+| POST | `/sys/internal/ts-points/consume` | 消费积分 |
+| POST | `/sys/internal/ts-points/refund` | 关联原消费流水返还积分 |
+
+积分后台接口要求管理员角色：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/sys/ts-points-admin/account/page` | 分页查询积分账户 |
+| POST | `/sys/ts-points-admin/transaction/page` | 分页查询积分流水 |
+| POST | `/sys/ts-points-admin/adjust` | 后台增加或扣减积分，操作人取当前管理员 |
+| POST | `/sys/ts-points-admin/recharge/page` | 分页查询积分充值订单 |
+| GET | `/sys/ts-points-admin/product/list` | 查询积分充值商品配置 |
+| POST | `/sys/ts-points-admin/product/save` | 新增或编辑积分充值商品 |
+| GET | `/sys/ts-points-admin/member-gift-rule/list` | 查询会员积分赠送规则 |
+| POST | `/sys/ts-points-admin/member-gift-rule/save` | 新增或编辑会员积分赠送规则 |
+| POST | `/sys/ts-billing-admin/page` | 查询平台视角统一账单 |
+| POST | `/sys/ts-billing-admin/detail` | 查询平台视角账单详情 |
+| POST | `/sys/ts-billing-admin/summary` | 汇总平台现金和积分收支 |
+
+账单使用 `moneyDirection` 与 `pointsDirection` 分别表达现金和积分方向。
+用户视角下购买会员为现金支出，充值积分为现金支出和积分收入；平台视角
+方向相反。充值订单作为复合账单展示，其关联的 `RECHARGE` 积分流水不会
+在统一账单中重复展示，但仍可在积分流水接口查询。
+
+余额不足响应示例：
+
+```json
+{
+  "success": false,
+  "code": 409,
+  "errorCode": "POINTS_NOT_ENOUGH",
+  "errorCategory": "POINTS",
+  "retryable": false,
+  "message": "积分余额不足",
+  "errorArgs": {
+    "required": 100,
+    "balance": 60
+  }
+}
+```
+
+### 4.8 活动中心
+
+用户活动接口要求登录，用户 ID 只从当前登录态读取：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/sys/ts-activity/home` | 查询签到状态、连续天数、每日/每周任务和星钻余额 |
+| POST | `/sys/ts-activity/sign` | 幂等执行每日签到并发放星钻 |
+| GET | `/sys/ts-activity/tasks` | 查询当前周期任务，可使用 `category` 查询参数 |
+| POST | `/sys/ts-activity/task/receive` | 领取任务奖励，`taskId` 通过 JSON Body 传递 |
+| GET | `/sys/ts-activity/rewards` | 分页查询当前用户奖励记录 |
+
+活动后台接口要求管理员角色：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/sys/ts-activity-admin/task/page` | 分页查询活动任务 |
+| POST | `/sys/ts-activity-admin/task/create` | 创建活动任务 |
+| POST | `/sys/ts-activity-admin/task/update` | 编辑活动任务，`id` 通过 JSON Body 传递 |
+| POST | `/sys/ts-activity-admin/user-task/page` | 分页查询用户任务进度 |
+| POST | `/sys/ts-activity-admin/reward/page` | 分页查询活动奖励记录 |
+| GET | `/sys/ts-activity-admin/reward-rule/list` | 查询会员奖励加成规则 |
+| POST | `/sys/ts-activity-admin/reward-rule/save` | 保存会员奖励加成规则 |
+
+可信业务模块优先直接调用 `ITsActivityService`；HTTP 内部接口要求
+`ts:activity:internal` 权限：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/sys/internal/ts-activity/progress` | 幂等上报用户行为进度 |
+
+行为请求 Body 包含 `userId`、`conditionType`、`count`、`bizId`。
+`bizId` 在同一用户和行为类型下唯一，重复上报返回 `duplicate=true`，
+不重复增加进度。每日、每周和长期任务分别使用日期、ISO 周和 `LONG`
+作为周期键。
+
+星钻奖励统一经过 `ITsRewardService -> ITsPointsService.add()`，签到使用
+积分业务类型 `SIGN_IN`，其他任务使用 `ACTIVITY_REWARD`。现有会员
+`FREE/PRO/ULTRA` 在活动域映射为 `NORMAL/VIP/SVIP`。当前仅启用
+`STAR_DIAMOND` 发放器，`ITEM/TITLE/AVATAR_FRAME` 保留扩展模型。
+
+### 4.9 统一奖励事件管理
+
+奖励事件后台接口要求管理员角色，只提供监控和失败重试，不允许修改奖励金额：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/sys/ts-reward-admin/event/page` | 分页查询奖励事件 |
+| POST | `/sys/ts-reward-admin/event/summary` | 按查询条件汇总事件状态 |
+| GET | `/sys/ts-reward-admin/event/detail` | 查询事件详情，`id` 使用查询参数 |
+| POST | `/sys/ts-reward-admin/event/retry` | 重试失败事件，`eventId` 通过 JSON Body 传递 |
+
+事件类型包括 `SIGN_COMPLETED`、`TASK_REWARD_RECEIVED` 和
+`MEMBER_ACTIVATED`；状态包括 `PENDING`、`PROCESSING`、`SUCCESS`
+和 `FAILED`。只有 `FAILED` 且 `retryCount < maxRetryCount` 的事件
+可以手动重试，重复执行继续由事件 ID 和积分流水幂等 Key 防重。
 
 ## 5. 权限约定
 - 当前 `Ts*Controller` 代码未统一显式标注 `@RequiresPermissions`。
@@ -409,3 +533,111 @@ Agent SSE 确认交互说明：
 
 ## 7. 维护说明
 - 每次新增/变更 `Ts*Controller` 映射时，同步更新本文件与 `docs/changelog.md`。
+
+## 8. 作品审核接口
+
+### 8.1 自动触发
+- `POST /sys/ts-roles`、`PUT /sys/ts-roles`、完整角色生成完成后自动提交角色审核。
+- `POST /sys/ts-stories`、`PUT /sys/ts-stories` 在故事和角色绑定落库后自动提交故事审核。
+- 保存时作品立即转为私有，返回对象包含 `contentVersion`、`reviewStatus`、`currentReviewId`、`desiredPublic`。
+- 内容更新会生成新版本，旧的进行中任务转为 `OBSOLETE`。
+
+### 8.2 用户查询
+- `GET /sys/ts-work-reviews/current`
+- 鉴权：登录用户，仅可查询自己的作品。
+- 查询参数：`workType=ROLE|STORY`、`workId`。
+- 返回：当前审核任务、版本、快照摘要、AI/管理员结论、审核项和日志。
+
+### 8.3 管理员接口
+- 以下接口要求 `admin` 角色。
+- `GET /sys/ts-admin-work-reviews`：按 `workType/status/ownerUserId/pageNo/pageSize` 分页。
+- `GET /sys/ts-admin-work-reviews/detail?id=1`：查询完整快照、文本/图片项和日志。
+- `POST /sys/ts-admin-work-reviews/approve`：Body 为 `{"id":1,"reason":"审核意见"}`。
+- `POST /sys/ts-admin-work-reviews/reject`：Body 为 `{"id":1,"reason":"必填驳回原因"}`。
+- `POST /sys/ts-admin-work-reviews/retry-ai`：Body 为 `{"id":1}`。
+
+### 8.4 状态与公开门禁
+- 状态流转：`PENDING_AI -> PENDING_ADMIN -> APPROVED/REJECTED`，内容更新后旧任务为 `OBSOLETE`。
+- 管理员只允许处理当前版本的 `PENDING_ADMIN`；AI 失败保持 `PENDING_AI`。
+- 通过后作品恢复作者保存时的 `desiredPublic`，驳回后保持私有。
+- 角色和故事公开记录写操作及游客公开列表/详情均要求当前作品 `reviewStatus=APPROVED`。
+
+## 9. 海报与广告运营管理
+
+### 9.1 管理员接口
+以下接口要求 `admin` 角色：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/sys/ts-ad-admin/slot/page` | 分页查询广告位 |
+| GET | `/sys/ts-ad-admin/slot/detail?id=1` | 查询广告位详情 |
+| POST | `/sys/ts-ad-admin/slot/create` | 创建广告位 |
+| POST | `/sys/ts-ad-admin/slot/update` | 更新广告位，ID通过JSON Body传递 |
+| POST | `/sys/ts-ad-admin/slot/delete` | 删除空广告位 |
+| POST | `/sys/ts-ad-admin/slot/status` | 启用或停用广告位 |
+| POST | `/sys/ts-ad-admin/content/page` | 分页查询广告内容 |
+| GET | `/sys/ts-ad-admin/content/detail?id=1` | 查询广告内容详情 |
+| POST | `/sys/ts-ad-admin/content/create` | 创建草稿内容 |
+| POST | `/sys/ts-ad-admin/content/update` | 更新内容并自动回到草稿 |
+| POST | `/sys/ts-ad-admin/content/delete` | 删除广告内容 |
+| POST | `/sys/ts-ad-admin/content/publish` | 发布广告内容 |
+| POST | `/sys/ts-ad-admin/content/offline` | 下线广告内容 |
+| GET | `/sys/ts-ad-admin/delivery-rule?contentId=1` | 查询投放规则 |
+| POST | `/sys/ts-ad-admin/delivery-rule/save` | 保存投放规则 |
+| POST | `/sys/ts-ad-admin/stats/summary` | 汇总曝光、点击和点击率 |
+
+投放规则支持平台 `ALL/WEB/IOS/ANDROID`、受众
+`ALL/LOGIN/ANONYMOUS/USER_LIST`、会员等级
+`ALL/FREE/PRO/ULTRA`。`USER_LIST` 必须配置 `userIds`。
+
+广告内容保存参数支持以下媒体与动作字段：
+
+- `sourceType`：`SELF` 自有素材、`EXTERNAL` 外部素材；后端预留
+  `AD_NETWORK`，当前管理端不开放。
+- `mediaType`：`IMAGE`、`VIDEO`、`CARD`。图片和视频使用 `mediaUrl`，
+  视频可选 `posterUrl`；卡片使用 `cardType` 与 `payloadJson`，不要求媒体地址。
+- `actionType`：`NONE`、`URL`、`ROUTE`、`ROLE`、`STORY`、`DEEP_LINK`，
+  目标值通过 `actionPayload` 传递。`imageUrl/linkType/linkValue` 继续保留，
+  用于兼容既有调用，后端会同步写入规范化字段。
+- `EXTERNAL` 素材地址和 `URL` 动作目标必须为 HTTP/HTTPS 地址；卡片
+  `payloadJson` 必须是 JSON 对象。
+
+### 9.2 前端投放接口
+
+| 鉴权 | 方法 | 路径 | 说明 |
+|---|---|---|---|
+| 登录 | GET | `/sys/ts-ads/delivery?slotCodes=HOME_BANNER&platform=WEB` | 查询登录用户可见广告 |
+| 匿名 | GET | `/sys/ts-ads/public/delivery?slotCodes=HOME_BANNER&platform=WEB` | 查询匿名用户可见广告 |
+| 登录 | POST | `/sys/ts-ads/event` | 上报曝光或点击事件 |
+| 匿名 | POST | `/sys/ts-ads/public/event` | 上报曝光或点击事件 |
+
+投放接口仅返回启用广告位中已发布且处于有效时间窗的内容。登录状态、
+用户ID和会员等级均由后端计算；匿名事件必须提供 `visitorId`。事件 Body
+包含 `eventId/contentId/slotCode/eventType/platform/occurredAt`，
+`eventType` 支持 `IMPRESSION/CLICK`，重复 `eventId` 返回 `false`。
+
+### 9.3 管理后台页面
+
+- 菜单：探拾 / 运营内容管理。
+- 路由：`/tanshi/adCenter`。
+- 组件：`system/tanshi/adCenter/index`。
+- 页面包含广告位、广告内容、投放数据三个页签；广告内容支持自有/外部图片、
+  视频、卡片内容录入与预览，投放规则通过独立抽屉维护。
+- 菜单迁移：`db/V3.9.1_49__add_tanshi_ad_center_menu.sql`，默认授权 `admin` 角色。
+- 字段迁移：`db/V3.9.1_51__expand_ts_ad_content_media.sql`，将既有图片和跳转字段
+  回填到规范化媒体/动作字段。
+
+## 10. 推荐行为埋点接口
+
+接口要求登录，用户 ID 只从后端登录态读取。请求线程仅校验并异步提交
+Kafka，不直接写 MySQL 或 Redis：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/sys/ts-events/collect` | 上报单条访问、曝光、点击、停留或互动行为 |
+| POST | `/sys/ts-events/collect/batch` | 批量上报行为，单批最多100条 |
+
+事件必填 `eventId/eventType/sessionId`；可选
+`resourceType/resourceId/impressionId/position/pagePath/platform/durationMs/properties/occurredAt`。
+扩展 JSON 最大8KB，事件时间允许最近7天至未来5分钟。MySQL 明细和 Redis
+实时特征使用独立消费者组，明细按 `eventId` 去重，Redis 特征默认保留30天。

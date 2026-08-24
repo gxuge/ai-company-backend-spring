@@ -29,6 +29,10 @@ public class TsRoleVo {
     private Integer basicAiGenerated;
     private Integer advancedAiGenerated;
     private Integer status;
+    private Integer contentVersion;
+    private String reviewStatus;
+    private Long currentReviewId;
+    private Integer desiredPublic;
     private Date createdAt;
     private Date updatedAt;
     private Map<String, TsImageResourceVo> imageResources;

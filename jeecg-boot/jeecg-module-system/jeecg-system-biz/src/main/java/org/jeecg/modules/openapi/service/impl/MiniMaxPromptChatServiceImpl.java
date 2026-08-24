@@ -26,11 +26,15 @@ import jakarta.annotation.Resource;
 import org.jeecg.common.exception.JeecgBootBizTipException;
 import org.jeecg.modules.airag.app.entity.AiragApp;
 import org.jeecg.modules.airag.app.mapper.AiragAppMapper;
+import org.jeecg.modules.airag.agent.safety.GlobalSafetySkillPromptProvider;
 import org.jeecg.modules.airag.common.handler.AIChatParams;
 import org.jeecg.modules.airag.common.handler.IAIChatHandler;
 import org.jeecg.modules.airag.llm.consts.LLMConsts;
 import org.jeecg.modules.airag.llm.entity.AiragModel;
 import org.jeecg.modules.airag.llm.mapper.AiragModelMapper;
+import org.jeecg.modules.airag.safety.moderation.ModerationContextMessage;
+import org.jeecg.modules.airag.safety.moderation.ModerationGuard;
+import org.jeecg.modules.airag.safety.moderation.ModerationResult;
 import org.jeecg.modules.openapi.config.PromptChatConfigBean;
 import org.jeecg.modules.openapi.service.IPromptChatService;
 import org.jeecg.modules.system.monitor.TsAiLogCollector;
@@ -64,6 +68,10 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
     private IAIChatHandler aiChatHandler;
     @Resource
     private TsAiLogCollector tsAiLogCollector;
+    @Resource
+    private GlobalSafetySkillPromptProvider globalSafetySkillPromptProvider;
+    @Resource
+    private ModerationGuard moderationGuard;
 
     @Override
     public String provider() {
@@ -78,16 +86,26 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
             throw new JeecgBootBizTipException("Prompt must not be blank");
         }
         AiragModel model = resolvePromptModel();
+        ModerationResult inputModeration = moderationGuard.reviewInput(
+                model.getId(), "prompt_chat", prompt.trim(), List.of(), null
+        );
+        if (!moderationGuard.isAllowed(inputModeration)) {
+            return moderationGuard.safeReply();
+        }
         PromptProviderBranch branch = resolveProviderBranch(model);
         AIChatParams params = buildBaseParams(model, branch);
-        List<ChatMessage> messages = List.of(new UserMessage(prompt));
-        logLlmRequest(model, branch, null, prompt, null, null, params, false);
+        String safetySystemPrompt = buildSafeSystemPrompt(null);
+        List<ChatMessage> messages = List.of(
+                SystemMessage.from(safetySystemPrompt),
+                UserMessage.from(prompt.trim())
+        );
+        logLlmRequest(model, branch, safetySystemPrompt, prompt, null, null, params, false);
         String content = aiChatHandler.completions(model.getId(), messages, params);
         logLlmResponse(model, content);
         if (!StringUtils.hasText(content)) {
             throw new JeecgBootBizTipException("Prompt chat response is empty");
         }
-        return content.trim();
+        return moderateOutput(model, branch, "prompt_chat", content.trim());
     }
 
     @Override
@@ -96,23 +114,28 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
             throw new JeecgBootBizTipException("User prompt must not be blank");
         }
         AiragModel model = resolvePromptModel();
+        ModerationResult inputModeration = moderationGuard.reviewInput(
+                model.getId(), "prompt_tool_call", userPrompt.trim(), List.of(), null
+        );
+        if (!moderationGuard.isAllowed(inputModeration)) {
+            return moderationGuard.safeReply();
+        }
         PromptProviderBranch branch = resolveProviderBranch(model);
 
+        String safeSystemPrompt = buildSafeSystemPrompt(developerPrompt);
         List<ChatMessage> messages = new ArrayList<>();
-        if (StringUtils.hasText(developerPrompt)) {
-            messages.add(SystemMessage.from(developerPrompt.trim()));
-        }
+        messages.add(SystemMessage.from(safeSystemPrompt));
         messages.add(UserMessage.from(userPrompt.trim()));
         AIChatParams params = buildBaseParams(model, branch);
 
         if (!StringUtils.hasText(toolSchema)) {
-            logLlmRequest(model, branch, developerPrompt, userPrompt, null, null, params, false);
+            logLlmRequest(model, branch, safeSystemPrompt, userPrompt, null, null, params, false);
             String content = aiChatHandler.completions(model.getId(), messages, params);
             logLlmResponse(model, content);
             if (!StringUtils.hasText(content)) {
                 throw new JeecgBootBizTipException("Prompt chat response is empty");
             }
-            return content.trim();
+            return moderateOutput(model, branch, "prompt_tool_call", content.trim());
         }
 
         ToolSpecification toolSpecification = buildToolSpecification(toolSchema);
@@ -125,22 +148,67 @@ public class MiniMaxPromptChatServiceImpl implements IPromptChatService {
             if (Boolean.FALSE.equals(promptChatConfigBean.getToolCallAutoDowngrade())) {
                 throw new JeecgBootBizTipException("Current model does not support tool call, model=" + model.getModelName());
             }
-            logLlmRequest(model, branch, developerPrompt, userPrompt, toolSchema, toolChoiceName, params, false);
+            logLlmRequest(model, branch, safeSystemPrompt, userPrompt, toolSchema, toolChoiceName, params, false);
             String content = aiChatHandler.completions(model.getId(), messages, params);
             logLlmResponse(model, content);
             if (!StringUtils.hasText(content)) {
                 throw new JeecgBootBizTipException("Prompt chat response is empty");
             }
-            return content.trim();
+            return moderateOutput(model, branch, "prompt_tool_call", content.trim());
         }
 
-        logLlmRequest(model, branch, developerPrompt, userPrompt, toolSchema, toolChoiceName, params, true);
+        logLlmRequest(model, branch, safeSystemPrompt, userPrompt, toolSchema, toolChoiceName, params, true);
         String content = chatToolCallSingleRound(model, branch, messages, toolSpecification);
         logLlmResponse(model, content);
         if (!StringUtils.hasText(content)) {
             throw new JeecgBootBizTipException("Prompt chat response is empty");
         }
-        return content.trim();
+        return moderateOutput(model, branch, "prompt_tool_call", content.trim());
+    }
+
+    /**
+     * 构建安全规则优先的 System Prompt。
+     *
+     * @param developerPrompt 业务开发者提示词
+     * @return 最终 System Prompt
+     */
+    String buildSafeSystemPrompt(String developerPrompt) {
+        return this.globalSafetySkillPromptProvider.prependToSystemPrompt(developerPrompt);
+    }
+
+    /**
+     * 审核主模型输出，并在中风险时进行一次结构保持的安全改写。
+     */
+    private String moderateOutput(AiragModel model,
+                                  PromptProviderBranch branch,
+                                  String scene,
+                                  String content) {
+        return this.moderationGuard.reviewOutput(
+                model.getId(),
+                scene,
+                content,
+                List.<ModerationContextMessage>of(),
+                null,
+                unsafeOutput -> rewriteUnsafeOutput(model, branch, unsafeOutput)
+        );
+    }
+
+    /**
+     * 使用当前文本模型安全改写风险输出。
+     */
+    private String rewriteUnsafeOutput(AiragModel model,
+                                       PromptProviderBranch branch,
+                                       String unsafeOutput) {
+        String rewriteInstruction =
+                "请安全改写下面的模型输出。保持原有语言、JSON结构、字段和有效信息，"
+                        + "删除或概括不安全细节，不新增敏感内容。只返回改写后的结果。\n\n"
+                        + unsafeOutput;
+        List<ChatMessage> messages = List.of(
+                SystemMessage.from(buildSafeSystemPrompt(null)),
+                UserMessage.from(rewriteInstruction)
+        );
+        AIChatParams params = buildBaseParams(model, branch);
+        return this.aiChatHandler.completions(model.getId(), messages, params);
     }
 
     private String chatToolCallSingleRound(AiragModel model,

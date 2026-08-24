@@ -3,6 +3,7 @@ package org.jeecg.modules.system.service.impl;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import jakarta.annotation.Resource;
+import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.exception.JeecgBootBizTipException;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.airag.app.entity.AiragApp;
@@ -19,6 +20,7 @@ import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickOutlineGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneImageGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSettingGenerateDto;
+import org.jeecg.modules.system.dto.tsstory.TsStorySceneImagePromptOptimizeDto;
 import org.jeecg.modules.system.entity.TsPreset;
 import org.jeecg.modules.system.entity.TsPresetTag;
 import org.jeecg.modules.system.entity.TsTag;
@@ -39,6 +41,7 @@ import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneImageGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSettingGenerateVo;
+import org.jeecg.modules.system.vo.tsstory.TsStorySceneImagePromptOptimizeVo;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -72,6 +75,10 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     private static final String PROMPT_VERSION_STORY_SCENE = "v1";
     private static final String PROMPT_CODE_STORY_SCENE_IMAGE = "story_scene_image_generate";
     private static final String PROMPT_VERSION_STORY_SCENE_IMAGE = "v1";
+    private static final String PROMPT_CODE_STORY_SCENE_IMAGE_PROMPT_OPTIMIZE = "story_scene_image_prompt_optimize";
+    private static final String PROMPT_VERSION_STORY_SCENE_IMAGE_PROMPT_OPTIMIZE = "v1";
+    private static final int STORY_SCENE_IMAGE_PROMPT_MAX_LENGTH = 220;
+    private static final int STORY_SCENE_IMAGE_NEGATIVE_PROMPT_MAX_LENGTH = 80;
     private static final String PROMPT_VERSION_V2 = "v2";
     private static final String PROMPT_CODE_STORY_FULL = "story_core_fill";
     private static final String PROMPT_CODE_STORY_SETTING_OPTIMIZE = "story_setting_optimize";
@@ -379,6 +386,74 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         vo.setImageUrl(imageUrl);
         vo.setPromptCode(PROMPT_CODE_STORY_SCENE_IMAGE);
         vo.setPromptVersion(PROMPT_VERSION_STORY_SCENE_IMAGE);
+        return vo;
+    }
+
+    /**
+     * 润色故事场景图片提示词。
+     */
+    @Override
+    public TsStorySceneImagePromptOptimizeVo optimizeStorySceneImagePrompt(
+            LoginUser user, TsStorySceneImagePromptOptimizeDto request) {
+        TsStorySceneImagePromptOptimizeDto dto =
+                request == null ? new TsStorySceneImagePromptOptimizeDto() : request;
+        dto.normalize();
+        if (!StringUtils.hasText(dto.getPromptText())) {
+            throw new JeecgBootException("提示词不能为空");
+        }
+
+        PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
+                PROMPT_CODE_STORY_SCENE_IMAGE_PROMPT_OPTIMIZE,
+                PROMPT_VERSION_STORY_SCENE_IMAGE_PROMPT_OPTIMIZE,
+                StoryPromptGenerateUtil.buildSceneImagePromptOptimizeVars(dto)
+        );
+        String renderedPrompt = promptSections.getRenderedPrompt();
+        JSONObject modelJson = callPromptChatWithSchemaRepair(promptSections, "scene-image-prompt-optimize");
+        String visualPrompt = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("visual_prompt")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("visualPrompt")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("optimized_prompt")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("optimizedPrompt")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("generated_text")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("text")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("result"))
+        );
+        String negativePrompt = PromptRuntimeUtil.firstNonBlank(
+                PromptRuntimeUtil.trimToNull(modelJson.getString("negative_prompt")),
+                PromptRuntimeUtil.trimToNull(modelJson.getString("negativePrompt"))
+        );
+        if (!StringUtils.hasText(visualPrompt)) {
+            throw new JeecgBootException("提示词优化失败，模型未返回有效内容");
+        }
+        if (!StringUtils.hasText(negativePrompt)) {
+            negativePrompt = "低质量, 模糊, 畸形, 多余手指, 脸崩坏, 错位肢体, 水印, 文字, logo, 噪点";
+        }
+        visualPrompt = limitText(visualPrompt, STORY_SCENE_IMAGE_PROMPT_MAX_LENGTH);
+        negativePrompt = limitText(negativePrompt, STORY_SCENE_IMAGE_NEGATIVE_PROMPT_MAX_LENGTH);
+
+        JSONObject snapshot = new JSONObject();
+        snapshot.put("type", "scene-image-prompt-optimize");
+        snapshot.put("promptCode", PROMPT_CODE_STORY_SCENE_IMAGE_PROMPT_OPTIMIZE);
+        snapshot.put("promptRendered", renderedPrompt);
+        snapshot.put("rawResponse", modelJson == null ? null : modelJson.toJSONString());
+        snapshot.put("visualPrompt", visualPrompt);
+        snapshot.put("negativePrompt", negativePrompt);
+        String snapshotKey = StoryGenerateSnapshotUtil.saveSnapshot(
+                redisTemplate,
+                REDIS_SNAPSHOT_PREFIX,
+                REDIS_SNAPSHOT_TTL_HOURS,
+                "scene-image-prompt-optimize",
+                user.getId(),
+                snapshot
+        );
+
+        TsStorySceneImagePromptOptimizeVo vo = new TsStorySceneImagePromptOptimizeVo();
+        vo.setVisualPrompt(visualPrompt);
+        vo.setNegativePrompt(negativePrompt);
+        vo.setPromptCode(PROMPT_CODE_STORY_SCENE_IMAGE_PROMPT_OPTIMIZE);
+        vo.setPromptVersion(PROMPT_VERSION_STORY_SCENE_IMAGE_PROMPT_OPTIMIZE);
+        vo.setRenderedPrompt(renderedPrompt);
+        vo.setSnapshotKey(snapshotKey);
         return vo;
     }
 
@@ -753,6 +828,17 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
 
     private JSONObject callPromptChatWithSchemaRepair(PromptRenderedSectionsVo sections, String scene) {
         return toolcallJsonRepairService.chatToolCallWithSchemaRepair(sections, scene);
+    }
+
+    /**
+     * 按故事场景图片提示词契约限制模型输出长度。
+     */
+    private static String limitText(String text, int maxLength) {
+        String value = PromptRuntimeUtil.trimToNull(text);
+        if (!StringUtils.hasText(value) || maxLength <= 0 || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength).trim();
     }
 
     private PromptTemplateRef resolvePromptTemplateRef(TemplateScene scene) {

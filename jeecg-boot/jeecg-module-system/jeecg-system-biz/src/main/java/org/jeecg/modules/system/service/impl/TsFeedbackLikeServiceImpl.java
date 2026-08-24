@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.modules.system.annotation.TsBehaviorTrack;
 import org.jeecg.modules.system.entity.TsFeedback;
 import org.jeecg.modules.system.entity.TsFeedbackComment;
 import org.jeecg.modules.system.entity.TsFeedbackLike;
@@ -39,10 +40,18 @@ public class TsFeedbackLikeServiceImpl extends ServiceImpl<TsFeedbackLikeMapper,
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
+    @TsBehaviorTrack(
+            eventType = "like",
+            resourceType = "feedback",
+            resourceIdExpression = "#feedbackId",
+            condition = "#result.message == '点赞成功'")
     public Result<TsFeedbackLikeResultVo> likeFeedback(LoginUser user, Long feedbackId) {
         TsFeedback feedback = tsFeedbackMapper.selectById(feedbackId);
         if (feedback == null) {
             throw new JeecgBootException("反馈不存在或已删除");
+        }
+        if (!TsFeedbackConstants.AUDIT_APPROVED.equals(feedback.getAuditStatus())) {
+            throw new JeecgBootException("反馈尚未通过审核，不能点赞");
         }
         int inserted = baseMapper.insertIgnore(
                 user.getId(),
@@ -70,10 +79,18 @@ public class TsFeedbackLikeServiceImpl extends ServiceImpl<TsFeedbackLikeMapper,
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
+    @TsBehaviorTrack(
+            eventType = "like",
+            resourceType = "feedback_comment",
+            resourceIdExpression = "#commentId",
+            condition = "#result.message == '点赞成功'")
     public Result<TsFeedbackLikeResultVo> likeComment(LoginUser user, Long commentId) {
         TsFeedbackComment comment = tsFeedbackCommentMapper.selectById(commentId);
         if (comment == null) {
             throw new JeecgBootException("评论不存在或已删除");
+        }
+        if (!TsFeedbackConstants.AUDIT_APPROVED.equals(comment.getAuditStatus())) {
+            throw new JeecgBootException("评论尚未通过审核，不能点赞");
         }
         int inserted = baseMapper.insertIgnore(
                 user.getId(),

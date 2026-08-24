@@ -1,0 +1,13 @@
+package org.jeecg.modules.system.enums.tsreward;
+
+/** 统一奖励域机器错误码。 */
+public enum TsRewardErrorCode {
+    REWARD_EVENT_INVALID,
+    REWARD_EVENT_NOT_FOUND,
+    REWARD_EVENT_TYPE_UNSUPPORTED,
+    REWARD_EVENT_STATUS_INVALID,
+    REWARD_EVENT_CONFLICT,
+    REWARD_EVENT_RETRY_EXHAUSTED,
+    REWARD_EVENT_PAYLOAD_INVALID,
+    REWARD_EVENT_EXECUTION_FAILED
+}

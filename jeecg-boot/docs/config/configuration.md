@@ -68,3 +68,33 @@
   - `AIRAG_MINIMAX_*`
 - `jeecg-boot-module-airag/src/main/resources` 中的 MiniMax 配置已移除。
 - `prompts` 资源目录已迁移到 `jeecg-system-biz/src/main/resources/prompts`，由系统模块统一提供 classpath 资源。
+
+## 7. 2026-08-23 推荐行为 Kafka 配置
+- `KAFKA_BOOTSTRAP_SERVERS`：Broker 地址，默认 `localhost:9092`；Docker Compose 中使用 `jeecg-boot-kafka:9092`。
+- `TS_BEHAVIOR_KAFKA_ENABLED`：行为生产和消费开关，默认 `false`。
+- `TS_BEHAVIOR_KAFKA_TOPIC`：主 Topic，默认 `ts.user-behavior.v1`。
+- `TS_BEHAVIOR_KAFKA_DLQ_TOPIC`：死信 Topic，默认 `ts.user-behavior.dlq.v1`。
+- `TS_BEHAVIOR_KAFKA_DETAIL_GROUP`：MySQL 明细消费者组。
+- `TS_BEHAVIOR_KAFKA_FEATURE_GROUP`：Redis 特征消费者组。
+- `TS_BEHAVIOR_KAFKA_PARTITIONS` / `TS_BEHAVIOR_KAFKA_REPLICAS`：Topic 分区与副本数，默认 `6/1`。
+- `TS_BEHAVIOR_MAX_BATCH_SIZE`：单批最大事件数，默认 `100`。
+- `TS_BEHAVIOR_MAX_PROPERTIES_BYTES`：单条扩展 JSON 最大字节数，默认 `8192`。
+- `TS_BEHAVIOR_FEATURE_TTL_DAYS` / `TS_BEHAVIOR_DEDUP_TTL_DAYS`：特征与消费去重 TTL，默认 `30/7` 天。
+
+Producer 开启幂等、`acks=all` 和 LZ4 压缩；消费者失败重试两次后进入死信 Topic。
+正式启用前必须先执行 `V3.9.1_44__create_ts_user_behavior_event.sql`。
+
+### 7.1 Docker 部署
+- 两套 Compose 均提供 `jeecg-boot-kafka` 单节点 KRaft Broker，并与后台服务加入同一 Docker 网络。
+- Kafka 数据持久化到 Compose 目录下的 `kafka/data`，不默认映射宿主机端口，仅供 Docker 网络内的后台服务访问。
+- Docker 环境默认仍为 `TS_BEHAVIOR_KAFKA_ENABLED=false`；开启前需先确认 Broker、Topic、MySQL 明细消费者和 Redis 特征消费者链路。
+- 当前 `TS_BEHAVIOR_KAFKA_PARTITIONS=6`、`TS_BEHAVIOR_KAFKA_REPLICAS=1` 仅适用于单节点开发/测试部署，生产集群需要按 Broker 数量调整。
+
+## 8. 2026-08-23 AI 文本审核模型
+- Agent 审核默认使用当前 Agent 应用绑定的 AIRAG 文本模型。
+- 公共 Prompt Chat 审核使用当前 Prompt Chat 已解析出的 AIRAG 文本模型。
+- MiniMax 普通聊天与图片 Prompt 审核复用：
+  - `jeecg.airag.prompt-chat.model-id`
+  - 或 `jeecg.airag.prompt-chat.app-id` 对应应用绑定的文本模型。
+- 两项均未配置或模型不可用时，审核按失败关闭处理：输入不进入主模型，输出不直接返回用户。
+- 审核日志不记录完整原文，只记录阶段、类别、分数、动作、服务、时间、内容长度和 SHA-256 摘要前缀。

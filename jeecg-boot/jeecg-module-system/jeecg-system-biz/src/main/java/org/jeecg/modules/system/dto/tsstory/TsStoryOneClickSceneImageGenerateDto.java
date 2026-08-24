@@ -22,6 +22,12 @@ public class TsStoryOneClickSceneImageGenerateDto {
     private String aspectRatio;
     /** 参考图片地址，可选。 */
     private String referenceImageUrl;
+    /** 时间选项及其英文视觉描述。 */
+    private TsStorySceneOptionDto time;
+    /** 天气选项及其英文视觉描述。 */
+    private TsStorySceneOptionDto weather;
+    /** 气氛选项及其英文视觉描述。 */
+    private TsStorySceneOptionDto mood;
 
     /**
      * 清理输入并补充生图默认值。
@@ -34,6 +40,10 @@ public class TsStoryOneClickSceneImageGenerateDto {
         this.styleName = defaultIfBlank(this.styleName, "写实影视级场景概念图");
         this.aspectRatio = defaultIfBlank(this.aspectRatio, "9:16");
         this.referenceImageUrl = trimToNull(this.referenceImageUrl);
+        this.time = TsStorySceneOptionDto.normalize(this.time, TsStorySceneOptionDto.TIME_KEYS);
+        this.weather = TsStorySceneOptionDto.normalize(
+                this.weather, TsStorySceneOptionDto.WEATHER_KEYS);
+        this.mood = TsStorySceneOptionDto.normalize(this.mood, TsStorySceneOptionDto.MOOD_KEYS);
     }
 
     /**
@@ -41,7 +51,17 @@ public class TsStoryOneClickSceneImageGenerateDto {
      */
     public boolean hasSceneContext() {
         return StringUtils.hasText(this.storySetting)
-                || StringUtils.hasText(this.siteSetting);
+                || StringUtils.hasText(this.siteSetting)
+                || hasDescription(this.time)
+                || hasDescription(this.weather)
+                || hasDescription(this.mood);
+    }
+
+    /**
+     * 判断场景选项是否提供了视觉描述。
+     */
+    private static boolean hasDescription(TsStorySceneOptionDto option) {
+        return option != null && StringUtils.hasText(option.getDescription());
     }
 
     private static String defaultIfBlank(String value, String defaultValue) {

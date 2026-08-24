@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsPointsQueryMapper">
+
+    <insert id="insertAccountIgnore">
+        INSERT IGNORE INTO user_points_account(
+            user_id, balance, total_income, total_expense, version, created_at, updated_at
+        ) VALUES (
+            #{userId}, 0, 0, 0, 0, NOW(), NOW()
+        )
+    </insert>
+
+    <select id="selectAccount" resultType="org.jeecg.modules.system.entity.TsUserPointsAccount">
+        SELECT id, user_id, balance, total_income, total_expense, version, created_at, updated_at
+        FROM user_points_account
+        WHERE user_id = #{userId}
+        LIMIT 1
+    </select>
+
+    <select id="selectAccountForUpdate"
+            resultType="org.jeecg.modules.system.entity.TsUserPointsAccount">
+        SELECT id, user_id, balance, total_income, total_expense, version, created_at, updated_at
+        FROM user_points_account
+        WHERE user_id = #{userId}
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <update id="increaseBalance">
+        UPDATE user_points_account
+        SET balance = balance + #{amount},
+            total_income = total_income + #{amount},
+            version = version + 1,
+            updated_at = NOW()
+        WHERE id = #{id}
+          AND #{amount} &gt; 0
+    </update>
+
+    <update id="deductBalance">
+        UPDATE user_points_account
+        SET balance = balance - #{amount},
+            total_expense = total_expense + #{amount},
+            version = version + 1,
+            updated_at = NOW()
+        WHERE id = #{id}
+          AND #{amount} &gt; 0
+          AND balance &gt;= #{amount}
+    </update>
+
+    <select id="selectByIdempotencyKey"
+            resultType="org.jeecg.modules.system.entity.TsPointsTransaction">
+        SELECT id, transaction_no, user_id, direction, biz_type, biz_id, amount,
+               before_balance, after_balance, status, description, idempotency_key,
+               original_transaction_no, operator_id, created_at
+        FROM points_transaction
+        WHERE user_id = #{userId}
+          AND idempotency_key = #{idempotencyKey}
+        LIMIT 1
+    </select>
+
+    <select id="selectTransactionForUpdate"
+            resultType="org.jeecg.modules.system.entity.TsPointsTransaction">
+        SELECT id, transaction_no, user_id, direction, biz_type, biz_id, amount,
+               before_balance, after_balance, status, description, idempotency_key,
+               original_transaction_no, operator_id, created_at
+        FROM points_transaction
+        WHERE user_id = #{userId}
+          AND transaction_no = #{transactionNo}
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <select id="sumSuccessfulRefunds" resultType="java.lang.Long">
+        SELECT COALESCE(SUM(amount), 0)
+        FROM points_transaction
+        WHERE original_transaction_no = #{originalTransactionNo}
+          AND biz_type = 'REFUND'
+          AND status = 'SUCCESS'
+    </select>
+
+    <sql id="transactionTitle">
+        CASE pt.biz_type
+            WHEN 'RECHARGE' THEN '积分充值'
+            WHEN 'MEMBER_GIFT' THEN '会员赠送'
+            WHEN 'ACTIVITY_REWARD' THEN '活动奖励'
+            WHEN 'SIGN_IN' THEN '签到奖励'
+            WHEN 'COMPENSATION' THEN '系统补偿'
+            WHEN 'REFUND' THEN '积分返还'
+            WHEN 'AI_CHAT' THEN 'AI对话'
+            WHEN 'IMAGE_GENERATE' THEN '图片生成'
+            WHEN 'VOICE_GENERATE' THEN '语音生成'
+            WHEN 'STORY_GENERATE' THEN '故事生成'
+            WHEN 'ROLE_CREATE' THEN '角色创建'
+            WHEN 'THREE_D_GENERATE' THEN '3D生成'
+            WHEN 'ADVANCED_FEATURE' THEN '高级功能'
+            WHEN 'ADMIN_ADD' THEN '后台增加'
+            WHEN 'ADMIN_DEDUCT' THEN '后台扣减'
+            ELSE pt.biz_type
+        END
+    </sql>
+
+    <sql id="transactionColumns">
+        pt.id AS transaction_id, pt.transaction_no,
+        <include refid="transactionTitle"/> AS title,
+        pt.user_id, su.username, su.realname, pt.biz_type, pt.biz_id, pt.direction,
+        pt.amount, pt.before_balance, pt.after_balance, pt.status, pt.description,
+        pt.original_transaction_no, pt.operator_id, pt.created_at
+    </sql>
+
+    <select id="selectUserTransactionPage"
+            resultType="org.jeecg.modules.system.vo.tspoints.TsPointsTransactionVo">
+        SELECT <include refid="transactionColumns"/>
+        FROM points_transaction pt
+        LEFT JOIN sys_user su ON su.id = pt.user_id
+        WHERE pt.user_id = #{userId}
+        <if test="query.direction != null and query.direction != ''">
+            AND pt.direction = #{query.direction}
+        </if>
+        <if test="query.bizType != null and query.bizType != ''">
+            AND pt.biz_type = #{query.bizType}
+        </if>
+        <if test="query.startTime != null">
+            AND pt.created_at &gt;= #{query.startTime}
+        </if>
+        <if test="query.endTime != null">
+            AND pt.created_at &lt;= #{query.endTime}
+        </if>
+        ORDER BY pt.created_at DESC, pt.id DESC
+    </select>
+
+    <select id="selectUserTransactionDetail"
+            resultType="org.jeecg.modules.system.vo.tspoints.TsPointsTransactionVo">
+        SELECT <include refid="transactionColumns"/>
+        FROM points_transaction pt
+        LEFT JOIN sys_user su ON su.id = pt.user_id
+        WHERE pt.user_id = #{userId}
+          AND pt.id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="selectAdminAccountPage"
+            resultType="org.jeecg.modules.system.vo.tspoints.TsPointsAdminAccountVo">
+        SELECT pa.user_id, pa.balance, pa.total_income, pa.total_expense,
+               COALESCE(NULLIF(su.realname, ''), su.username) AS nickname,
+               su.username, su.email, su.avatar, pa.updated_at
+        FROM user_points_account pa
+        LEFT JOIN sys_user su ON su.id = pa.user_id
+        <where>
+            <if test="query.keyword != null and query.keyword != ''">
+                AND (
+                    pa.user_id LIKE CONCAT('%', #{query.keyword}, '%')
+                    OR su.username LIKE CONCAT('%', #{query.keyword}, '%')
+                    OR su.realname LIKE CONCAT('%', #{query.keyword}, '%')
+                    OR su.email LIKE CONCAT('%', #{query.keyword}, '%')
+                )
+            </if>
+            <if test="query.minBalance != null">
+                AND pa.balance &gt;= #{query.minBalance}
+            </if>
+            <if test="query.maxBalance != null">
+                AND pa.balance &lt;= #{query.maxBalance}
+            </if>
+        </where>
+        ORDER BY pa.updated_at DESC, pa.id DESC
+    </select>
+
+    <select id="selectAdminTransactionPage"
+            resultType="org.jeecg.modules.system.vo.tspoints.TsPointsTransactionVo">
+        SELECT <include refid="transactionColumns"/>
+        FROM points_transaction pt
+        LEFT JOIN sys_user su ON su.id = pt.user_id
+        <where>
+            <if test="query.keyword != null and query.keyword != ''">
+                AND (
+                    pt.transaction_no LIKE CONCAT('%', #{query.keyword}, '%')
+                    OR pt.user_id LIKE CONCAT('%', #{query.keyword}, '%')
+                    OR su.username LIKE CONCAT('%', #{query.keyword}, '%')
+                    OR su.realname LIKE CONCAT('%', #{query.keyword}, '%')
+                )
+            </if>
+            <if test="query.direction != null and query.direction != ''">
+                AND pt.direction = #{query.direction}
+            </if>
+            <if test="query.bizType != null and query.bizType != ''">
+                AND pt.biz_type = #{query.bizType}
+            </if>
+            <if test="query.status != null and query.status != ''">
+                AND pt.status = #{query.status}
+            </if>
+            <if test="query.startTime != null">
+                AND pt.created_at &gt;= #{query.startTime}
+            </if>
+            <if test="query.endTime != null">
+                AND pt.created_at &lt;= #{query.endTime}
+            </if>
+        </where>
+        ORDER BY pt.created_at DESC, pt.id DESC
+    </select>
+</mapper>

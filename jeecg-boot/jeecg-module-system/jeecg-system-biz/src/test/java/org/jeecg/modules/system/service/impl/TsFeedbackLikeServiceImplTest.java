@@ -39,7 +39,9 @@ class TsFeedbackLikeServiceImplTest {
 
     @Test
     void shouldNotIncrementCounterWhenFeedbackLikeAlreadyExists() {
-        TsFeedback feedback = new TsFeedback().setId(10L);
+        TsFeedback feedback = new TsFeedback()
+                .setId(10L)
+                .setAuditStatus(TsFeedbackConstants.AUDIT_APPROVED);
         Mockito.when(this.feedbackMapper.selectById(10L)).thenReturn(feedback);
         Mockito.when(this.likeMapper.insertIgnore(
                 "user-1",
@@ -58,7 +60,9 @@ class TsFeedbackLikeServiceImplTest {
 
     @Test
     void shouldIncrementCounterOnlyForFirstFeedbackLike() {
-        TsFeedback feedback = new TsFeedback().setId(10L);
+        TsFeedback feedback = new TsFeedback()
+                .setId(10L)
+                .setAuditStatus(TsFeedbackConstants.AUDIT_APPROVED);
         Mockito.when(this.feedbackMapper.selectById(10L)).thenReturn(feedback);
         Mockito.when(this.likeMapper.insertIgnore(
                 "user-1",

@@ -6,11 +6,13 @@ import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickOutlineGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneImageGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSettingGenerateDto;
+import org.jeecg.modules.system.dto.tsstory.TsStorySceneImagePromptOptimizeDto;
 import org.jeecg.modules.system.vo.tsstory.TsStoryFullGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneImageGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSettingGenerateVo;
+import org.jeecg.modules.system.vo.tsstory.TsStorySceneImagePromptOptimizeVo;
 
 public interface ITsStoryGenerateService {
     TsStoryOneClickSettingGenerateVo generateStorySetting(LoginUser user, TsStoryOneClickSettingGenerateDto request);
@@ -18,6 +20,8 @@ public interface ITsStoryGenerateService {
     TsStoryOneClickSceneGenerateVo generateStoryScene(LoginUser user, TsStoryOneClickSceneGenerateDto request);
 
     TsStoryOneClickSceneImageGenerateVo generateStorySceneImage(LoginUser user, TsStoryOneClickSceneImageGenerateDto request);
+
+    TsStorySceneImagePromptOptimizeVo optimizeStorySceneImagePrompt(LoginUser user, TsStorySceneImagePromptOptimizeDto request);
 
     TsStoryOneClickOutlineGenerateVo generateStoryOutline(LoginUser user, TsStoryOneClickOutlineGenerateDto request);
 

@@ -48,6 +48,16 @@ public class TsFeedbackCommentVo {
     /** 是否官方回复。 */
     private Boolean official;
 
+    /** 审核状态：pending、approved、rejected。 */
+    private String auditStatus;
+
+    /** 审核驳回原因。 */
+    private String auditReason;
+
+    /** 审核时间。 */
+    @JsonFormat(timezone = "GMT+8", pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date auditedAt;
+
     /** 当前一级评论的二级回复总数。 */
     private Integer replyCount;
 

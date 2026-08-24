@@ -41,9 +41,11 @@ public interface TsFeedbackMapper extends BaseMapper<TsFeedback> {
      * 查询反馈追加内容。
      *
      * @param feedbackId 反馈 ID
+     * @param currentUserId 当前登录用户 ID
      * @return 追加内容列表
      */
-    List<TsFeedbackAppendVo> selectFeedbackAppends(@Param("feedbackId") Long feedbackId);
+    List<TsFeedbackAppendVo> selectFeedbackAppends(@Param("feedbackId") Long feedbackId,
+                                                   @Param("currentUserId") String currentUserId);
 
     /**
      * 查询反馈附件。
@@ -68,6 +70,14 @@ public interface TsFeedbackMapper extends BaseMapper<TsFeedback> {
      * @return 受影响行数
      */
     int incrementCommentCount(@Param("feedbackId") Long feedbackId);
+
+    /**
+     * 原子减少反馈评论总数，最低保持为 0。
+     *
+     * @param feedbackId 反馈 ID
+     * @return 受影响行数
+     */
+    int decrementCommentCount(@Param("feedbackId") Long feedbackId);
 
     /**
      * 查询反馈最新点赞数。

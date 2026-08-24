@@ -1,5 +1,6 @@
 package org.jeecg.modules.system.controller;
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -8,12 +9,17 @@ import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.modules.system.dto.tsfeedback.TsFeedbackAuditQueryDto;
+import org.jeecg.modules.system.dto.tsfeedback.TsFeedbackAuditUpdateDto;
 import org.jeecg.modules.system.dto.tsfeedback.TsFeedbackOfficialReplyDto;
 import org.jeecg.modules.system.dto.tsfeedback.TsFeedbackStatusUpdateDto;
+import org.jeecg.modules.system.service.ITsFeedbackAuditService;
 import org.jeecg.modules.system.service.ITsFeedbackCommentService;
 import org.jeecg.modules.system.service.ITsFeedbackService;
+import org.jeecg.modules.system.vo.tsfeedback.TsFeedbackAuditItemVo;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -35,6 +41,36 @@ public class TsFeedbackAdminController {
 
     @Autowired
     private ITsFeedbackCommentService tsFeedbackCommentService;
+
+    @Autowired
+    private ITsFeedbackAuditService tsFeedbackAuditService;
+
+    /**
+     * 分页查询反馈内容审核队列。
+     *
+     * @param request 查询参数
+     * @return 审核项分页
+     */
+    @Operation(summary = "管理端反馈内容审核分页")
+    @RequiresPermissions("feedback:admin:audit")
+    @GetMapping("/ts-admin-feedback/audit")
+    public Result<Page<TsFeedbackAuditItemVo>> pageAudits(
+            @Valid TsFeedbackAuditQueryDto request) {
+        return tsFeedbackAuditService.pageAudits(request);
+    }
+
+    /**
+     * 审核反馈、评论/回复或追加内容。
+     *
+     * @param request 审核参数
+     * @return 审核结果
+     */
+    @Operation(summary = "管理端审核反馈内容")
+    @RequiresPermissions("feedback:admin:audit")
+    @PutMapping("/ts-admin-feedback/audit")
+    public Result<String> auditContent(@Valid @RequestBody TsFeedbackAuditUpdateDto request) {
+        return tsFeedbackAuditService.auditContent(currentUser(), request);
+    }
 
     /**
      * 修改反馈处理状态。

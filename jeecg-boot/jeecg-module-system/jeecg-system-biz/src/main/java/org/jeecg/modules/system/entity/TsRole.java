@@ -88,6 +88,18 @@ public class TsRole implements Serializable {
 
     private Integer status;
 
+    @TableField("content_version")
+    private Integer contentVersion;
+
+    @TableField("review_status")
+    private String reviewStatus;
+
+    @TableField("current_review_id")
+    private Long currentReviewId;
+
+    @TableField("desired_public")
+    private Integer desiredPublic;
+
     @TableField("created_at")
     @JsonFormat(timezone = "GMT+8", pattern = "yyyy-MM-dd HH:mm:ss")
     @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")

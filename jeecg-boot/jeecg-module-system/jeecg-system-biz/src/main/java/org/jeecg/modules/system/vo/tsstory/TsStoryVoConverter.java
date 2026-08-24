@@ -47,6 +47,10 @@ public final class TsStoryVoConverter {
         vo.setSceneId(story.getSceneId());
         vo.setSceneNameSnapshot(story.getSceneNameSnapshot());
         vo.setStatus(story.getStatus());
+        vo.setContentVersion(story.getContentVersion());
+        vo.setReviewStatus(story.getReviewStatus());
+        vo.setCurrentReviewId(story.getCurrentReviewId());
+        vo.setDesiredPublic(story.getDesiredPublic());
         vo.setIsPublic(story.getIsPublic());
         vo.setIsAiStorySetting(story.getIsAiStorySetting());
         vo.setIsAiCharacter(story.getIsAiCharacter());

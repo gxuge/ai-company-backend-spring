@@ -22,6 +22,10 @@ public class TsStoryVo {
     private Long sceneId;
     private String sceneNameSnapshot;
     private Integer status;
+    private Integer contentVersion;
+    private String reviewStatus;
+    private Long currentReviewId;
+    private Integer desiredPublic;
     private Integer isPublic;
     private Integer isAiStorySetting;
     private Integer isAiCharacter;

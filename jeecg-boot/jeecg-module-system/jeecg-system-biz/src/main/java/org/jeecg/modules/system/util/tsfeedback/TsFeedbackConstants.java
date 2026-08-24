@@ -12,6 +12,10 @@ public final class TsFeedbackConstants {
     public static final String SORT_HOT = "hot";
     public static final String TARGET_FEEDBACK = "feedback";
     public static final String TARGET_COMMENT = "comment";
+    public static final String TARGET_APPEND = "append";
+    public static final String AUDIT_PENDING = "pending";
+    public static final String AUDIT_APPROVED = "approved";
+    public static final String AUDIT_REJECTED = "rejected";
     public static final int DEFAULT_REPLY_PREVIEW_SIZE = 2;
 
     private TsFeedbackConstants() {

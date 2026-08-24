@@ -5,6 +5,23 @@ spring:
     import: optional:classpath:config/application-liteflow.yml
   mvc:
     publish-request-handled-events: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      compression-type: lz4
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+    consumer:
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      ack-mode: record
   profiles:
     active: '@profile.name@'
 
@@ -25,3 +42,18 @@ otel:
     exporter: ${OTEL_METRICS_EXPORTER:none}
   logs:
     exporter: ${OTEL_LOGS_EXPORTER:none}
+
+jeecg:
+  behavior:
+    max-batch-size: ${TS_BEHAVIOR_MAX_BATCH_SIZE:100}
+    max-properties-bytes: ${TS_BEHAVIOR_MAX_PROPERTIES_BYTES:8192}
+    feature-ttl-days: ${TS_BEHAVIOR_FEATURE_TTL_DAYS:30}
+    dedup-ttl-days: ${TS_BEHAVIOR_DEDUP_TTL_DAYS:7}
+    kafka:
+      enabled: ${TS_BEHAVIOR_KAFKA_ENABLED:false}
+      topic: ${TS_BEHAVIOR_KAFKA_TOPIC:ts.user-behavior.v1}
+      dlq-topic: ${TS_BEHAVIOR_KAFKA_DLQ_TOPIC:ts.user-behavior.dlq.v1}
+      detail-group: ${TS_BEHAVIOR_KAFKA_DETAIL_GROUP:ts-behavior-detail-v1}
+      feature-group: ${TS_BEHAVIOR_KAFKA_FEATURE_GROUP:ts-behavior-feature-v1}
+      partitions: ${TS_BEHAVIOR_KAFKA_PARTITIONS:6}
+      replicas: ${TS_BEHAVIOR_KAFKA_REPLICAS:1}

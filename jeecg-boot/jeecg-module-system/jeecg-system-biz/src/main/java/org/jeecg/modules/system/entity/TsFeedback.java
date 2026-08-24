@@ -45,6 +45,24 @@ public class TsFeedback implements Serializable {
     /** 状态：received、processing、completed。 */
     private String status;
 
+    /** 审核状态：pending、approved、rejected。 */
+    @TableField("audit_status")
+    private String auditStatus;
+
+    /** 审核驳回原因。 */
+    @TableField("audit_reason")
+    private String auditReason;
+
+    /** 审核人 ID。 */
+    @TableField("audited_by")
+    private String auditedBy;
+
+    /** 审核时间。 */
+    @TableField("audited_at")
+    @JsonFormat(timezone = "GMT+8", pattern = "yyyy-MM-dd HH:mm:ss")
+    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date auditedAt;
+
     /** 点赞数量。 */
     @TableField("like_count")
     private Integer likeCount;

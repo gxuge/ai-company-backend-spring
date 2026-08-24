@@ -25,6 +25,9 @@
                   AND fl.target_id = c.id
             ) THEN 1 ELSE 0 END AS liked,
             c.is_official AS official,
+            c.audit_status AS auditStatus,
+            c.audit_reason AS auditReason,
+            c.audited_at AS auditedAt,
             COALESCE(reply_stat.replyCount, 0) AS replyCount,
             c.created_at AS createdAt
         FROM ts_feedback_comment c
@@ -34,11 +37,16 @@
             FROM ts_feedback_comment
             WHERE parent_id IS NOT NULL
               AND is_deleted = 0
+              AND audit_status = 'approved'
             GROUP BY parent_id
         ) reply_stat ON reply_stat.parent_id = c.id
         WHERE c.feedback_id = #{query.feedbackId}
           AND c.parent_id IS NULL
           AND c.is_deleted = 0
+          AND (
+              c.audit_status = 'approved'
+              OR c.user_id = #{query.currentUserId}
+          )
         <choose>
             <when test="query.sort == 'hot'">
                 ORDER BY c.like_count DESC, c.created_at DESC, c.id DESC
@@ -65,6 +73,9 @@
             reply_data.likeCount,
             reply_data.liked,
             reply_data.official,
+            reply_data.auditStatus,
+            reply_data.auditReason,
+            reply_data.auditedAt,
             reply_data.createdAt
         FROM (
             SELECT
@@ -86,6 +97,9 @@
                       AND fl.target_id = c.id
                 ) THEN 1 ELSE 0 END AS liked,
                 c.is_official AS official,
+                c.audit_status AS auditStatus,
+                c.audit_reason AS auditReason,
+                c.audited_at AS auditedAt,
                 c.created_at AS createdAt,
                 ROW_NUMBER() OVER (
                     PARTITION BY c.parent_id
@@ -99,6 +113,10 @@
                 #{parentId}
             </foreach>
               AND c.is_deleted = 0
+              AND (
+                  c.audit_status = 'approved'
+                  OR c.user_id = #{currentUserId}
+              )
         ) reply_data
         WHERE reply_data.replyRowNumber &lt;= #{previewSize}
         ORDER BY reply_data.parentId ASC, reply_data.createdAt ASC, reply_data.id ASC
@@ -126,6 +144,9 @@
                   AND fl.target_id = c.id
             ) THEN 1 ELSE 0 END AS liked,
             c.is_official AS official,
+            c.audit_status AS auditStatus,
+            c.audit_reason AS auditReason,
+            c.audited_at AS auditedAt,
             0 AS replyCount,
             c.created_at AS createdAt
         FROM ts_feedback_comment c
@@ -134,6 +155,10 @@
         WHERE c.feedback_id = #{query.feedbackId}
           AND c.parent_id = #{query.parentId}
           AND c.is_deleted = 0
+          AND (
+              c.audit_status = 'approved'
+              OR c.user_id = #{query.currentUserId}
+          )
         <choose>
             <when test="query.sort == 'hot'">
                 ORDER BY c.like_count DESC, c.created_at DESC, c.id DESC
@@ -150,6 +175,7 @@
         SET like_count = like_count + 1
         WHERE id = #{commentId}
           AND is_deleted = 0
+          AND audit_status = 'approved'
     </update>
 
     <!-- 查询评论最新点赞数 -->
@@ -158,6 +184,7 @@
         FROM ts_feedback_comment
         WHERE id = #{commentId}
           AND is_deleted = 0
+          AND audit_status = 'approved'
         LIMIT 1
     </select>
 

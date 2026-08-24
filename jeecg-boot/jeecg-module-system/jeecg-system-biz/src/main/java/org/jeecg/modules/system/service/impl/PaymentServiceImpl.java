@@ -6,8 +6,11 @@ import org.jeecg.modules.system.config.TsPaymentConfigBean;
 import org.jeecg.modules.system.dto.tsmember.TsMemberOrderCreateDto;
 import org.jeecg.modules.system.dto.tspayment.TsPaymentCreateDto;
 import org.jeecg.modules.system.dto.tspayment.TsPaymentOrderDetailDto;
+import org.jeecg.modules.system.dto.tsreward.TsMemberActivatedRewardPayloadDto;
+import org.jeecg.modules.system.dto.tsreward.TsRewardEventCommand;
 import org.jeecg.modules.system.entity.TsMemberOrder;
 import org.jeecg.modules.system.entity.TsPaymentTransaction;
+import org.jeecg.modules.system.enums.tsreward.TsRewardEventType;
 import org.jeecg.modules.system.mapper.TsMemberOrderMapper;
 import org.jeecg.modules.system.mapper.TsMemberQueryMapper;
 import org.jeecg.modules.system.mapper.TsPaymentQueryMapper;
@@ -18,7 +21,9 @@ import org.jeecg.modules.system.payment.model.PaymentCallbackResult;
 import org.jeecg.modules.system.payment.model.PaymentCreateCommand;
 import org.jeecg.modules.system.payment.model.PaymentProviderResult;
 import org.jeecg.modules.system.payment.model.PaymentQueryCommand;
+import org.jeecg.modules.system.reward.TsRewardEventCoordinator;
 import org.jeecg.modules.system.service.ITsMemberService;
+import org.jeecg.modules.system.service.ITsPointsRechargeService;
 import org.jeecg.modules.system.service.PaymentService;
 import org.jeecg.modules.system.vo.tsmember.TsMemberOrderVo;
 import org.jeecg.modules.system.vo.tspayment.TsPaymentCreateVo;
@@ -45,6 +50,8 @@ public class PaymentServiceImpl implements PaymentService {
     private static final String PAYMENT_SUCCEEDED = "SUCCEEDED";
 
     private final ITsMemberService memberService;
+    private final TsRewardEventCoordinator rewardEventCoordinator;
+    private final ITsPointsRechargeService pointsRechargeService;
     private final TsMemberQueryMapper memberQueryMapper;
     private final TsMemberOrderMapper memberOrderMapper;
     private final TsPaymentQueryMapper paymentQueryMapper;
@@ -58,6 +65,8 @@ public class PaymentServiceImpl implements PaymentService {
      */
     public PaymentServiceImpl(
             ITsMemberService memberService,
+            TsRewardEventCoordinator rewardEventCoordinator,
+            ITsPointsRechargeService pointsRechargeService,
             TsMemberQueryMapper memberQueryMapper,
             TsMemberOrderMapper memberOrderMapper,
             TsPaymentQueryMapper paymentQueryMapper,
@@ -66,6 +75,8 @@ public class PaymentServiceImpl implements PaymentService {
             TransactionTemplate transactionTemplate,
             List<PaymentProvider> providers) {
         this.memberService = memberService;
+        this.rewardEventCoordinator = rewardEventCoordinator;
+        this.pointsRechargeService = pointsRechargeService;
         this.memberQueryMapper = memberQueryMapper;
         this.memberOrderMapper = memberOrderMapper;
         this.paymentQueryMapper = paymentQueryMapper;
@@ -197,6 +208,9 @@ public class PaymentServiceImpl implements PaymentService {
                 paymentQueryMapper.selectByProviderPaymentIdForUpdate(
                         provider, callback.getPaymentIntentId());
         if (transaction == null) {
+            if (pointsRechargeService.settleCallback(provider, callback)) {
+                return;
+            }
             throw new JeecgBootBizTipException("支付流水不存在");
         }
         TsMemberOrder order = memberQueryMapper.selectOrderByIdForUpdate(transaction.getOrderId());
@@ -221,6 +235,14 @@ public class PaymentServiceImpl implements PaymentService {
                         provider,
                         callback.getTransactionId(),
                         new Date());
+                rewardEventCoordinator.publishAfterCommit(
+                        new TsRewardEventCommand()
+                                .setEventId("MEMBER_ACTIVATED:" + order.getOrderNo())
+                                .setEventType(TsRewardEventType.MEMBER_ACTIVATED.name())
+                                .setUserId(order.getUserId())
+                                .setBizId(order.getOrderNo())
+                                .setPayload(new TsMemberActivatedRewardPayloadDto()
+                                        .setOrderId(order.getId())));
             }
             return;
         }

@@ -43,6 +43,14 @@ public class TsStory implements Serializable {
     @TableField("scene_name_snapshot")
     private String sceneNameSnapshot;
     private Integer status;
+    @TableField("content_version")
+    private Integer contentVersion;
+    @TableField("review_status")
+    private String reviewStatus;
+    @TableField("current_review_id")
+    private Long currentReviewId;
+    @TableField("desired_public")
+    private Integer desiredPublic;
     @TableField("is_public")
     private Integer isPublic;
     @TableField("is_ai_story_setting")

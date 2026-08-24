@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsFeedbackAuditMapper">
+
+    <!-- 统一查询反馈、评论/回复和追加内容审核队列 -->
+    <select id="selectAuditPage"
+            resultType="org.jeecg.modules.system.vo.tsfeedback.TsFeedbackAuditItemVo">
+        SELECT
+            audit_item.targetType,
+            audit_item.targetId,
+            audit_item.feedbackId,
+            audit_item.userId,
+            COALESCE(NULLIF(author.realname, ''), author.username) AS userName,
+            audit_item.title,
+            audit_item.content,
+            audit_item.parentId,
+            audit_item.official,
+            audit_item.auditStatus,
+            audit_item.auditReason,
+            audit_item.auditedBy,
+            COALESCE(NULLIF(auditor.realname, ''), auditor.username) AS auditorName,
+            audit_item.auditedAt,
+            audit_item.createdAt
+        FROM (
+            SELECT
+                'feedback' AS targetType,
+                f.id AS targetId,
+                f.id AS feedbackId,
+                f.user_id AS userId,
+                f.title AS title,
+                f.content AS content,
+                NULL AS parentId,
+                0 AS official,
+                f.audit_status AS auditStatus,
+                f.audit_reason AS auditReason,
+                f.audited_by AS auditedBy,
+                f.audited_at AS auditedAt,
+                f.created_at AS createdAt
+            FROM ts_feedback f
+            WHERE f.is_deleted = 0
+
+            UNION ALL
+
+            SELECT
+                'comment' AS targetType,
+                c.id AS targetId,
+                c.feedback_id AS feedbackId,
+                c.user_id AS userId,
+                NULL AS title,
+                c.content AS content,
+                c.parent_id AS parentId,
+                c.is_official AS official,
+                c.audit_status AS auditStatus,
+                c.audit_reason AS auditReason,
+                c.audited_by AS auditedBy,
+                c.audited_at AS auditedAt,
+                c.created_at AS createdAt
+            FROM ts_feedback_comment c
+            WHERE c.is_deleted = 0
+
+            UNION ALL
+
+            SELECT
+                'append' AS targetType,
+                a.id AS targetId,
+                a.feedback_id AS feedbackId,
+                a.user_id AS userId,
+                NULL AS title,
+                a.content AS content,
+                NULL AS parentId,
+                0 AS official,
+                a.audit_status AS auditStatus,
+                a.audit_reason AS auditReason,
+                a.audited_by AS auditedBy,
+                a.audited_at AS auditedAt,
+                a.created_at AS createdAt
+            FROM ts_feedback_append a
+            WHERE a.is_deleted = 0
+        ) audit_item
+        LEFT JOIN sys_user author ON author.id = audit_item.userId
+        LEFT JOIN sys_user auditor ON auditor.id = audit_item.auditedBy
+        WHERE 1 = 1
+        <if test="query.targetType != null and query.targetType != ''">
+            AND audit_item.targetType = #{query.targetType}
+        </if>
+        <if test="query.auditStatus != null and query.auditStatus != ''">
+            AND audit_item.auditStatus = #{query.auditStatus}
+        </if>
+        <if test="query.keyword != null and query.keyword != ''">
+            AND (
+                audit_item.title LIKE CONCAT('%', #{query.keyword}, '%')
+                OR audit_item.content LIKE CONCAT('%', #{query.keyword}, '%')
+                OR author.username LIKE CONCAT('%', #{query.keyword}, '%')
+                OR author.realname LIKE CONCAT('%', #{query.keyword}, '%')
+            )
+        </if>
+        ORDER BY audit_item.createdAt DESC, audit_item.targetId DESC
+    </select>
+
+    <!-- 事务内锁定反馈审核目标 -->
+    <select id="selectFeedbackForUpdate"
+            resultType="org.jeecg.modules.system.entity.TsFeedback">
+        SELECT *
+        FROM ts_feedback
+        WHERE id = #{targetId}
+          AND is_deleted = 0
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <!-- 事务内锁定评论审核目标 -->
+    <select id="selectCommentForUpdate"
+            resultType="org.jeecg.modules.system.entity.TsFeedbackComment">
+        SELECT *
+        FROM ts_feedback_comment
+        WHERE id = #{targetId}
+          AND is_deleted = 0
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <!-- 事务内锁定追加内容审核目标 -->
+    <select id="selectAppendForUpdate"
+            resultType="org.jeecg.modules.system.entity.TsFeedbackAppend">
+        SELECT *
+        FROM ts_feedback_append
+        WHERE id = #{targetId}
+          AND is_deleted = 0
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+</mapper>

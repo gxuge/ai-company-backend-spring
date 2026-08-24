@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsPointsRechargeQueryMapper">
+
+    <select id="selectEnabledProduct"
+            resultType="org.jeecg.modules.system.entity.TsPointsRechargeProduct">
+        SELECT id, name, points, gift_points, original_amount, actual_amount,
+               currency, status, sort, created_at, updated_at
+        FROM points_recharge_product
+        WHERE id = #{id}
+          AND status = 1
+        LIMIT 1
+    </select>
+
+    <select id="selectEnabledProducts"
+            resultType="org.jeecg.modules.system.entity.TsPointsRechargeProduct">
+        SELECT id, name, points, gift_points, original_amount, actual_amount,
+               currency, status, sort, created_at, updated_at
+        FROM points_recharge_product
+        WHERE status = 1
+        ORDER BY sort ASC, id ASC
+    </select>
+
+    <select id="selectOwnedOrder"
+            resultType="org.jeecg.modules.system.entity.TsPointsRechargeOrder">
+        SELECT id, order_no, user_id, product_id, points, gift_points,
+               original_amount, actual_amount, currency, payment_channel, status,
+               transaction_id, points_transaction_no, pay_time, callback_time,
+               created_at, updated_at
+        FROM points_recharge_order
+        WHERE user_id = #{userId}
+          AND order_no = #{orderNo}
+        LIMIT 1
+    </select>
+
+    <select id="selectOrderForUpdate"
+            resultType="org.jeecg.modules.system.entity.TsPointsRechargeOrder">
+        SELECT id, order_no, user_id, product_id, points, gift_points,
+               original_amount, actual_amount, currency, payment_channel, status,
+               transaction_id, points_transaction_no, pay_time, callback_time,
+               created_at, updated_at
+        FROM points_recharge_order
+        WHERE id = #{id}
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <select id="selectLatestPayment"
+            resultType="org.jeecg.modules.system.entity.TsPointsRechargePayment">
+        SELECT id, order_id, provider, transaction_id, payment_intent_id,
+               amount, currency, status, raw_response, created_at
+        FROM points_recharge_payment
+        WHERE order_id = #{orderId}
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectPaymentForUpdate"
+            resultType="org.jeecg.modules.system.entity.TsPointsRechargePayment">
+        SELECT id, order_id, provider, transaction_id, payment_intent_id,
+               amount, currency, status, raw_response, created_at
+        FROM points_recharge_payment
+        WHERE provider = #{provider}
+          AND payment_intent_id = #{paymentIntentId}
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <sql id="orderVoColumns">
+        pro.id, pro.order_no, pro.user_id, su.username, pro.product_id,
+        product.name AS product_name, pro.points, pro.gift_points,
+        pro.original_amount, pro.actual_amount, pro.currency,
+        pro.payment_channel, pro.status, prp.payment_intent_id,
+        pro.transaction_id, pro.points_transaction_no, pro.pay_time, pro.created_at
+    </sql>
+
+    <sql id="orderVoFrom">
+        FROM points_recharge_order pro
+        LEFT JOIN points_recharge_product product ON product.id = pro.product_id
+        LEFT JOIN sys_user su ON su.id = pro.user_id
+        LEFT JOIN points_recharge_payment prp ON prp.id = (
+            SELECT p2.id
+            FROM points_recharge_payment p2
+            WHERE p2.order_id = pro.id
+            ORDER BY p2.id DESC
+            LIMIT 1
+        )
+    </sql>
+
+    <select id="selectOwnedOrderVo"
+            resultType="org.jeecg.modules.system.vo.tspoints.TsPointsRechargeVo">
+        SELECT <include refid="orderVoColumns"/>
+        <include refid="orderVoFrom"/>
+        WHERE pro.user_id = #{userId}
+          AND pro.order_no = #{orderNo}
+        LIMIT 1
+    </select>
+
+    <select id="selectAdminOrderPage"
+            resultType="org.jeecg.modules.system.vo.tspoints.TsPointsRechargeVo">
+        SELECT <include refid="orderVoColumns"/>
+        <include refid="orderVoFrom"/>
+        <where>
+            <if test="query.keyword != null and query.keyword != ''">
+                AND (
+                    pro.order_no LIKE CONCAT('%', #{query.keyword}, '%')
+                    OR pro.user_id LIKE CONCAT('%', #{query.keyword}, '%')
+                    OR su.username LIKE CONCAT('%', #{query.keyword}, '%')
+                    OR su.realname LIKE CONCAT('%', #{query.keyword}, '%')
+                )
+            </if>
+            <if test="query.paymentChannel != null and query.paymentChannel != ''">
+                AND pro.payment_channel = #{query.paymentChannel}
+            </if>
+            <if test="query.status != null and query.status != ''">
+                AND pro.status = #{query.status}
+            </if>
+            <if test="query.startTime != null">
+                AND pro.created_at &gt;= #{query.startTime}
+            </if>
+            <if test="query.endTime != null">
+                AND pro.created_at &lt;= #{query.endTime}
+            </if>
+        </where>
+        ORDER BY pro.created_at DESC, pro.id DESC
+    </select>
+
+    <select id="selectGiftRule"
+            resultType="org.jeecg.modules.system.entity.TsMemberPointsGiftRule">
+        SELECT id, plan_id, product_id, gift_points, status, created_at, updated_at
+        FROM member_points_gift_rule
+        WHERE status = 1
+          AND plan_id = #{planId}
+          AND (product_id = #{productId} OR product_id = 0)
+        ORDER BY CASE WHEN product_id = #{productId} THEN 0 ELSE 1 END, id DESC
+        LIMIT 1
+    </select>
+</mapper>

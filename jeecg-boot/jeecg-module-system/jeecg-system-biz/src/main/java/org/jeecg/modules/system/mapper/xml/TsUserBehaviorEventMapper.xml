@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsUserBehaviorEventMapper">
+
+    <insert id="insertIgnore">
+        INSERT IGNORE INTO ts_user_behavior_event (
+            event_id, event_type, event_version, user_id, anonymous_id,
+            session_id, resource_type, resource_id, impression_id,
+            position_index, page_path, platform, duration_ms, properties_json,
+            occurred_at, received_at, created_at
+        ) VALUES (
+            #{eventId}, #{eventType}, #{eventVersion}, #{userId}, #{anonymousId},
+            #{sessionId}, #{resourceType}, #{resourceId}, #{impressionId},
+            #{positionIndex}, #{pagePath}, #{platform}, #{durationMs}, #{propertiesJson},
+            #{occurredAt}, #{receivedAt}, #{createdAt}
+        )
+    </insert>
+
+</mapper>

@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.modules.system.annotation.TsBehaviorTrack;
 import org.jeecg.modules.system.dto.tsuserfavorite.TsUserFavoriteActionDto;
 import org.jeecg.modules.system.dto.tsuserfavorite.TsUserFavoriteQueryDto;
 import org.jeecg.modules.system.entity.TsUserFavorite;
@@ -67,6 +68,10 @@ public class TsUserFavoriteServiceImpl extends ServiceImpl<TsUserFavoriteMapper,
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
+    @TsBehaviorTrack(
+            eventType = "favorite",
+            resourceTypeExpression = "#request.resourceType",
+            resourceIdExpression = "#request.resourceId")
     public Result<TsUserFavoriteStatusVo> addFavorite(LoginUser user, TsUserFavoriteActionDto request) {
         if (baseMapper.countAvailableResource(request.getResourceType(), request.getResourceId()) <= 0) {
             throw new JeecgBootException("资源不存在、已下架或不可收藏");

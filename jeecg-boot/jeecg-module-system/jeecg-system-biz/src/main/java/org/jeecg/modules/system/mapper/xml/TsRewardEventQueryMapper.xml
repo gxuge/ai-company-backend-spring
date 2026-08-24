@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsRewardEventQueryMapper">
+
+    <sql id="eventFilters">
+        <if test="query.keyword != null and query.keyword != ''">
+            AND (
+                re.event_id LIKE CONCAT('%', #{query.keyword}, '%')
+                OR re.biz_id LIKE CONCAT('%', #{query.keyword}, '%')
+                OR re.user_id LIKE CONCAT('%', #{query.keyword}, '%')
+                OR su.username LIKE CONCAT('%', #{query.keyword}, '%')
+                OR su.realname LIKE CONCAT('%', #{query.keyword}, '%')
+            )
+        </if>
+        <if test="query.eventType != null and query.eventType != ''">
+            AND re.event_type = #{query.eventType}
+        </if>
+        <if test="query.status != null and query.status != ''">
+            AND re.status = #{query.status}
+        </if>
+        <if test="query.startTime != null">
+            AND re.created_at &gt;= #{query.startTime}
+        </if>
+        <if test="query.endTime != null">
+            AND re.created_at &lt;= #{query.endTime}
+        </if>
+    </sql>
+
+    <sql id="eventColumns">
+        re.id, re.event_id, re.event_type, re.user_id,
+        su.username, su.realname, re.biz_id, re.status,
+        re.retry_count, re.max_retry_count,
+        JSON_UNQUOTE(JSON_EXTRACT(re.result_json, '$.rewardStatus')) AS reward_status,
+        CAST(JSON_UNQUOTE(JSON_EXTRACT(re.result_json, '$.rewardValue')) AS SIGNED) AS reward_value,
+        JSON_UNQUOTE(JSON_EXTRACT(re.result_json, '$.pointsTransactionNo')) AS points_transaction_no,
+        re.last_error_code, re.last_error_message,
+        re.processed_at, re.created_at, re.updated_at
+    </sql>
+
+    <select id="selectAdminPage"
+            resultType="org.jeecg.modules.system.vo.tsreward.TsRewardEventAdminItemVo">
+        SELECT <include refid="eventColumns"/>
+        FROM reward_event re
+        LEFT JOIN sys_user su ON su.id = re.user_id
+        <where>
+            <include refid="eventFilters"/>
+        </where>
+        ORDER BY re.created_at DESC, re.id DESC
+    </select>
+
+    <select id="selectAdminDetail"
+            resultType="org.jeecg.modules.system.vo.tsreward.TsRewardEventAdminDetailVo">
+        SELECT <include refid="eventColumns"/>,
+               re.payload_json, re.result_json
+        FROM reward_event re
+        LEFT JOIN sys_user su ON su.id = re.user_id
+        WHERE re.id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="selectAdminSummary"
+            resultType="org.jeecg.modules.system.vo.tsreward.TsRewardEventSummaryVo">
+        SELECT
+            COALESCE(SUM(CASE WHEN re.status = 'PENDING' THEN 1 ELSE 0 END), 0)
+                AS pending_count,
+            COALESCE(SUM(CASE WHEN re.status = 'PROCESSING' THEN 1 ELSE 0 END), 0)
+                AS processing_count,
+            COALESCE(SUM(CASE WHEN re.status = 'SUCCESS' THEN 1 ELSE 0 END), 0)
+                AS success_count,
+            COALESCE(SUM(CASE WHEN re.status = 'FAILED' THEN 1 ELSE 0 END), 0)
+                AS failed_count,
+            COALESCE(SUM(CASE WHEN re.created_at &gt;= CURRENT_DATE THEN 1 ELSE 0 END), 0)
+                AS today_count
+        FROM reward_event re
+        LEFT JOIN sys_user su ON su.id = re.user_id
+        <where>
+            <include refid="eventFilters"/>
+        </where>
+    </select>
+</mapper>

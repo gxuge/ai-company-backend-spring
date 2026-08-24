@@ -64,6 +64,7 @@ public class TsFeedbackServiceImpl extends ServiceImpl<TsFeedbackMapper, TsFeedb
                 .setTitle(request.getTitle().trim())
                 .setContent(request.getContent().trim())
                 .setStatus(TsFeedbackConstants.STATUS_RECEIVED)
+                .setAuditStatus(TsFeedbackConstants.AUDIT_PENDING)
                 .setLikeCount(0)
                 .setCommentCount(0)
                 .setIsDeleted(0)
@@ -71,7 +72,7 @@ public class TsFeedbackServiceImpl extends ServiceImpl<TsFeedbackMapper, TsFeedb
                 .setUpdatedAt(now);
         baseMapper.insert(feedback);
         saveAttachments(feedback.getId(), request.getAttachments(), now);
-        return Result.OK("反馈发布成功", feedback.getId());
+        return Result.OK("反馈已提交审核", feedback.getId());
     }
 
     /**
@@ -101,7 +102,7 @@ public class TsFeedbackServiceImpl extends ServiceImpl<TsFeedbackMapper, TsFeedb
         if (detail == null) {
             throw new JeecgBootException("反馈不存在或已删除");
         }
-        detail.setAppends(baseMapper.selectFeedbackAppends(feedbackId));
+        detail.setAppends(baseMapper.selectFeedbackAppends(feedbackId, user.getId()));
         detail.setAttachments(baseMapper.selectFeedbackAttachments(feedbackId));
         return Result.OK(detail);
     }
@@ -141,10 +142,11 @@ public class TsFeedbackServiceImpl extends ServiceImpl<TsFeedbackMapper, TsFeedb
                 .setFeedbackId(feedbackId)
                 .setUserId(user.getId())
                 .setContent(request.getContent().trim())
+                .setAuditStatus(TsFeedbackConstants.AUDIT_PENDING)
                 .setIsDeleted(0)
                 .setCreatedAt(new Date());
         tsFeedbackAppendMapper.insert(append);
-        return Result.OK("追加反馈成功", append.getId());
+        return Result.OK("追加反馈已提交审核", append.getId());
     }
 
     /**

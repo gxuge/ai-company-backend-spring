@@ -7,6 +7,7 @@ import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.aop.TsRoleOwnershipAspect;
 import org.jeecg.modules.aop.TsRoleOwnershipAspect.CheckTsRoleOwnership;
+import org.jeecg.modules.system.annotation.TsBehaviorTrack;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateImageByPromptDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateRoleDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateImagePromptByTemplateDto;
@@ -17,12 +18,14 @@ import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickSettingGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickVoiceGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleQueryDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleSaveDto;
+import org.jeecg.modules.system.constant.TsWorkReviewConstants;
 import org.jeecg.modules.system.entity.TsRole;
 import org.jeecg.modules.system.mapper.TsRoleMapper;
 import org.jeecg.modules.system.po.tsrole.TsRoleQueryPo;
 import org.jeecg.modules.system.po.tsrole.TsRoleSavePo;
 import org.jeecg.modules.system.service.ITsRoleGenerateService;
 import org.jeecg.modules.system.service.ITsRoleService;
+import org.jeecg.modules.system.service.ITsWorkReviewService;
 import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateImageByPromptVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateRoleVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateImagePromptByTemplateVo;
@@ -42,6 +45,8 @@ import java.util.Date;
 public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> implements ITsRoleService {
     @Resource
     private ITsRoleGenerateService tsRoleGenerateService;
+    @Resource
+    private ITsWorkReviewService tsWorkReviewService;
 
     /**
      * 分页查询当前用户角色列表。
@@ -77,10 +82,14 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
         TsRole role = new TsRole();
         savePo.applyTo(role);
         role.setUserId(userId);
+        role.setContentVersion(0);
+        role.setReviewStatus(TsWorkReviewConstants.PENDING_AI);
+        role.setDesiredPublic(request.getIsPublic());
         role.setCreatedAt(new Date());
         role.setUpdatedAt(new Date());
         this.save(role);
-        return Result.OK("新增成功", TsRoleVoConverter.fromEntity(role));
+        tsWorkReviewService.submitRole(role.getId(), request.getIsPublic());
+        return Result.OK("新增成功", TsRoleVoConverter.fromEntity(this.getById(role.getId())));
     }
 
     /**
@@ -91,11 +100,15 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
     @CheckTsRoleOwnership(message = "角色不存在或无权访问")
     public Result<TsRoleVo> editRole(LoginUser user, Long id, TsRoleSaveDto request) {
         TsRole role = TsRoleOwnershipAspect.ROLE_CONTEXT.get();
+        Integer requestedPublic = request.getIsPublic() != null
+                ? request.getIsPublic()
+                : (role.getDesiredPublic() != null ? role.getDesiredPublic() : role.getIsPublic());
         TsRoleSavePo savePo = TsRoleSavePo.fromRequest(request);
         savePo.applyTo(role);
         role.setUpdatedAt(new Date());
         this.updateById(role);
-        return Result.OK("修改成功", TsRoleVoConverter.fromEntity(role));
+        tsWorkReviewService.submitRole(role.getId(), requestedPublic);
+        return Result.OK("修改成功", TsRoleVoConverter.fromEntity(this.getById(role.getId())));
     }
 
     /**
@@ -116,11 +129,13 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
      * 一键补全角色设定。
      */
     @Override
+    @TsBehaviorTrack(eventType = "generate", resourceType = "role")
     public Result<TsRoleOneClickSettingGenerateVo> generateRoleSetting(LoginUser user, TsRoleOneClickSettingGenerateDto request) {
         return Result.OK(tsRoleGenerateService.generateRoleSetting(user, request));
     }
 
     @Override
+    @TsBehaviorTrack(eventType = "generate", resourceType = "role")
     public Result<TsRoleOneClickSettingGenerateVo> generateRoleSettingPreset(LoginUser user, TsRoleOneClickSettingGenerateDto request) {
         return Result.OK(tsRoleGenerateService.generateRoleSettingPreset(user, request));
     }
@@ -130,6 +145,7 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
+    @TsBehaviorTrack(eventType = "generate", resourceType = "role")
     public Result<TsRoleOneClickImageGenerateVo> generateRoleImage(LoginUser user, TsRoleOneClickImageGenerateDto request) {
         return Result.OK(tsRoleGenerateService.generateRoleImage(user, request));
     }
@@ -139,6 +155,7 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
+    @TsBehaviorTrack(eventType = "generate", resourceType = "role")
     public Result<TsRoleOneClickVoiceGenerateVo> generateRoleVoice(LoginUser user, TsRoleOneClickVoiceGenerateDto request) {
         return Result.OK(tsRoleGenerateService.generateRoleVoice(user, request));
     }
@@ -148,12 +165,14 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
+    @TsBehaviorTrack(eventType = "generate", resourceType = "role")
     public Result<TsRoleGenerateRoleVo> generateRole(LoginUser user, TsRoleGenerateRoleDto request) {
         return Result.OK(tsRoleGenerateService.generateRole(user, request));
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    @TsBehaviorTrack(eventType = "generate", resourceType = "role")
     public Result<TsRoleGenerateImageByPromptVo> generateImageByPrompt(LoginUser user, TsRoleGenerateImageByPromptDto request) {
         return Result.OK(tsRoleGenerateService.generateImageByPrompt(user, request));
     }

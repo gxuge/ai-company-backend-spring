@@ -46,6 +46,10 @@ public final class TsRoleVoConverter {
         vo.setBasicAiGenerated(role.getBasicAiGenerated());
         vo.setAdvancedAiGenerated(role.getAdvancedAiGenerated());
         vo.setStatus(role.getStatus());
+        vo.setContentVersion(role.getContentVersion());
+        vo.setReviewStatus(role.getReviewStatus());
+        vo.setCurrentReviewId(role.getCurrentReviewId());
+        vo.setDesiredPublic(role.getDesiredPublic());
         vo.setCreatedAt(role.getCreatedAt());
         vo.setUpdatedAt(role.getUpdatedAt());
         vo.setImageResources(TsImageResourceResolver.buildRoleImageResources(

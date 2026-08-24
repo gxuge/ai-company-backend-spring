@@ -93,6 +93,21 @@ class LlmNodeConversationHistoryTest {
     }
 
     @Test
+    void shouldPlaceSafetySkillBeforeBusinessAndNodeSkillPrompts() {
+        TestLlmNode node = new TestLlmNode(false);
+        AgentContext context = new AgentContext();
+        context.putAttribute("safetySkillPrompt", "最高优先级安全规则");
+        context.putAttribute("nodeSkillPrompt", "角色创建Skill规则");
+
+        List<ChatMessage> messages = node.buildTestMessages(context);
+
+        String systemPrompt = ((SystemMessage) messages.get(0)).text();
+        Assertions.assertTrue(systemPrompt.startsWith("最高优先级安全规则"));
+        Assertions.assertTrue(systemPrompt.indexOf("最高优先级安全规则") < systemPrompt.indexOf("系统提示"));
+        Assertions.assertTrue(systemPrompt.indexOf("系统提示") < systemPrompt.indexOf("角色创建Skill规则"));
+    }
+
+    @Test
     void shouldDeduplicateCurrentUserMessageButKeepItAfterHandoff() {
         TestLlmNode node = new TestLlmNode(true);
         AgentContext mainContext = new AgentContext();

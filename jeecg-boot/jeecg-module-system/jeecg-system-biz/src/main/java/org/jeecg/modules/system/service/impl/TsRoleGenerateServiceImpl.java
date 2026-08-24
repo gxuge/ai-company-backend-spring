@@ -161,6 +161,8 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
     @Resource
     private TsRoleMapper tsRoleMapper;
     @Resource
+    private org.jeecg.modules.system.service.ITsWorkReviewService tsWorkReviewService;
+    @Resource
     private RedisTemplate<String, Object> redisTemplate;
 
     /**
@@ -911,6 +913,9 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         role.setBackgroundStory(backgroundStory);
         role.setStatus(1);
         role.setIsPublic(0);
+        role.setContentVersion(0);
+        role.setReviewStatus(org.jeecg.modules.system.constant.TsWorkReviewConstants.PENDING_AI);
+        role.setDesiredPublic(0);
         role.setBasicAiGenerated(1);
         role.setAdvancedAiGenerated(1);
         role.setCreatedAt(new Date());
@@ -938,6 +943,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         voiceRequest.setTargetTone(targetTone);
         voiceRequest.setPreviewText(previewText);
         TsRoleOneClickVoiceGenerateVo voiceResult = generateRoleVoice(user, voiceRequest);
+        tsWorkReviewService.submitRole(role.getId(), 0);
 
         // 组装设定结果与总快照，方便前端一次拿到完整链路结果并可追溯。
         TsRoleOneClickSettingGenerateVo settingResult = new TsRoleOneClickSettingGenerateVo();
@@ -997,6 +1003,9 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         role.setBackgroundStory(dto.getBackgroundStory());
         role.setStatus(1);
         role.setIsPublic(0);
+        role.setContentVersion(0);
+        role.setReviewStatus(org.jeecg.modules.system.constant.TsWorkReviewConstants.PENDING_AI);
+        role.setDesiredPublic(0);
         role.setBasicAiGenerated(1);
         role.setAdvancedAiGenerated(1);
         role.setCreatedAt(new Date());
@@ -1019,6 +1028,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         voiceRequest.setOccupation(dto.getOccupation());
         voiceRequest.setBackgroundStory(dto.getBackgroundStory());
         TsRoleOneClickVoiceGenerateVo voiceResult = generateRoleVoice(user, voiceRequest);
+        tsWorkReviewService.submitRole(role.getId(), 0);
 
         TsRoleOneClickSettingGenerateVo settingResult = new TsRoleOneClickSettingGenerateVo();
         settingResult.setRoleName(dto.getRoleName());

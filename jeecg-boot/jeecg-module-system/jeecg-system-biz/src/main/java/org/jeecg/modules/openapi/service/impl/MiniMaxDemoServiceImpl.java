@@ -8,8 +8,14 @@ import org.jeecg.common.util.MinioUtil;
 import org.jeecg.common.util.oss.OssBootUtil;
 import org.jeecg.config.JeecgBaseConfig;
 import org.jeecg.config.vo.Path;
+import org.jeecg.modules.airag.app.entity.AiragApp;
+import org.jeecg.modules.airag.app.mapper.AiragAppMapper;
+import org.jeecg.modules.airag.agent.safety.GlobalSafetySkillPromptProvider;
+import org.jeecg.modules.airag.safety.moderation.ModerationGuard;
+import org.jeecg.modules.airag.safety.moderation.ModerationResult;
 import org.jeecg.modules.openapi.config.MiniMaxDemoConfigBean;
 import org.jeecg.modules.openapi.config.MiniMaxDemoGuardConfigBean;
+import org.jeecg.modules.openapi.config.PromptChatConfigBean;
 import org.jeecg.modules.openapi.dto.MiniMaxChatRequestDto;
 import org.jeecg.modules.openapi.dto.MiniMaxImageRequestDto;
 import org.jeecg.modules.openapi.dto.MiniMaxTtsRequestDto;
@@ -50,19 +56,31 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
     private final MiniMaxDemoConfigBean miniMaxDemoConfig;
     private final JeecgBaseConfig jeecgBaseConfig;
     private final Environment environment;
+    private final GlobalSafetySkillPromptProvider globalSafetySkillPromptProvider;
+    private final ModerationGuard moderationGuard;
+    private final PromptChatConfigBean promptChatConfigBean;
+    private final AiragAppMapper airagAppMapper;
 
     public MiniMaxDemoServiceImpl(ChatClient.Builder chatClientBuilder,
                                   IMiniMaxMediaService miniMaxMediaService,
                                   MiniMaxDemoGuardConfigBean guardConfig,
                                   MiniMaxDemoConfigBean miniMaxDemoConfig,
                                   JeecgBaseConfig jeecgBaseConfig,
-                                  Environment environment) {
+                                  Environment environment,
+                                  GlobalSafetySkillPromptProvider globalSafetySkillPromptProvider,
+                                  ModerationGuard moderationGuard,
+                                  PromptChatConfigBean promptChatConfigBean,
+                                  AiragAppMapper airagAppMapper) {
         this.chatClient = chatClientBuilder.build();
         this.miniMaxMediaService = miniMaxMediaService;
         this.guardConfig = guardConfig;
         this.miniMaxDemoConfig = miniMaxDemoConfig;
         this.jeecgBaseConfig = jeecgBaseConfig;
         this.environment = environment;
+        this.globalSafetySkillPromptProvider = globalSafetySkillPromptProvider;
+        this.moderationGuard = moderationGuard;
+        this.promptChatConfigBean = promptChatConfigBean;
+        this.airagAppMapper = airagAppMapper;
     }
 
     /**
@@ -81,13 +99,31 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
         if (promptLength > maxChatChars) {
             throw new JeecgBootBizTipException("prompt长度超过限制，当前长度=" + promptLength + "，上限=" + maxChatChars);
         }
+        String moderationModelId = resolveModerationModelId();
+        ModerationResult inputModeration = this.moderationGuard.reviewInput(
+                moderationModelId, "minimax_demo_chat", requestDto.getPrompt(), List.of(), null
+        );
+        if (!this.moderationGuard.isAllowed(inputModeration)) {
+            return buildModerationChatResponse();
+        }
         long startedAt = System.currentTimeMillis();
-        ChatResponse chatResponse = invokeChatWithRetry(requestDto.getPrompt());
+        ChatResponse chatResponse = invokeChatWithRetry(
+                buildSafetySystemPrompt(),
+                requestDto.getPrompt()
+        );
         String content = chatResponse == null
                 || chatResponse.getResult() == null
                 || chatResponse.getResult().getOutput() == null
                 ? null
                 : chatResponse.getResult().getOutput().getText();
+        content = this.moderationGuard.reviewOutput(
+                moderationModelId,
+                "minimax_demo_chat",
+                content,
+                List.of(),
+                null,
+                this::rewriteUnsafeChatOutput
+        );
         Usage usage = chatResponse == null || chatResponse.getMetadata() == null
                 ? null
                 : chatResponse.getMetadata().getUsage();
@@ -158,9 +194,19 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
         if (promptLength > maxImagePromptChars) {
             throw new JeecgBootBizTipException("prompt长度超过限制，当前长度=" + promptLength + "，上限=" + maxImagePromptChars);
         }
+        ModerationResult promptModeration = this.moderationGuard.reviewImagePrompt(
+                resolveModerationModelId(),
+                "minimax_demo_image",
+                requestDto.getPrompt(),
+                null
+        );
+        if (!this.moderationGuard.isAllowed(promptModeration)) {
+            throw new JeecgBootBizTipException(this.moderationGuard.safeReply());
+        }
+        String safeImagePrompt = buildSafeImagePrompt(requestDto.getPrompt());
         List<String> imageUrls = StringUtils.hasText(requestDto.getReferenceImageUrl())
-                ? miniMaxMediaService.generateImage(requestDto.getPrompt(), requestDto.getReferenceImageUrl())
-                : miniMaxMediaService.generateImage(requestDto.getPrompt());
+                ? miniMaxMediaService.generateImage(safeImagePrompt, requestDto.getReferenceImageUrl())
+                : miniMaxMediaService.generateImage(safeImagePrompt);
         MiniMaxImageResponseVo responseVo = new MiniMaxImageResponseVo();
         responseVo.setOriginalImageUrls(imageUrls);
         if (Boolean.TRUE.equals(requestDto.getUploadGeneratedMedia())) {
@@ -190,15 +236,20 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
     /**
      * 调用 Spring AI ChatClient，并执行重试。
      *
-     * @param prompt 输入提示词
+     * @param systemPrompt 系统安全提示词
+     * @param prompt 用户输入提示词
      * @return 模型输出文本
      */
-    private ChatResponse invokeChatWithRetry(String prompt) {
+    private ChatResponse invokeChatWithRetry(String systemPrompt, String prompt) {
         int maxAttempts = Math.max(miniMaxDemoConfig.getRetryMaxAttempts(), 1);
         RuntimeException lastException = null;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                return chatClient.prompt(prompt).call().chatResponse();
+                return chatClient.prompt()
+                        .system(systemPrompt)
+                        .user(prompt)
+                        .call()
+                        .chatResponse();
             } catch (RuntimeException e) {
                 lastException = e;
                 if (attempt >= maxAttempts) {
@@ -209,6 +260,74 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
         }
         String message = lastException == null ? "unknown error" : lastException.getMessage();
         throw new JeecgBootBizTipException("MiniMax chat request failed: " + message);
+    }
+
+    /**
+     * 读取普通聊天使用的全局安全 System Prompt。
+     *
+     * @return 安全 System Prompt
+     */
+    String buildSafetySystemPrompt() {
+        return this.globalSafetySkillPromptProvider.requiredSafetyPrompt();
+    }
+
+    /**
+     * 构建发送给图片供应商的最终安全 Prompt。
+     *
+     * @param originalPrompt 原始图片提示词
+     * @return 最终图片 Prompt
+     */
+    String buildSafeImagePrompt(String originalPrompt) {
+        return this.globalSafetySkillPromptProvider.buildImageGenerationPrompt(originalPrompt);
+    }
+
+    /**
+     * 使用普通聊天模型安全改写风险输出。
+     */
+    private String rewriteUnsafeChatOutput(String unsafeOutput) {
+        ChatResponse response = invokeChatWithRetry(
+                buildSafetySystemPrompt(),
+                "请安全改写下面的模型输出，保留有帮助的信息，删除或概括不安全细节。"
+                        + "只返回改写后的内容。\n\n"
+                        + unsafeOutput
+        );
+        return response == null
+                || response.getResult() == null
+                || response.getResult().getOutput() == null
+                ? null
+                : response.getResult().getOutput().getText();
+    }
+
+    /**
+     * 构建输入审核未放行时的普通聊天响应。
+     */
+    private MiniMaxChatResponseVo buildModerationChatResponse() {
+        MiniMaxChatResponseVo responseVo = new MiniMaxChatResponseVo();
+        responseVo.setContent(this.moderationGuard.safeReply());
+        responseVo.setProvider("MODERATION");
+        responseVo.setDurationMs(0L);
+        return responseVo;
+    }
+
+    /**
+     * 复用公共 Prompt Chat 的 AIRAG 模型配置作为审核模型。
+     */
+    private String resolveModerationModelId() {
+        if (this.promptChatConfigBean != null
+                && StringUtils.hasText(this.promptChatConfigBean.getModelId())) {
+            return this.promptChatConfigBean.getModelId().trim();
+        }
+        if (this.promptChatConfigBean == null
+                || !StringUtils.hasText(this.promptChatConfigBean.getAppId())
+                || this.airagAppMapper == null) {
+            return null;
+        }
+        AiragApp app = this.airagAppMapper.getByIdIgnoreTenant(
+                this.promptChatConfigBean.getAppId().trim()
+        );
+        return app == null || !StringUtils.hasText(app.getModelId())
+                ? null
+                : app.getModelId().trim();
     }
 
     /**

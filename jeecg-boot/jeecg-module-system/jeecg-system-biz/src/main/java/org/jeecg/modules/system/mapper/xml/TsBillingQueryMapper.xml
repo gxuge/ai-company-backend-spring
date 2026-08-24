@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsBillingQueryMapper">
+
+    <sql id="billingUnion">
+        SELECT mo.id AS record_id, 'MEMBERSHIP' AS record_type, mo.user_id,
+               COALESCE(NULLIF(su.realname, ''), su.username) AS nickname,
+               CONCAT(COALESCE(mp.name, '会员'), '会员订阅') AS title,
+               mo.order_no, 'MEMBERSHIP' AS biz_type, mo.amount AS money_amount,
+               CAST(NULL AS SIGNED) AS points_amount,
+               <choose>
+                   <when test="platformView">'INCOME'</when>
+                   <otherwise>'EXPENSE'</otherwise>
+               </choose> AS money_direction,
+               'NONE' AS points_direction, mo.payment_status AS status, mo.created_at
+        FROM member_order mo
+        LEFT JOIN sys_user su ON su.id = mo.user_id
+        LEFT JOIN member_product mpr ON mpr.id = mo.product_id
+        LEFT JOIN member_plan mp ON mp.id = mpr.plan_id
+        <where>
+            <if test="userId != null">mo.user_id = #{userId}</if>
+        </where>
+
+        UNION ALL
+
+        SELECT pro.id AS record_id, 'RECHARGE' AS record_type, pro.user_id,
+               COALESCE(NULLIF(su.realname, ''), su.username) AS nickname,
+               COALESCE(prp.name, '积分充值') AS title,
+               pro.order_no, 'RECHARGE' AS biz_type, pro.actual_amount AS money_amount,
+               pro.points + pro.gift_points AS points_amount,
+               <choose>
+                   <when test="platformView">'INCOME'</when>
+                   <otherwise>'EXPENSE'</otherwise>
+               </choose> AS money_direction,
+               <choose>
+                   <when test="platformView">'EXPENSE'</when>
+                   <otherwise>'INCOME'</otherwise>
+               </choose> AS points_direction,
+               pro.status, pro.created_at
+        FROM points_recharge_order pro
+        LEFT JOIN sys_user su ON su.id = pro.user_id
+        LEFT JOIN points_recharge_product prp ON prp.id = pro.product_id
+        <where>
+            <if test="userId != null">pro.user_id = #{userId}</if>
+        </where>
+
+        UNION ALL
+
+        SELECT pt.id AS record_id, 'POINTS' AS record_type, pt.user_id,
+               COALESCE(NULLIF(su.realname, ''), su.username) AS nickname,
+               CASE pt.biz_type
+                   WHEN 'MEMBER_GIFT' THEN '会员赠送'
+                   WHEN 'ACTIVITY_REWARD' THEN '活动奖励'
+                   WHEN 'SIGN_IN' THEN '签到奖励'
+                   WHEN 'COMPENSATION' THEN '系统补偿'
+                   WHEN 'REFUND' THEN '积分返还'
+                   WHEN 'AI_CHAT' THEN 'AI对话'
+                   WHEN 'IMAGE_GENERATE' THEN '图片生成'
+                   WHEN 'VOICE_GENERATE' THEN '语音生成'
+                   WHEN 'STORY_GENERATE' THEN '故事生成'
+                   WHEN 'ROLE_CREATE' THEN '角色创建'
+                   WHEN 'THREE_D_GENERATE' THEN '3D生成'
+                   WHEN 'ADVANCED_FEATURE' THEN '高级功能'
+                   WHEN 'ADMIN_ADD' THEN '后台增加'
+                   WHEN 'ADMIN_DEDUCT' THEN '后台扣减'
+                   ELSE pt.biz_type
+               END AS title,
+               pt.transaction_no AS order_no, pt.biz_type,
+               CAST(NULL AS DECIMAL(10,2)) AS money_amount, pt.amount AS points_amount,
+               'NONE' AS money_direction,
+               <choose>
+                   <when test="platformView">
+                       CASE pt.direction WHEN 'INCOME' THEN 'EXPENSE' ELSE 'INCOME' END
+                   </when>
+                   <otherwise>pt.direction</otherwise>
+               </choose> AS points_direction,
+               pt.status, pt.created_at
+        FROM points_transaction pt
+        LEFT JOIN sys_user su ON su.id = pt.user_id
+        WHERE pt.status = 'SUCCESS'
+        <if test="userId != null">AND pt.user_id = #{userId}</if>
+          AND NOT (
+              pt.biz_type = 'RECHARGE'
+              AND EXISTS (
+                  SELECT 1
+                  FROM points_recharge_order linked_order
+                  WHERE linked_order.points_transaction_no = pt.transaction_no
+              )
+          )
+    </sql>
+
+    <sql id="billingFilters">
+        <if test="query.keyword != null and query.keyword != ''">
+            AND (
+                bill.order_no LIKE CONCAT('%', #{query.keyword}, '%')
+                OR bill.user_id LIKE CONCAT('%', #{query.keyword}, '%')
+                OR bill.nickname LIKE CONCAT('%', #{query.keyword}, '%')
+            )
+        </if>
+        <if test="query.category != null and query.category != '' and query.category != 'ALL'">
+            AND bill.record_type = #{query.category}
+        </if>
+        <if test="query.moneyDirection != null and query.moneyDirection != '' and query.moneyDirection != 'ALL'">
+            AND bill.money_direction = #{query.moneyDirection}
+        </if>
+        <if test="query.pointsDirection != null and query.pointsDirection != '' and query.pointsDirection != 'ALL'">
+            AND bill.points_direction = #{query.pointsDirection}
+        </if>
+        <if test="query.bizType != null and query.bizType != ''">
+            AND bill.biz_type = #{query.bizType}
+        </if>
+        <if test="query.status != null and query.status != ''">
+            AND bill.status = #{query.status}
+        </if>
+        <if test="query.startTime != null">
+            AND bill.created_at &gt;= #{query.startTime}
+        </if>
+        <if test="query.endTime != null">
+            AND bill.created_at &lt;= #{query.endTime}
+        </if>
+    </sql>
+
+    <select id="selectBillingPage"
+            resultType="org.jeecg.modules.system.vo.tsbilling.TsBillingRecordVo">
+        SELECT bill.record_id, bill.record_type, bill.user_id, bill.nickname,
+               bill.title, bill.order_no, bill.biz_type, bill.money_amount,
+               bill.points_amount, bill.money_direction, bill.points_direction,
+               bill.status, bill.created_at
+        FROM (
+            <include refid="billingUnion"/>
+        ) bill
+        WHERE 1 = 1
+        <include refid="billingFilters"/>
+        ORDER BY bill.created_at DESC, bill.record_type ASC, bill.record_id DESC
+    </select>
+
+    <select id="selectBillingDetail"
+            resultType="org.jeecg.modules.system.vo.tsbilling.TsBillingDetailVo">
+        <choose>
+            <when test="recordType == 'MEMBERSHIP'">
+                SELECT mo.id AS record_id, 'MEMBERSHIP' AS record_type, mo.user_id,
+                       COALESCE(NULLIF(su.realname, ''), su.username) AS nickname,
+                       CONCAT(COALESCE(mp.name, '会员'), '会员订阅') AS title,
+                       mo.order_no, 'MEMBERSHIP' AS biz_type, mo.amount AS money_amount,
+                       CAST(NULL AS SIGNED) AS points_amount,
+                       <choose><when test="platformView">'INCOME'</when><otherwise>'EXPENSE'</otherwise></choose>
+                       AS money_direction,
+                       'NONE' AS points_direction, mo.payment_status AS status,
+                       mo.created_at, mo.payment_channel,
+                       mpr.original_price AS original_amount,
+                       CASE WHEN mpr.original_price IS NULL THEN NULL
+                            ELSE mpr.original_price - mo.amount END AS discount_amount,
+                       mo.amount AS actual_amount, CAST(NULL AS SIGNED) AS before_balance,
+                       CAST(NULL AS SIGNED) AS after_balance,
+                       CAST(mo.product_id AS CHAR) AS related_biz_id,
+                       CONCAT('会员订单 ', mo.order_no) AS description, mo.pay_time
+                FROM member_order mo
+                LEFT JOIN sys_user su ON su.id = mo.user_id
+                LEFT JOIN member_product mpr ON mpr.id = mo.product_id
+                LEFT JOIN member_plan mp ON mp.id = mpr.plan_id
+                WHERE mo.id = #{recordId}
+                <if test="userId != null">AND mo.user_id = #{userId}</if>
+                LIMIT 1
+            </when>
+            <when test="recordType == 'RECHARGE'">
+                SELECT pro.id AS record_id, 'RECHARGE' AS record_type, pro.user_id,
+                       COALESCE(NULLIF(su.realname, ''), su.username) AS nickname,
+                       COALESCE(prp.name, '积分充值') AS title, pro.order_no,
+                       'RECHARGE' AS biz_type, pro.actual_amount AS money_amount,
+                       pro.points + pro.gift_points AS points_amount,
+                       <choose><when test="platformView">'INCOME'</when><otherwise>'EXPENSE'</otherwise></choose>
+                       AS money_direction,
+                       <choose><when test="platformView">'EXPENSE'</when><otherwise>'INCOME'</otherwise></choose>
+                       AS points_direction,
+                       pro.status, pro.created_at, pro.payment_channel,
+                       pro.original_amount,
+                       pro.original_amount - pro.actual_amount AS discount_amount,
+                       pro.actual_amount, pt.before_balance, pt.after_balance,
+                       CAST(pro.product_id AS CHAR) AS related_biz_id,
+                       CONCAT('积分充值订单 ', pro.order_no) AS description, pro.pay_time
+                FROM points_recharge_order pro
+                LEFT JOIN sys_user su ON su.id = pro.user_id
+                LEFT JOIN points_recharge_product prp ON prp.id = pro.product_id
+                LEFT JOIN points_transaction pt
+                    ON pt.transaction_no = pro.points_transaction_no
+                WHERE pro.id = #{recordId}
+                <if test="userId != null">AND pro.user_id = #{userId}</if>
+                LIMIT 1
+            </when>
+            <otherwise>
+                SELECT pt.id AS record_id, 'POINTS' AS record_type, pt.user_id,
+                       COALESCE(NULLIF(su.realname, ''), su.username) AS nickname,
+                       COALESCE(pt.description, pt.biz_type) AS title,
+                       pt.transaction_no AS order_no, pt.biz_type,
+                       CAST(NULL AS DECIMAL(10,2)) AS money_amount,
+                       pt.amount AS points_amount, 'NONE' AS money_direction,
+                       <choose>
+                           <when test="platformView">
+                               CASE pt.direction WHEN 'INCOME' THEN 'EXPENSE' ELSE 'INCOME' END
+                           </when>
+                           <otherwise>pt.direction</otherwise>
+                       </choose> AS points_direction,
+                       pt.status, pt.created_at, CAST(NULL AS CHAR) AS payment_channel,
+                       CAST(NULL AS DECIMAL(10,2)) AS original_amount,
+                       CAST(NULL AS DECIMAL(10,2)) AS discount_amount,
+                       CAST(NULL AS DECIMAL(10,2)) AS actual_amount,
+                       pt.before_balance, pt.after_balance, pt.biz_id AS related_biz_id,
+                       pt.description, CAST(NULL AS DATETIME) AS pay_time
+                FROM points_transaction pt
+                LEFT JOIN sys_user su ON su.id = pt.user_id
+                WHERE pt.id = #{recordId}
+                <if test="userId != null">AND pt.user_id = #{userId}</if>
+                LIMIT 1
+            </otherwise>
+        </choose>
+    </select>
+
+    <select id="selectPlatformSummary"
+            resultType="org.jeecg.modules.system.vo.tsbilling.TsBillingSummaryVo">
+        SELECT COALESCE(SUM(CASE WHEN bill.money_direction = 'INCOME'
+                                 THEN bill.money_amount ELSE 0 END), 0) AS money_income,
+               COALESCE(SUM(CASE WHEN bill.money_direction = 'EXPENSE'
+                                 THEN bill.money_amount ELSE 0 END), 0) AS money_expense,
+               COALESCE(SUM(CASE WHEN bill.points_direction = 'INCOME'
+                                 THEN bill.points_amount ELSE 0 END), 0) AS points_income,
+               COALESCE(SUM(CASE WHEN bill.points_direction = 'EXPENSE'
+                                 THEN bill.points_amount ELSE 0 END), 0) AS points_expense,
+               COUNT(1) AS record_count
+        FROM (
+            SELECT mo.user_id,
+                   COALESCE(NULLIF(su.realname, ''), su.username) AS nickname,
+                   mo.order_no, 'MEMBERSHIP' AS record_type, 'MEMBERSHIP' AS biz_type,
+                   mo.amount AS money_amount, CAST(NULL AS SIGNED) AS points_amount,
+                   'INCOME' AS money_direction, 'NONE' AS points_direction,
+                   mo.payment_status AS status, mo.created_at
+            FROM member_order mo
+            LEFT JOIN sys_user su ON su.id = mo.user_id
+            UNION ALL
+            SELECT pro.user_id,
+                   COALESCE(NULLIF(su.realname, ''), su.username) AS nickname,
+                   pro.order_no, 'RECHARGE', 'RECHARGE', pro.actual_amount,
+                   pro.points + pro.gift_points, 'INCOME', 'EXPENSE',
+                   pro.status, pro.created_at
+            FROM points_recharge_order pro
+            LEFT JOIN sys_user su ON su.id = pro.user_id
+            UNION ALL
+            SELECT pt.user_id,
+                   COALESCE(NULLIF(su.realname, ''), su.username) AS nickname,
+                   pt.transaction_no, 'POINTS', pt.biz_type,
+                   CAST(NULL AS DECIMAL(10,2)), pt.amount, 'NONE',
+                   CASE pt.direction WHEN 'INCOME' THEN 'EXPENSE' ELSE 'INCOME' END,
+                   pt.status, pt.created_at
+            FROM points_transaction pt
+            LEFT JOIN sys_user su ON su.id = pt.user_id
+            WHERE pt.status = 'SUCCESS'
+              AND NOT (
+                  pt.biz_type = 'RECHARGE'
+                  AND EXISTS (
+                      SELECT 1 FROM points_recharge_order linked_order
+                      WHERE linked_order.points_transaction_no = pt.transaction_no
+                  )
+              )
+        ) bill
+        WHERE 1 = 1
+        <include refid="billingFilters"/>
+    </select>
+</mapper>

@@ -6,6 +6,25 @@
 `type` 推荐值：`feat`、`fix`、`refactor`、`breaking`、`security`、`docs`
 
 ## 记录
+- [2026-08-24] [feat] [ts-story] 场景生图与提示词优化接口支持 `time/weather/mood` 的英文 `key + description` 结构，并注入对应数据库 Prompt 模板
+- [2026-08-24] [feat] [ts-ad] 扩展运营内容管理为自有/外部图片、视频、卡片和深层动作，新增统一媒体预览、投放响应字段及兼容迁移
+- [2026-08-24] [feat] [infra] 两套 Docker Compose 增加单节点 Kafka Broker、持久化目录、共享网络和后台连接配置，行为 Kafka 默认保持关闭
+- [2026-08-23] [feat] [ts-ad-admin] 新增 Vue3 运营内容管理页面，覆盖广告位、广告内容、投放规则和曝光点击统计，并补充探拾管理员菜单
+- [2026-08-23] [feat] [ts-feedback-admin] 新增 Vue3 反馈与评论统一审核页面，支持内容筛选、通过/驳回、反馈处理状态维护、官方回复及管理菜单按钮权限
+- [2026-08-23] [feat] [ts-work-review-admin] 新增探拾管理端作品内容审核页面，以角色内容、角色图片、故事内容、故事图片四类视图展示审核材料，并支持详情、AI 重试、通过和驳回
+- [2026-08-23] [security] [ai-safety] 抽取统一安全 Skill Prompt 提供器，并将 `ai_safety_guard` 扩展到 TS 角色/故事 Prompt Chat、JSON 修复、普通 MiniMax 聊天和图片生成入口
+- [2026-08-23] [feat] [ts-behavior] 新增登录用户单条/批量推荐行为采集接口，事件异步投递 Kafka，并由独立消费者组写入 MySQL 明细和 Redis 实时特征
+- [2026-08-23] [feat] [ts-ad] 新增海报与广告独立运营投放域：支持广告位、内容发布下线、平台/登录/会员/指定用户规则、匿名与登录投放、曝光点击幂等上报及汇总统计
+- [2026-08-23] [security] [agent-runtime] 所有 Agent `LlmNode` 强制加载 `ai_safety_guard` Skill，并将安全规则固定置于 System Prompt 最前面；安全 Skill 缺失或为空时阻止模型调用
+- [2026-08-23] [feat] [ts-feedback] 反馈、评论/回复和追加内容新增 `pending/approved/rejected` 审核状态、统一管理端审核队列与审核日志；公开查询和互动仅作用于审核通过内容，作者可查看本人审核结果
+- [2026-08-23] [feat] [ts-work-review] 新增角色与故事独立作品审核域：保存后固化版本快照并执行 AI 初审、管理员终审；未通过当前版本审核的作品禁止公开
+- [2026-08-23] [refactor] [ts-reward] 新增统一奖励事件中心及 Vue3 监控页面；签到和任务奖励同步处理，会员开通奖励改为支付事务提交后处理，支持事件分页、详情、状态汇总和失败重试
+- [2026-08-21] [refactor] [ts-story] 故事场景图片提示词改为仅从 `airag_prompts` 按 `prompt_key + version` 读取，移除对应 classpath txt 模板
+- [2026-08-21] [fix] [ts-story] 故事场景图片提示词优化模板改为 tool call，补齐场景专用规则、输出 schema 和 220/80 字段长度兜底
+- [2026-08-21] [feat] [ts-points] 新增探拾后台积分管理与统一账单管理页面，补充管理员菜单迁移；支持积分账户、积分流水、充值订单、充值商品、会员赠送规则、平台账单汇总与详情
+- [2026-08-20] [feat] [ts-activity] 新增签到、每日/每周任务、行为进度、统一奖励、会员奖励加成和活动奖励记录接口；星钻奖励统一调用积分服务并保证领取幂等
+- [2026-08-20] [feat] [ts-story] 新增故事场景图片提示词润色接口 `/sys/ts-stories/optimize-scene-image-prompt`，使用模板 `story_scene_image_prompt_optimize::v1`
+- [2026-08-19] [feat] [ts-points] 新增积分账户、积分流水、充值支付、后台调整、会员赠送积分和双视角统一账单；余额不足通过 `errorCode=POINTS_NOT_ENOUGH` 返回机器可识别错误
 - [2026-08-13] [refactor] [ts-feedback] 反馈中心 `POST/PUT` 接口的 `feedbackId/commentId` 统一改为通过 JSON Body 传递，`GET` 查询接口继续使用查询参数
 - [2026-08-13] [feat] [ts-feedback] 新增反馈中心五张业务表及 `/sys/ts-feedback`、`/sys/ts-comments`、`/sys/ts-admin-feedback` 接口，支持反馈发布、幂等点赞、两层评论、追加反馈、官方回复、状态管理与通知事件扩展
 - [2026-08-12] [feat] [ts-browse-history] 新增角色与故事统一浏览记录表及 `/sys/ts-user-browse-history` 记录、分页、单条删除和清空接口；重复浏览累加次数并更新最近浏览时间
@@ -52,3 +71,4 @@
 - [2026-06-01] [feat] [ts-story] 新增 `POST /sys/ts-stories/story-full-generate`：随机选取 story 预设并读取绑定标签，先做 `{{ value }}` 模板替换与 toolcall 预编排，再串联现有故事设定/场景/大纲生成（chapter 模式支持跳过大纲）
 - [2026-06-01] [feat] [ts-story] 新增 `POST /sys/ts-stories/story-full-generate-preset`：按预设绑定标签映射填充 5 字段模板并统一串联设定/场景/大纲；删除对外 `story-setting-generate`/`story--scene-generate`/`story--outline-generate`；toolcall 修复链路补充 `required_field_hints`
 - [2026-07-30] [feat] [ts-draft] 统一草稿列表直接返回完整 `content`，前端无需维护重复的 `cardData`
+- [2026-08-23] [security] [ai-moderation] 新增统一 AI 文本输入输出审核契约、风险策略、上下文复审、输出安全重写和脱敏审核日志，并接入 Agent、公共 Prompt Chat、普通聊天及图片 Prompt

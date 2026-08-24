@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.modules.system.annotation.TsBehaviorTrack;
 import org.jeecg.modules.system.dto.tsfeedback.TsFeedbackCommentCreateDto;
 import org.jeecg.modules.system.dto.tsfeedback.TsFeedbackCommentQueryDto;
 import org.jeecg.modules.system.dto.tsfeedback.TsFeedbackCommentReplyDto;
@@ -28,6 +29,7 @@ import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 反馈评论业务服务实现。
@@ -55,7 +57,7 @@ public class TsFeedbackCommentServiceImpl
     public Result<Page<TsFeedbackCommentVo>> pageComments(LoginUser user,
                                                           Long feedbackId,
                                                           TsFeedbackCommentQueryDto request) {
-        requireFeedback(feedbackId);
+        requireVisibleFeedback(user, feedbackId);
         TsFeedbackCommentQueryPo query = TsFeedbackCommentQueryPo.fromRequest(
                 user.getId(), feedbackId, null, request);
         Page<TsFeedbackCommentVo> page = new Page<>(query.getPageNo(), query.getPageSize());
@@ -65,7 +67,7 @@ public class TsFeedbackCommentServiceImpl
     }
 
     /**
-     * 发布一级评论并原子增加反馈评论总数。
+     * 发布一级评论并进入待审核状态。
      *
      * @param user 当前登录用户
      * @param feedbackId 反馈 ID
@@ -74,22 +76,19 @@ public class TsFeedbackCommentServiceImpl
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
+    @TsBehaviorTrack(
+            eventType = "comment",
+            resourceType = "feedback",
+            resourceIdExpression = "#feedbackId")
     public Result<Long> createComment(LoginUser user,
                                       Long feedbackId,
                                       TsFeedbackCommentCreateDto request) {
         TsFeedback feedback = requireFeedback(feedbackId);
+        requireApprovedFeedback(feedback);
         TsFeedbackComment comment = createCommentEntity(
                 feedbackId, user.getId(), null, null, request.getContent(), false);
         baseMapper.insert(comment);
-        requireCommentCountIncrement(feedbackId);
-        publishCommentEvent(
-                "feedback.comment.created",
-                feedback,
-                comment,
-                user.getId(),
-                feedback.getUserId()
-        );
-        return Result.OK("评论发布成功", comment.getId());
+        return Result.OK("评论已提交审核", comment.getId());
     }
 
     /**
@@ -108,7 +107,8 @@ public class TsFeedbackCommentServiceImpl
         if (parent.getParentId() != null) {
             throw new JeecgBootException("查看全部回复时必须传入一级评论ID");
         }
-        requireFeedback(parent.getFeedbackId());
+        requireVisibleComment(user, parent);
+        requireVisibleFeedback(user, parent.getFeedbackId());
         TsFeedbackCommentQueryPo query = TsFeedbackCommentQueryPo.fromRequest(
                 user.getId(), parent.getFeedbackId(), parent.getId(), request);
         Page<TsFeedbackCommentVo> page = new Page<>(query.getPageNo(), query.getPageSize());
@@ -125,16 +125,23 @@ public class TsFeedbackCommentServiceImpl
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
+    @TsBehaviorTrack(
+            eventType = "comment",
+            resourceType = "feedback_comment",
+            resourceIdExpression = "#commentId")
     public Result<Long> replyComment(LoginUser user,
                                      Long commentId,
                                      TsFeedbackCommentReplyDto request) {
         TsFeedbackComment target = requireComment(commentId);
         TsFeedback feedback = requireFeedback(target.getFeedbackId());
+        requireApprovedFeedback(feedback);
+        requireApprovedComment(target);
         Long parentId = target.getParentId() == null ? target.getId() : target.getParentId();
         TsFeedbackComment parent = requireComment(parentId);
         if (parent.getParentId() != null || !parent.getFeedbackId().equals(target.getFeedbackId())) {
             throw new JeecgBootException("评论层级数据异常");
         }
+        requireApprovedComment(parent);
         TsFeedbackComment reply = createCommentEntity(
                 target.getFeedbackId(),
                 user.getId(),
@@ -144,15 +151,7 @@ public class TsFeedbackCommentServiceImpl
                 false
         );
         baseMapper.insert(reply);
-        requireCommentCountIncrement(target.getFeedbackId());
-        publishCommentEvent(
-                "feedback.comment.replied",
-                feedback,
-                reply,
-                user.getId(),
-                target.getUserId()
-        );
-        return Result.OK("回复发布成功", reply.getId());
+        return Result.OK("回复已提交审核", reply.getId());
     }
 
     /**
@@ -233,6 +232,11 @@ public class TsFeedbackCommentServiceImpl
                 .setContent(content.trim())
                 .setLikeCount(0)
                 .setIsOfficial(official ? 1 : 0)
+                .setAuditStatus(official
+                        ? TsFeedbackConstants.AUDIT_APPROVED
+                        : TsFeedbackConstants.AUDIT_PENDING)
+                .setAuditedBy(official ? userId : null)
+                .setAuditedAt(official ? new Date() : null)
                 .setIsDeleted(0)
                 .setCreatedAt(new Date());
     }
@@ -288,6 +292,33 @@ public class TsFeedbackCommentServiceImpl
     }
 
     /**
+     * 查询当前用户可见的反馈，作者可查看自己的未通过反馈。
+     *
+     * @param user 当前登录用户
+     * @param feedbackId 反馈 ID
+     * @return 可见反馈
+     */
+    private TsFeedback requireVisibleFeedback(LoginUser user, Long feedbackId) {
+        TsFeedback feedback = requireFeedback(feedbackId);
+        if (!TsFeedbackConstants.AUDIT_APPROVED.equals(feedback.getAuditStatus())
+                && !Objects.equals(feedback.getUserId(), user.getId())) {
+            throw new JeecgBootException("反馈不存在或尚未通过审核");
+        }
+        return feedback;
+    }
+
+    /**
+     * 校验反馈已通过审核，未通过内容不能新增评论或回复。
+     *
+     * @param feedback 反馈实体
+     */
+    private void requireApprovedFeedback(TsFeedback feedback) {
+        if (!TsFeedbackConstants.AUDIT_APPROVED.equals(feedback.getAuditStatus())) {
+            throw new JeecgBootException("反馈尚未通过审核，不能评论或回复");
+        }
+    }
+
+    /**
      * 查询未删除评论。
      *
      * @param commentId 评论 ID
@@ -299,5 +330,29 @@ public class TsFeedbackCommentServiceImpl
             throw new JeecgBootException("评论不存在或已删除");
         }
         return comment;
+    }
+
+    /**
+     * 校验评论已通过审核，未通过内容不能被回复。
+     *
+     * @param comment 评论实体
+     */
+    private void requireApprovedComment(TsFeedbackComment comment) {
+        if (!TsFeedbackConstants.AUDIT_APPROVED.equals(comment.getAuditStatus())) {
+            throw new JeecgBootException("评论尚未通过审核，不能回复");
+        }
+    }
+
+    /**
+     * 校验评论对当前用户可见，作者可查看自己的未通过评论。
+     *
+     * @param user 当前登录用户
+     * @param comment 评论实体
+     */
+    private void requireVisibleComment(LoginUser user, TsFeedbackComment comment) {
+        if (!TsFeedbackConstants.AUDIT_APPROVED.equals(comment.getAuditStatus())
+                && !Objects.equals(comment.getUserId(), user.getId())) {
+            throw new JeecgBootException("评论不存在或尚未通过审核");
+        }
     }
 }

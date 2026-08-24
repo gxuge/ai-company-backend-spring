@@ -7,9 +7,11 @@ import jakarta.annotation.Resource;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
+import org.jeecg.modules.system.annotation.TsBehaviorTrack;
 import org.jeecg.modules.system.dto.tsrolepublic.TsRolePublicActionDto;
 import org.jeecg.modules.system.dto.tsrolepublic.TsRolePublicQueryDto;
 import org.jeecg.modules.system.dto.tsrolepublic.TsRolePublicSaveDto;
+import org.jeecg.modules.system.constant.TsWorkReviewConstants;
 import org.jeecg.modules.system.entity.TsPublicAuditLog;
 import org.jeecg.modules.system.entity.TsPublicChannel;
 import org.jeecg.modules.system.entity.TsRole;
@@ -108,6 +110,11 @@ public class TsRolePublicServiceImpl extends ServiceImpl<TsRolePublicMapper, TsR
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    @TsBehaviorTrack(
+            eventType = "publish",
+            resourceType = "role",
+            userIdExpression = "#result.result.ownerUserId",
+            resourceIdExpression = "#result.result.roleId")
     public Result<TsRolePublicVo> approvePublic(LoginUser user, TsRolePublicActionDto request) {
         return changeStatus(user, request, "online", "approve");
     }
@@ -120,6 +127,11 @@ public class TsRolePublicServiceImpl extends ServiceImpl<TsRolePublicMapper, TsR
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    @TsBehaviorTrack(
+            eventType = "publish",
+            resourceType = "role",
+            userIdExpression = "#result.result.ownerUserId",
+            resourceIdExpression = "#result.result.roleId")
     public Result<TsRolePublicVo> onlinePublic(LoginUser user, TsRolePublicActionDto request) {
         return changeStatus(user, request, "online", "online");
     }
@@ -204,6 +216,9 @@ public class TsRolePublicServiceImpl extends ServiceImpl<TsRolePublicMapper, TsR
         TsRole role = roleId == null ? null : tsRoleMapper.selectById(roleId);
         if (role == null || (role.getStatus() != null && role.getStatus() == 0)) {
             throw new JeecgBootException("角色不存在或不可公开");
+        }
+        if (!TsWorkReviewConstants.APPROVED.equals(role.getReviewStatus())) {
+            throw new JeecgBootException("角色当前版本尚未通过作品审核");
         }
         String normalizedOwnerUserId = trimToNull(ownerUserId);
         if (StringUtils.hasText(normalizedOwnerUserId) && !normalizedOwnerUserId.equals(role.getUserId())) {

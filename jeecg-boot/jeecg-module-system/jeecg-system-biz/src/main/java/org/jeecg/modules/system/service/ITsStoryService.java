@@ -11,12 +11,14 @@ import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSettingGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryQueryDto;
 import org.jeecg.modules.system.dto.tsstory.TsStorySaveDto;
+import org.jeecg.modules.system.dto.tsstory.TsStorySceneImagePromptOptimizeDto;
 import org.jeecg.modules.system.entity.TsStory;
 import org.jeecg.modules.system.vo.tsstory.TsStoryFullGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneImageGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSceneGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSettingGenerateVo;
+import org.jeecg.modules.system.vo.tsstory.TsStorySceneImagePromptOptimizeVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryVo;
 public interface ITsStoryService extends IService<TsStory> {
     Result<Page<TsStoryVo>> pageStories(LoginUser user, TsStoryQueryDto request);
@@ -27,6 +29,7 @@ public interface ITsStoryService extends IService<TsStory> {
     Result<TsStoryOneClickSettingGenerateVo> generateStorySetting(LoginUser user, TsStoryOneClickSettingGenerateDto request);
     Result<TsStoryOneClickSceneGenerateVo> generateStoryScene(LoginUser user, TsStoryOneClickSceneGenerateDto request);
     Result<TsStoryOneClickSceneImageGenerateVo> generateStorySceneImage(LoginUser user, TsStoryOneClickSceneImageGenerateDto request);
+    Result<TsStorySceneImagePromptOptimizeVo> optimizeStorySceneImagePrompt(LoginUser user, TsStorySceneImagePromptOptimizeDto request);
     Result<TsStoryOneClickOutlineGenerateVo> generateStoryOutline(LoginUser user, TsStoryOneClickOutlineGenerateDto request);
     Result<TsStoryFullGenerateVo> generateStoryFull(LoginUser user, TsStoryFullGenerateDto request);
     Result<TsStoryFullGenerateVo> generateStoryFullPreset(LoginUser user, TsStoryFullGenerateDto request);

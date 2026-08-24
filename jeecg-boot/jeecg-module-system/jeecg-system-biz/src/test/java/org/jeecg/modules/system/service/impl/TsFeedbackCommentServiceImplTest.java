@@ -8,6 +8,7 @@ import org.jeecg.modules.system.entity.TsFeedbackComment;
 import org.jeecg.modules.system.event.tsfeedback.TsFeedbackNotificationEvent;
 import org.jeecg.modules.system.mapper.TsFeedbackCommentMapper;
 import org.jeecg.modules.system.mapper.TsFeedbackMapper;
+import org.jeecg.modules.system.util.tsfeedback.TsFeedbackConstants;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,21 +40,25 @@ class TsFeedbackCommentServiceImplTest {
 
     @Test
     void shouldFlattenReplyToSecondLevelCommentUnderFirstLevelParent() {
-        TsFeedback feedback = new TsFeedback().setId(100L).setUserId("feedback-owner");
+        TsFeedback feedback = new TsFeedback()
+                .setId(100L)
+                .setUserId("feedback-owner")
+                .setAuditStatus(TsFeedbackConstants.AUDIT_APPROVED);
         TsFeedbackComment parent = new TsFeedbackComment()
                 .setId(10L)
                 .setFeedbackId(100L)
                 .setUserId("parent-user")
-                .setParentId(null);
+                .setParentId(null)
+                .setAuditStatus(TsFeedbackConstants.AUDIT_APPROVED);
         TsFeedbackComment targetReply = new TsFeedbackComment()
                 .setId(11L)
                 .setFeedbackId(100L)
                 .setUserId("target-user")
-                .setParentId(10L);
+                .setParentId(10L)
+                .setAuditStatus(TsFeedbackConstants.AUDIT_APPROVED);
         Mockito.when(this.commentMapper.selectById(11L)).thenReturn(targetReply);
         Mockito.when(this.commentMapper.selectById(10L)).thenReturn(parent);
         Mockito.when(this.feedbackMapper.selectById(100L)).thenReturn(feedback);
-        Mockito.when(this.feedbackMapper.incrementCommentCount(100L)).thenReturn(1);
         Mockito.when(this.commentMapper.insert(Mockito.any(TsFeedbackComment.class)))
                 .thenAnswer(invocation -> {
                     invocation.getArgument(0, TsFeedbackComment.class).setId(12L);
@@ -73,8 +78,10 @@ class TsFeedbackCommentServiceImplTest {
         Assertions.assertEquals(10L, commentCaptor.getValue().getParentId());
         Assertions.assertEquals("target-user", commentCaptor.getValue().getReplyToUserId());
         Assertions.assertEquals(0, commentCaptor.getValue().getIsOfficial());
-        Mockito.verify(this.eventPublisher).publishEvent(
-                Mockito.any(TsFeedbackNotificationEvent.class)
-        );
+        Assertions.assertEquals(TsFeedbackConstants.AUDIT_PENDING,
+                commentCaptor.getValue().getAuditStatus());
+        Mockito.verify(this.feedbackMapper, Mockito.never()).incrementCommentCount(100L);
+        Mockito.verify(this.eventPublisher, Mockito.never()).publishEvent(
+                Mockito.any(TsFeedbackNotificationEvent.class));
     }
 }
