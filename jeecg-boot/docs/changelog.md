@@ -6,6 +6,7 @@
 `type` 推荐值：`feat`、`fix`、`refactor`、`breaking`、`security`、`docs`
 
 ## 记录
+- [2026-08-25] [perf] [ts-chat] 会话列表响应补充角色名称、头像和最后消息摘要，移除前端逐会话详情/消息请求
 - [2026-08-24] [feat] [ts-story] 场景生图接口支持 `time/weather/mood` 的英文 `key + description` 结构，并注入数据库 Prompt 模板
 - [2026-08-24] [feat] [ts-ad] 扩展运营内容管理为自有/外部图片、视频、卡片和深层动作，新增统一媒体预览、投放响应字段及兼容迁移
 - [2026-08-24] [feat] [infra] 两套 Docker Compose 增加单节点 Kafka Broker、持久化目录、共享网络和后台连接配置，行为 Kafka 默认保持关闭

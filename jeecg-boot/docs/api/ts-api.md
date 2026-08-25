@@ -74,6 +74,7 @@
 - `ai-reply` 会在后端直接完成文本生成与语音生成编排。
 - `message-tts` 只负责按消息重新获取语音，不做服务端语音缓存落库。
 - `audioCacheKey` 仅作为 Web 本地缓存键使用。
+- `/ts-chat-sessions` 列表响应同时返回 `roleName`、`roleAvatarUrl` 和 `lastMessageText`，用于直接渲染会话列表摘要，前端无需逐条请求角色详情或消息分页。
 
 ### 3.2 Agent 会话链路
 

@@ -1715,6 +1715,6 @@
 
 ## 验证记录
 - `mvn -pl jeecg-module-system/jeecg-system-biz -am -DskipTests compile`：通过。
-- `StorySceneOptionPromptTest`：3 个测试通过，0 失败，0 错误。
+- `StorySceneOptionPromptTest`：2 个测试通过，0 失败，0 错误。
 - `V3.9.1_52__expand_story_scene_option_prompts.sql`：关键表、Prompt key、六个变量及 `COMMIT` 静态检查通过。
 - 目标文件 `git diff --check`：无空白错误；Git 仅提示现有文件可能发生换行符转换。

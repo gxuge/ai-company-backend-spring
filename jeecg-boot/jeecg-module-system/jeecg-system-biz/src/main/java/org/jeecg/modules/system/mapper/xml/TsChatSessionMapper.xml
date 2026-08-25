@@ -37,6 +37,34 @@
         ORDER BY COALESCE(s.last_message_at, s.updated_at) DESC, s.id DESC
     </select>
 
+    <!-- 批量查询当前用户会话列表摘要 -->
+    <select id="selectSessionSummaries"
+            resultType="org.jeecg.modules.system.vo.tschatsession.TsChatSessionSummaryVo">
+        SELECT
+            s.id AS sessionId,
+            r.role_name AS roleName,
+            r.avatar_url AS roleAvatarUrl,
+            COALESCE(
+                NULLIF(TRIM(last_message.content_text), ''),
+                (
+                    SELECT NULLIF(TRIM(latest_message.content_text), '')
+                    FROM ts_chat_message latest_message
+                    WHERE latest_message.session_id = s.id
+                    ORDER BY latest_message.created_at DESC, latest_message.id DESC
+                    LIMIT 1
+                )
+            ) AS lastMessageText
+        FROM ts_chat_session s
+        LEFT JOIN ts_role_info r ON r.id = s.target_role_id
+        LEFT JOIN ts_chat_message last_message ON last_message.id = s.last_message_id
+        WHERE s.user_id = #{userId}
+          AND s.session_status != 0
+          AND s.id IN
+        <foreach collection="sessionIds" item="sessionId" open="(" separator="," close=")">
+            #{sessionId}
+        </foreach>
+    </select>
+
     <!-- 查询当前用户拥有的单条会话 -->
     <select id="selectOwnedById" resultType="org.jeecg.modules.system.entity.TsChatSession">
         SELECT s.*

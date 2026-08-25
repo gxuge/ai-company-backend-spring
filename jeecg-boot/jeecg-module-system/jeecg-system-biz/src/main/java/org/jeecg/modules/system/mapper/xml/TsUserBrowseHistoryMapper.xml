@@ -39,7 +39,7 @@
                     rp.channel_code AS channelCode,
                     COALESCE(NULLIF(rp.display_title, ''), r.role_name) AS title,
                     COALESCE(NULLIF(rp.display_subtitle, ''), r.role_subtitle) AS subtitle,
-                    COALESCE(NULLIF(rp.intro_text, ''), r.intro_text) AS description,
+                    COALESCE(NULLIF(rp.intro_text, ''), r.greeting) AS description,
                     COALESCE(NULLIF(rp.cover_image_url, ''), r.cover_url) AS coverUrl,
                     r.avatar_url AS avatarUrl,
                     NULL AS sceneImageUrl,

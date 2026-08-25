@@ -1,7 +1,7 @@
 package org.jeecg.modules.airag.test;
 
 import org.jeecg.modules.airag.prompts.entity.AiragPrompts;
-import org.jeecg.modules.airag.prompts.service.IAiragPromptsService;
+import org.jeecg.modules.airag.prompts.mapper.AiragPromptsMapper;
 import org.jeecg.modules.airag.prompts.service.impl.AiragPromptTemplateServiceImpl;
 import org.jeecg.modules.airag.prompts.vo.AiragPromptTemplateVo;
 import org.junit.jupiter.api.Assertions;
@@ -68,12 +68,12 @@ class AiragPromptTemplateServiceTest {
     }
 
     private AiragPromptTemplateServiceImpl buildServiceWithTemplate(String code, String version, String content) {
-        IAiragPromptsService promptsService = Mockito.mock(IAiragPromptsService.class);
+        AiragPromptsMapper promptsMapper = Mockito.mock(AiragPromptsMapper.class);
         AiragPrompts prompts = new AiragPrompts();
         prompts.setPromptKey(code);
         prompts.setVersion(version);
         prompts.setContent(content);
-        Mockito.when(promptsService.getOne(Mockito.any(), Mockito.eq(false))).thenReturn(prompts);
-        return new AiragPromptTemplateServiceImpl(new DefaultResourceLoader(), promptsService);
+        Mockito.when(promptsMapper.selectOne(Mockito.any(), Mockito.eq(false))).thenReturn(prompts);
+        return new AiragPromptTemplateServiceImpl(new DefaultResourceLoader(), promptsMapper);
     }
 }

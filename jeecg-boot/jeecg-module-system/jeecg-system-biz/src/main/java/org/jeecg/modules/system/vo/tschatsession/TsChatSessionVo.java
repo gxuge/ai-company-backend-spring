@@ -18,6 +18,10 @@ public class TsChatSessionVo {
     private Long storyId;
     private Integer sessionStatus;
     private Long lastMessageId;
+    /** 目标角色名称 */
+    private String roleName;
+    /** 最后一条消息文本 */
+    private String lastMessageText;
     private Date lastMessageAt;
     private String extJson;
     private Date createdAt;

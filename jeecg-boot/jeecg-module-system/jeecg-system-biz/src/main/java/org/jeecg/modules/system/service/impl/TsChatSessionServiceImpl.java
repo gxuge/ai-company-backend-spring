@@ -18,6 +18,7 @@ import org.jeecg.modules.system.mapper.TsRoleMapper;
 import org.jeecg.modules.system.po.tschatsession.TsChatSessionQueryPo;
 import org.jeecg.modules.system.po.tschatsession.TsChatSessionSavePo;
 import org.jeecg.modules.system.service.ITsChatSessionService;
+import org.jeecg.modules.system.vo.tschatsession.TsChatSessionSummaryVo;
 import org.jeecg.modules.system.vo.tschatsession.TsChatSessionVo;
 import org.jeecg.modules.system.vo.tschatsession.TsChatSessionVoConverter;
 import org.springframework.dao.DuplicateKeyException;
@@ -25,10 +26,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -94,7 +95,9 @@ public class TsChatSessionServiceImpl extends ServiceImpl<TsChatSessionMapper, T
         TsChatSessionQueryPo queryPo = TsChatSessionQueryPo.fromRequest(user.getId(), request);
         Page<TsChatSession> page = new Page<>(queryPo.getPageNo(), queryPo.getPageSize());
         Page<TsChatSession> pageData = baseMapper.selectSessionPage(page, queryPo);
-        return Result.OK(TsChatSessionVoConverter.fromPage(pageData, loadRoleAvatarUrlMap(pageData.getRecords())));
+        return Result.OK(TsChatSessionVoConverter.fromPage(
+            pageData,
+            loadSessionSummaryMap(pageData.getRecords(), user.getId())));
     }
 
     @Override
@@ -146,29 +149,39 @@ public class TsChatSessionServiceImpl extends ServiceImpl<TsChatSessionMapper, T
         return Result.OK("删除成功");
     }
 
-    private Map<Long, String> loadRoleAvatarUrlMap(List<TsChatSession> sessions) {
+    /**
+     * 批量加载会话列表需要的角色和最后消息摘要。
+     *
+     * @param sessions 当前页会话
+     * @param userId 当前用户ID
+     * @return 按会话ID索引的摘要
+     */
+    private Map<Long, TsChatSessionSummaryVo> loadSessionSummaryMap(
+        List<TsChatSession> sessions,
+        String userId) {
         if (sessions == null || sessions.isEmpty()) {
             return Map.of();
         }
-        Set<Long> roleIds = sessions.stream()
-            .map(TsChatSession::getTargetRoleId)
+        List<Long> sessionIds = sessions.stream()
+            .map(TsChatSession::getId)
             .filter(Objects::nonNull)
-            .collect(Collectors.toSet());
-        if (roleIds.isEmpty()) {
+            .distinct()
+            .collect(Collectors.toList());
+        if (sessionIds.isEmpty()) {
             return Map.of();
         }
-        List<TsRole> roles = tsRoleMapper.selectBatchIds(roleIds);
-        if (roles == null || roles.isEmpty()) {
+        List<TsChatSessionSummaryVo> summaries = baseMapper.selectSessionSummaries(sessionIds, userId);
+        if (summaries == null || summaries.isEmpty()) {
             return Map.of();
         }
-        return roles.stream()
+        return summaries.stream()
             .filter(Objects::nonNull)
-            .filter(role -> role.getId() != null)
-            .filter(role -> role.getAvatarUrl() != null)
+            .filter(summary -> summary.getSessionId() != null)
             .collect(Collectors.toMap(
-                TsRole::getId,
-                role -> role.getAvatarUrl(),
-                (left, right) -> left
+                TsChatSessionSummaryVo::getSessionId,
+                summary -> summary,
+                (left, right) -> left,
+                HashMap::new
             ));
     }
 

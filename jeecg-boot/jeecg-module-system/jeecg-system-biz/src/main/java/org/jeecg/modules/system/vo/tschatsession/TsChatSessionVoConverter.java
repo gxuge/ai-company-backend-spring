@@ -16,19 +16,39 @@ public final class TsChatSessionVoConverter {
         return fromPage(source, null);
     }
 
-    public static Page<TsChatSessionVo> fromPage(Page<TsChatSession> source, Map<Long, String> roleAvatarUrlMap) {
+    public static Page<TsChatSessionVo> fromPage(
+        Page<TsChatSession> source,
+        Map<Long, TsChatSessionSummaryVo> summaryMap) {
         Page<TsChatSessionVo> target = new Page<>(source.getCurrent(), source.getSize(), source.getTotal());
         List<TsChatSessionVo> records = new ArrayList<>();
         if (source.getRecords() != null) {
             for (TsChatSession item : source.getRecords()) {
-                String roleAvatarUrl = null;
-                if (roleAvatarUrlMap != null && item.getTargetRoleId() != null) {
-                    roleAvatarUrl = roleAvatarUrlMap.get(item.getTargetRoleId());
-                }
-                records.add(fromEntity(item, roleAvatarUrl));
+                TsChatSessionSummaryVo summary = summaryMap == null ? null : summaryMap.get(item.getId());
+                records.add(fromEntityWithSummary(item, summary));
             }
         }
         target.setRecords(records);
+        return target;
+    }
+
+    /**
+     * 将会话实体转换为带列表摘要的响应。
+     *
+     * @param source 会话实体
+     * @param summary 列表摘要
+     * @return 会话响应
+     */
+    public static TsChatSessionVo fromEntityWithSummary(
+        TsChatSession source,
+        TsChatSessionSummaryVo summary) {
+        TsChatSessionVo target = fromEntity(
+            source,
+            summary == null ? null : summary.getRoleAvatarUrl());
+        if (target == null || summary == null) {
+            return target;
+        }
+        target.setRoleName(summary.getRoleName());
+        target.setLastMessageText(summary.getLastMessageText());
         return target;
     }
 
