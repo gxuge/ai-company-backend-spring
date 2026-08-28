@@ -11,6 +11,60 @@
 ---
 
 ### 任务 ID
+`20260826-clickhouse-datasource-config`
+
+### 背景
+- 后台现有 MySQL `master` 数据源承载事务数据，需要新增 ClickHouse 分析数据源配置。
+- 项目已集成 `dynamic-datasource`，ClickHouse 应沿用现有多数据源机制，不替换 MySQL。
+
+### 目标
+- 引入官方 ClickHouse JDBC 驱动并注册 `clickhouse` 动态数据源。
+- ClickHouse 与 MySQL 一样配置在各环境的动态数据源区块中。
+- Docker Compose 提供可直接启动的 ClickHouse LTS 服务和持久化目录。
+
+### 范围
+- 范围内：Maven 依赖、Spring Profile、环境变量示例、单体 Docker Compose、配置文档和编译验证。
+- 范围外：ClickHouse 业务表、数据同步任务、Mapper/Service 查询和线上集群高可用。
+
+### 执行步骤
+1. 增加 ClickHouse JDBC 版本与运行时依赖。
+2. 在 `application-dev/prod/docker.yml` 中注册 `clickhouse` 第二数据源。
+3. 增加 Docker ClickHouse 服务、环境变量和健康检查。
+4. 更新配置文档、变更记录并执行配置与编译验证。
+
+### 进度
+- [x] 步骤 1：完成现有多数据源、配置文件和部署结构分析。
+- [x] 步骤 2：完成 JDBC 依赖与 Spring 数据源配置。
+- [x] 步骤 3：完成 Docker 与配置文档。
+- [x] 步骤 4：完成校验与编译。
+
+### 决策记录
+- ClickHouse 与 `master` 同级配置，随 `dev/prod/docker` 环境自动注册。
+- 数据源名称固定为 `clickhouse`，后续分析 Service 使用 `@DS("clickhouse")` 显式切换。
+- MySQL `master` 保持默认主数据源，ClickHouse 不参与 MySQL 事务和 Flyway。
+
+### 风险与回滚
+- 风险：ClickHouse 地址或凭证错误会在首次取连接时报错。
+- 风险：ClickHouse SQL 语法与 MySQL 不同，后续 Mapper 必须独立维护。
+- 回滚：移除各环境 ClickHouse 数据源、JDBC 依赖及 Compose 服务；MySQL 配置无需调整。
+
+### 验证记录
+- YAML：`application-dev.yml`、`application-prod.yml`、`application-docker.yml` 与两套 Compose 均通过 PyYAML 解析。
+- Compose：两套配置均通过 `docker-compose config --quiet`。
+- 依赖：`dependency:tree` 确认 `com.clickhouse:clickhouse-jdbc:jar:all:0.9.8:runtime`。
+- 驱动：JAR 内存在 `com/clickhouse/jdbc/ClickHouseDriver.class`。
+- 编译：`mvn -Pdev -pl jeecg-module-system/jeecg-system-start -am -DskipTests compile`，10 个 Reactor 模块全部成功。
+- 差异：目标文件 `git diff --check` 通过，仅有 Git 既有换行转换提示。
+
+### 未完成项
+- 未启动真实 ClickHouse 容器，未执行 `SELECT 1` 连接冒烟；部署时需使用实际凭证验证。
+
+### 结果
+- ClickHouse 已作为环境内固定动态数据源完成配置，MySQL `master` 默认行为保持不变。
+
+---
+
+### 任务 ID
 `20260821-ts-points-billing-admin-ui`
 
 ### 背景
@@ -1718,3 +1772,314 @@
 - `StorySceneOptionPromptTest`：2 个测试通过，0 失败，0 错误。
 - `V3.9.1_52__expand_story_scene_option_prompts.sql`：关键表、Prompt key、六个变量及 `COMMIT` 静态检查通过。
 - 目标文件 `git diff --check`：无空白错误；Git 仅提示现有文件可能发生换行符转换。
+
+# 20260826-ts-chat-tts-no-r2
+
+## 元信息
+- 任务名称：聊天 TTS 暂停 R2 上传
+- 分级：H2
+- 负责人：Codex
+- 开始时间：2026-08-26
+- 关联：`/pages/chat` 语音播放失败与临时音频链路
+
+## 目标与非目标
+- 目标：MiniMax TTS 返回临时可播放 `data:` 音频地址，不再上传 R2。
+- 目标：临时音频不写入聊天消息、附件或 AI 日志，历史消息按需重新生成。
+- 非目标：不改图片生成上传逻辑，不改 `/pages/chat` 现有播放接口契约。
+
+## 任务分解
+- [x] T1：MiniMax TTS 改为十六进制转临时 data URL。
+- [x] T2：聊天消息和 AI 日志过滤临时音频 Base64。
+- [x] T3：完成后端编译、差异和编码检查。
+
+## 验证记录
+- `mvn -Pprod "-Dmaven.test.skip=true" -pl jeecg-module-system/jeecg-system-start -am compile`：10 个 Reactor 模块编译成功。
+- `git diff --check`：通过。
+- 编码检查：Java、PLANS、changelog 保持 UTF-8 无 BOM/LF；`ts-api.md` 与 ADR 保持 UTF-8 BOM/CRLF。
+
+## 风险与回退
+- 风险：临时 data URL 会增大单次接口响应体，不适合长期音频资产。
+- 回退：恢复 `uploadAudioHex` 调用，并恢复消息附件持久化；前端无需改动。
+
+## 未完成项
+- 无。
+
+# 20260826-ts-event-occurred-at-compatible
+
+## 元信息
+- 任务名称：行为与广告事件时间格式兼容
+- 分级：H2
+- 负责人：Codex
+- 开始时间：2026-08-26
+- 关联：`/sys/ts-events/collect`、`/sys/ts-events/collect/batch`、广告事件上报
+
+## 目标与非目标
+- 目标：`occurredAt` 同时接受 ISO 8601 时区时间和原有 `yyyy-MM-dd HH:mm:ss`。
+- 目标：消除 Web 行为埋点使用 `Date.toISOString()` 时的 JSON 反序列化错误。
+- 目标：同步覆盖广告事件上报中的同类日期字段。
+- 非目标：不修改全局 Jackson 日期格式，不调整 Kafka、数据库或前端埋点队列。
+
+## 任务分解
+- [x] T1：新增事件时间局部兼容反序列化器。
+- [x] T2：行为与广告事件 DTO 接入并补充格式测试。
+- [x] T3：更新 API 文档、变更记录并完成模块验证。
+
+## 验证矩阵
+| 验证项 | 方法 | 期望 |
+|---|---|---|
+| ISO UTC 时间 | DTO 反序列化测试 | `2026-08-26T12:15:39.125Z` 正确转换 |
+| ISO 偏移时间 | DTO 反序列化测试 | `+08:00` 时间正确转换 |
+| 旧格式兼容 | DTO 反序列化测试 | `yyyy-MM-dd HH:mm:ss` 按 GMT+8 转换 |
+| 非法格式 | DTO 反序列化测试 | 返回明确的 JSON 映射异常 |
+| 回归编译 | Maven 目标模块验证 | `jeecg-system-biz` 编译通过 |
+
+## 风险与回退
+- 风险：修改全局日期解析可能影响既有接口，因此本任务只在两个事件字段上使用局部反序列化器。
+- 回退：移除 DTO 字段注解和专用反序列化器，恢复仅支持全局旧日期格式。
+
+## 未完成项
+- 父 POM 将 Surefire 的 `skipTests` 固定为 `true`，测试类已完成编译但未由
+  Maven 自动执行；已通过独立 Java 冒烟覆盖同等输入。
+
+## 验证记录
+- Maven：目标模块及依赖模块主代码、测试代码编译成功，Reactor 8 个模块全部成功。
+- 日期冒烟：ISO UTC、ISO `+08:00`、旧版 GMT+8 和非法格式四类场景通过，
+  输出 `DATE_SMOKE_OK`。
+- 编码：Java、PLANS、changelog 保持 UTF-8 无 BOM/LF，
+  `ts-api.md` 保持 UTF-8 BOM/CRLF。
+
+# 20260827-role-details-real-data
+
+## 元信息
+- 任务名称：角色详情页真实数据对接
+- 分级：H2
+- 负责人：Codex
+- 开始时间：2026-08-27
+- 关联：`GET /sys/ts-roles/public/detail`、Web `/pages/role-details`
+
+## 目标与非目标
+- 目标：公开角色详情返回角色核心资料、作者资料与真实角色统计。
+- 目标：Web 角色详情页使用公开详情、收藏状态与收藏操作接口。
+- 非目标：不新增数据库表，不实现关系、荣誉、歌单、动态和空间业务接口。
+
+## 任务分解
+- [x] T1：扩展公开角色详情 VO 与 Mapper SQL，关联 `ts_role_stat`。
+- [x] T2：扩展 Web API 类型与角色详情页面字段映射、收藏状态和操作。
+- [x] T3：更新 API 文档、变更记录并完成前后端定向验证。
+
+## 验证矩阵
+| 验证项 | 方法 | 期望 |
+|---|---|---|
+| 公开详情字段 | Mapper/VO 静态检查 | 角色资料与三项统计字段一致 |
+| 权限边界 | Controller 路由检查 | 公开详情无需角色归属校验 |
+| 收藏状态 | 前端类型与调用检查 | 查询、收藏、取消收藏参数统一 |
+| 后端回归 | Maven 模块编译 | `jeecg-system-biz` 编译通过 |
+| 前端回归 | TypeScript 检查 | `bun run check:types` 通过 |
+
+## 风险与回退
+- 风险：旧数据库未创建 `ts_role_stat` 时公开详情 SQL 会失败。
+- 缓解：该表已存在于当前数据库基线；部署前确认迁移已执行。
+- 回退：移除公开详情 VO 的扩展字段及 Mapper 的统计表关联，前端恢复中性回退值。
+
+## 未完成项
+- 无。
+
+## 验证记录
+- 后端：`mvn -pl jeecg-module-system/jeecg-system-biz -am -DskipTests compile`，8 个 Reactor 模块全部成功。
+- 前端：`bun run check:types` 通过。
+- 差异：前后端 `git diff --check` 通过，仅有仓库既有的换行符提示。
+- 编码：Java 保持 UTF-8 无 BOM/CRLF，Mapper、PLANS、changelog 和 hardness 保持 UTF-8 无 BOM/LF，`ts-api.md` 保持 UTF-8 BOM/CRLF。
+
+# 20260827-ts-behavior-disabled-silent-skip
+
+## 元信息
+- 任务名称：行为采集关闭状态静默跳过
+- 分级：H2
+- 负责人：Codex
+- 开始时间：2026-08-27
+- 关联：`/sys/ts-events/collect`、`/sys/ts-events/collect/batch`
+
+## 目标与非目标
+- 目标：采集开关关闭时接口返回成功且 `acceptedCount=0`。
+- 目标：关闭状态不发送 Kafka，不触发 MySQL 或 Redis 消费链路。
+- 目标：避免前端批量上报产生重复 500 和重试日志。
+- 非目标：不启用 Kafka，不修改前端队列与重试策略。
+
+## 任务分解
+- [x] T1：Service 在基础请求校验后判断行为 Kafka 开关。
+- [x] T2：关闭时直接返回零，保留发布器内部保护。
+- [x] T3：补充测试、接口文档并执行模块验证。
+
+## 验证矩阵
+| 验证项 | 方法 | 期望 |
+|---|---|---|
+| 关闭态返回 | Service 单元测试 | `acceptedCount=0` |
+| 消息链路 | Mockito 校验 | 发布器调用次数为 0 |
+| 开启态回归 | 既有 Service 单元测试 | 正常校验并逐条发布 |
+| 模块回归 | Maven 测试编译 | 主代码与测试代码编译成功 |
+
+## 风险与回退
+- 风险：关闭期间上报的行为事件会被直接丢弃，符合关闭采集的配置语义。
+- 回退：移除 Service 开关判断，恢复关闭状态返回 500 的原行为。
+
+## 未完成项
+- 父 POM 将 Surefire 的 `skipTests` 固定为 `true`，测试类已完成编译但未由
+  Maven 自动执行；已通过独立 Java 冒烟验证关闭态行为。
+
+## 验证记录
+- Maven：`jeecg-system-biz` 及依赖模块主代码、测试代码编译成功，8 个 Reactor
+  模块全部成功。
+- 行为冒烟：关闭开关后返回 `acceptedCount=0`，发布器调用次数为 0，输出
+  `BEHAVIOR_DISABLED_SMOKE_OK`。
+- 编码：Java、PLANS、changelog 保持 UTF-8 无 BOM/LF，`ts-api.md` 保持
+  UTF-8 BOM/CRLF。
+
+# 20260827-activity-auto-reward
+
+## 元信息
+- 任务名称：活动任务完成后自动发奖
+- 分级：H2
+- 负责人：Codex
+- 开始时间：2026-08-27
+- 关联：活动任务配置、行为进度上报、统一奖励事件
+
+## 目标与非目标
+- 目标：活动任务支持 `AUTO/MANUAL` 两种奖励领取模式。
+- 目标：自动模式任务首次完成后提交统一奖励事件，无需用户调用领取接口。
+- 目标：自动发奖失败沿用奖励事件失败记录和定时重试。
+- 非目标：不修改活动触发层，不新增故事互动或签到里程碑条件。
+
+## 任务分解
+- [x] T1：新增奖励领取模式字段、枚举和数据库迁移。
+- [x] T2：任务完成时标记发放中并在事务提交后发布奖励事件。
+- [x] T3：奖励成功后更新任务进度为已领取，保留手动领取兼容。
+- [x] T4：补充测试、API 文档、ADR 和变更记录并执行验证。
+
+## 验证矩阵
+| 验证项 | 方法 | 期望 |
+|---|---|---|
+| 默认兼容 | 管理任务构建测试/静态检查 | 未传模式时保存为 `MANUAL` |
+| 自动发奖 | Service 单元测试 | 首次完成后发布一个幂等奖励事件 |
+| 状态闭环 | Handler 单元测试 | 奖励成功后进度变为 `CLAIMED` |
+| 重复事件 | 既有幂等约束 | 同一任务周期不重复增加星钻 |
+| 模块回归 | Maven 测试编译 | 主代码与测试代码编译成功 |
+
+## 风险与回退
+- 风险：自动奖励为最终一致，任务完成后可能短暂显示 `GRANTING`。
+- 风险：奖励事件达到最大重试次数后需管理员在奖励事件后台人工重试。
+- 回退：将任务模式改回 `MANUAL`；数据库字段可保留，不影响既有领取接口。
+
+## 未完成项
+- 本地 Docker Desktop 未运行，未在真实 MySQL 容器执行迁移；部署时由
+  `V3.9.1_53__add_activity_reward_claim_mode.sql` 完成结构升级。
+
+## 验证记录
+- Maven：目标模块及依赖模块主代码、测试代码编译成功，8 个 Reactor 模块
+  全部成功。
+- 定向测试：通过 JUnit Platform 独立执行 3 个测试类，共 8 个测试成功，
+  输出 `ACTIVITY_AUTO_REWARD_TESTS_OK succeeded=8`。
+- 数据库：迁移 SQL 与完整数据库基线同步新增 `reward_claim_mode` 和
+  `GRANTING` 状态说明。
+- 编码：Java、XML、迁移 SQL、PLANS、ADR、changelog 保持 UTF-8 无 BOM/LF；
+  `ts-api.md` 与完整数据库 SQL 保持原 UTF-8 BOM/CRLF 或无 BOM/CRLF。
+
+# 20260827-sign-milestone-reward
+
+## 元信息
+- 任务名称：连续签到第 4/7 天里程碑奖励
+- 分级：H2
+- 负责人：Codex
+- 开始时间：2026-08-27
+- 关联：每日签到、活动奖励、Vue3 活动配置
+
+## 目标与非目标
+- 目标：连续签到按固定 7 天循环，在第 4 天和第 7 天发放可配置额外星钻。
+- 目标：里程碑奖励与每日签到奖励分别记录并保持幂等。
+- 目标：活动后台支持查询和维护签到里程碑规则。
+- 非目标：不修改签到触发入口，不增加补签、签到日历或断签补偿。
+
+## 任务分解
+- [x] T1：新增签到里程碑规则表、签到记录扩展字段和迁移。
+- [x] T2：签到流程计算 7 天周期日并执行幂等奖励。
+- [x] T3：新增后台规则接口并接入 Vue3 配置页签。
+- [x] T4：补充测试、API 文档、ADR 和变更记录并完成验证。
+
+## 验证矩阵
+| 验证项 | 方法 | 期望 |
+|---|---|---|
+| 周期计算 | Service 单元测试 | 连续第 4/7/11/14 天分别映射到周期第 4/7 天 |
+| 里程碑发奖 | Service 单元测试 | 命中规则时每日奖励和里程碑奖励分别发放 |
+| 重复签到 | 既有幂等测试 | 同日重复请求不重复发放里程碑 |
+| 后台配置 | Service/API 测试 | 仅签到任务可配置第 1-7 天规则 |
+| 前端接入 | TypeScript 定向检查 | 页签、表格、弹窗和 API 类型一致 |
+
+## 风险与回退
+- 风险：里程碑使用独立积分流水，签到记录需要同时保存两笔流水号。
+- 风险：连续天数不断累加，但奖励规则按每 7 天循环重复命中。
+- 回退：停用全部里程碑规则即可停止额外发奖；迁移字段可保留。
+
+## 未完成项
+- 未在真实 MySQL 容器执行迁移，部署时由
+  `V3.9.1_54__add_sign_milestone_reward.sql` 完成结构升级。
+- Vue3 项目全量 `vue-tsc` 受旧版 `vue-tsc 1.8.27` 与当前
+  TypeScript/Node 不兼容影响；原生 `tsc` 仍存在大量项目存量错误，
+  本次活动页面文件未出现在新增错误清单中。
+
+## 验证记录
+- Maven：目标模块及依赖模块主代码编译成功；目标模块主代码和 34 个测试
+  源文件再次编译成功。
+- 定向测试：通过 JUnit Platform 独立执行 4 个测试类，共 16 个测试成功，
+  0 个失败。
+- 前端：接口、表格、弹窗和任务发奖方式字段已静态核对；全量类型检查的
+  阻断原因见未完成项。
+- 编码：完整数据库 SQL 保持 UTF-8 无 BOM/CRLF，其余本次新增和修改的
+  Java、XML、SQL、Vue、TypeScript、Markdown 文件保持原编码和换行。
+
+# 20260827-default-activity-tasks
+
+## 元信息
+- 任务名称：活动条件触发接入与默认任务初始化
+- 分级：H2
+- 负责人：Codex
+- 开始时间：2026-08-27
+- 关联：角色聊天、角色/故事创建、角色图/故事背景图生成、活动任务配置
+
+## 目标与非目标
+- 目标：新增角色图片、故事背景和故事互动三个独立活动条件。
+- 目标：在对应主业务成功后幂等推进活动进度，且活动异常不影响主业务。
+- 目标：默认初始化六个每日任务和一个每周任务，统一自动发放星钻。
+- 非目标：不改变已有签到基础奖励，不删除历史 `IMAGE_GENERATE` 条件。
+
+## 任务分解
+- [x] T1：新增独立条件枚举和事务提交后活动进度上报器。
+- [x] T2：接入聊天、故事互动、创建角色/故事及两类图片生成成功入口。
+- [x] T3：新增独立默认任务补丁，并保持完整数据库基线不含默认任务数据。
+- [x] T4：同步 Vue3 条件选项、API 文档、ADR 和变更记录。
+- [x] T5：补充定向测试并执行目标模块编译验证。
+
+## 验证矩阵
+| 验证项 | 方法 | 期望 |
+|---|---|---|
+| 条件区分 | 枚举与前端静态检查 | 两类图片及故事互动可独立配置 |
+| 成功计数 | 单元测试/代码路径检查 | 成功后上报，失败或回滚不计数 |
+| 主业务隔离 | 上报器单元测试 | 活动异常只记录告警，不向外抛出 |
+| 幂等迁移 | SQL 静态检查 | 重复执行不重复插入默认任务 |
+| 模块回归 | Maven 定向编译测试 | 目标模块主代码与测试代码编译成功 |
+
+## 风险与回退
+- 风险：活动上报为进程内事务后回调，应用在提交后立即宕机时可能漏记一次。
+- 风险：旧 `IMAGE_GENERATE` 任务不会自动迁移到两个新条件，需后台按业务调整。
+- 回退：移除业务入口的上报调用并停用独立补丁新增任务；新增枚举值可保留兼容数据。
+
+## 未完成项
+- 未在真实 MySQL 执行独立补丁；需要时由运维手动执行补充默认任务。
+- 未执行 Vue3 ESLint、Vite 构建和全量类型检查。
+
+## 验证记录
+- Maven 主代码编译：8 个 Reactor 模块全部成功。
+- Maven 测试编译：`jeecg-system-biz` 35 个测试源文件编译成功。
+- 定向测试：JUnit Platform 独立执行 `TsActivityProgressReporterTest`，
+  4 个测试成功、0 个失败。
+- SQL 静态检查：独立补丁包含 7 个默认任务和 7 组 `NOT EXISTS` 幂等条件。
+- 编码：`ts-api.md` 保持 UTF-8 BOM/CRLF，完整数据库 SQL 保持
+  UTF-8 无 BOM/CRLF，其余新增和修改文件保持 UTF-8 无 BOM/LF。

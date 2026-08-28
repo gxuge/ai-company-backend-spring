@@ -1,8 +1,10 @@
 package org.jeecg.modules.system.dto.tsad;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
+import org.jeecg.modules.system.jackson.TsEventOccurredAtDeserializer;
 
 import java.util.Date;
 
@@ -27,5 +29,6 @@ public class TsAdEventReportDto {
     @NotBlank
     private String platform;
     /** 客户端事件发生时间，为空时使用服务端时间。 */
+    @JsonDeserialize(using = TsEventOccurredAtDeserializer.class)
     private Date occurredAt;
 }

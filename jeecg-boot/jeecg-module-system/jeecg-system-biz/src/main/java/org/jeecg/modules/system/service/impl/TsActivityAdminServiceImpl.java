@@ -4,15 +4,18 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.jeecg.modules.system.dto.tsactivity.TsActivityRewardQueryDto;
 import org.jeecg.modules.system.dto.tsactivity.TsActivityRewardRuleSaveDto;
+import org.jeecg.modules.system.dto.tsactivity.TsActivitySignMilestoneRuleSaveDto;
 import org.jeecg.modules.system.dto.tsactivity.TsActivityTaskCreateDto;
 import org.jeecg.modules.system.dto.tsactivity.TsActivityTaskQueryDto;
 import org.jeecg.modules.system.dto.tsactivity.TsActivityTaskUpdateDto;
 import org.jeecg.modules.system.dto.tsactivity.TsActivityUserTaskQueryDto;
 import org.jeecg.modules.system.entity.TsActivityTask;
 import org.jeecg.modules.system.entity.TsActivityTaskRewardRule;
+import org.jeecg.modules.system.entity.TsActivitySignMilestoneRule;
 import org.jeecg.modules.system.enums.tsactivity.TsActivityErrorCode;
 import org.jeecg.modules.system.enums.tsactivity.TsActivityMemberLevel;
 import org.jeecg.modules.system.enums.tsactivity.TsActivityProgressStatus;
+import org.jeecg.modules.system.enums.tsactivity.TsActivityRewardClaimMode;
 import org.jeecg.modules.system.enums.tsactivity.TsActivityRewardStatus;
 import org.jeecg.modules.system.enums.tsactivity.TsActivityRewardType;
 import org.jeecg.modules.system.enums.tsactivity.TsActivityTaskCategory;
@@ -21,6 +24,7 @@ import org.jeecg.modules.system.enums.tsactivity.TsActivityTaskType;
 import org.jeecg.modules.system.enums.tsactivity.TsActivityConditionType;
 import org.jeecg.modules.system.exception.tsactivity.TsActivityBizException;
 import org.jeecg.modules.system.mapper.TsActivityQueryMapper;
+import org.jeecg.modules.system.mapper.TsActivitySignMilestoneRuleMapper;
 import org.jeecg.modules.system.mapper.TsActivityTaskMapper;
 import org.jeecg.modules.system.mapper.TsActivityTaskRewardRuleMapper;
 import org.jeecg.modules.system.service.ITsActivityAdminService;
@@ -43,15 +47,18 @@ public class TsActivityAdminServiceImpl implements ITsActivityAdminService {
     private final TsActivityQueryMapper queryMapper;
     private final TsActivityTaskMapper taskMapper;
     private final TsActivityTaskRewardRuleMapper rewardRuleMapper;
+    private final TsActivitySignMilestoneRuleMapper signMilestoneRuleMapper;
 
-    /** 注入活动查询、任务和规则 Mapper。 */
+    /** 注入活动查询、任务、会员规则和签到里程碑规则 Mapper。 */
     public TsActivityAdminServiceImpl(
             TsActivityQueryMapper queryMapper,
             TsActivityTaskMapper taskMapper,
-            TsActivityTaskRewardRuleMapper rewardRuleMapper) {
+            TsActivityTaskRewardRuleMapper rewardRuleMapper,
+            TsActivitySignMilestoneRuleMapper signMilestoneRuleMapper) {
         this.queryMapper = queryMapper;
         this.taskMapper = taskMapper;
         this.rewardRuleMapper = rewardRuleMapper;
+        this.signMilestoneRuleMapper = signMilestoneRuleMapper;
     }
 
     /** {@inheritDoc} */
@@ -193,6 +200,90 @@ public class TsActivityAdminServiceImpl implements ITsActivityAdminService {
         }
     }
 
+    /** {@inheritDoc} */
+    @Override
+    public List<TsActivitySignMilestoneRule> listSignMilestoneRules(
+            Long taskId) {
+        LambdaQueryWrapper<TsActivitySignMilestoneRule> wrapper =
+                new LambdaQueryWrapper<TsActivitySignMilestoneRule>()
+                        .eq(taskId != null,
+                                TsActivitySignMilestoneRule::getTaskId,
+                                taskId)
+                        .orderByAsc(TsActivitySignMilestoneRule::getTaskId)
+                        .orderByAsc(
+                                TsActivitySignMilestoneRule::getMilestoneDay)
+                        .orderByAsc(TsActivitySignMilestoneRule::getId);
+        return signMilestoneRuleMapper.selectList(wrapper);
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void saveSignMilestoneRule(
+            TsActivitySignMilestoneRuleSaveDto request) {
+        if (request.getStatus() != 0 && request.getStatus() != 1) {
+            throw new TsActivityBizException(
+                    TsActivityErrorCode.ACTIVITY_INVALID_ARGUMENT,
+                    "规则状态仅支持0或1");
+        }
+        TsActivityTask task = taskMapper.selectById(request.getTaskId());
+        if (task == null) {
+            throw new TsActivityBizException(
+                    TsActivityErrorCode.ACTIVITY_TASK_NOT_FOUND,
+                    "活动任务不存在");
+        }
+        if (!TsActivityTaskType.SIGN.name().equals(task.getTaskType())) {
+            throw new TsActivityBizException(
+                    TsActivityErrorCode.ACTIVITY_CONFIGURATION_INVALID,
+                    "签到里程碑规则只能绑定签到任务");
+        }
+        String rewardType = parseEnum(
+                request.getRewardType(),
+                TsActivityRewardType.class,
+                "奖励类型不合法").name();
+        if (!TsActivityRewardType.STAR_DIAMOND.name().equals(rewardType)
+                && request.getStatus() == 1) {
+            throw new TsActivityBizException(
+                    TsActivityErrorCode.ACTIVITY_REWARD_TYPE_UNSUPPORTED,
+                    "当前奖励类型尚未接入发放器");
+        }
+
+        Date now = new Date();
+        TsActivitySignMilestoneRule rule =
+                new TsActivitySignMilestoneRule()
+                        .setId(request.getId())
+                        .setTaskId(request.getTaskId())
+                        .setMilestoneDay(request.getMilestoneDay())
+                        .setRewardType(rewardType)
+                        .setRewardValue(request.getRewardValue())
+                        .setStatus(request.getStatus())
+                        .setUpdatedAt(now);
+        if (rule.getId() == null) {
+            TsActivitySignMilestoneRule existing =
+                    signMilestoneRuleMapper.selectOne(
+                            new LambdaQueryWrapper<
+                                    TsActivitySignMilestoneRule>()
+                                    .eq(TsActivitySignMilestoneRule::getTaskId,
+                                            request.getTaskId())
+                                    .eq(TsActivitySignMilestoneRule
+                                                    ::getMilestoneDay,
+                                            request.getMilestoneDay())
+                                    .last("LIMIT 1"));
+            if (existing != null) {
+                rule.setId(existing.getId())
+                        .setCreatedAt(existing.getCreatedAt());
+                signMilestoneRuleMapper.updateById(rule);
+                return;
+            }
+            rule.setCreatedAt(now);
+            signMilestoneRuleMapper.insert(rule);
+        } else if (signMilestoneRuleMapper.updateById(rule) == 0) {
+            throw new TsActivityBizException(
+                    TsActivityErrorCode.ACTIVITY_CONFIGURATION_INVALID,
+                    "签到里程碑奖励规则不存在");
+        }
+    }
+
     /** 构建并校验任务实体。 */
     private TsActivityTask buildTask(TsActivityTaskCreateDto request) {
         TsActivityTaskType taskType = parseEnum(
@@ -203,6 +294,13 @@ public class TsActivityAdminServiceImpl implements ITsActivityAdminService {
                 request.getConditionType(), TsActivityConditionType.class, "完成条件不合法");
         TsActivityRewardType rewardType = parseEnum(
                 request.getRewardType(), TsActivityRewardType.class, "奖励类型不合法");
+        TsActivityRewardClaimMode rewardClaimMode =
+                StringUtils.hasText(request.getRewardClaimMode())
+                        ? parseEnum(
+                                request.getRewardClaimMode(),
+                                TsActivityRewardClaimMode.class,
+                                "奖励领取模式不合法")
+                        : TsActivityRewardClaimMode.MANUAL;
         TsActivityTaskStatus status = StringUtils.hasText(request.getStatus())
                 ? parseEnum(request.getStatus(), TsActivityTaskStatus.class, "任务状态不合法")
                 : TsActivityTaskStatus.ENABLED;
@@ -241,6 +339,7 @@ public class TsActivityAdminServiceImpl implements ITsActivityAdminService {
                 .setConditionValue(request.getConditionValue())
                 .setRewardType(rewardType.name())
                 .setRewardValue(request.getRewardValue())
+                .setRewardClaimMode(rewardClaimMode.name())
                 .setStartTime(request.getStartTime())
                 .setEndTime(request.getEndTime())
                 .setStatus(status.name())

@@ -1,6 +1,7 @@
 ﻿<component name="ProjectRunConfigurationManager">
   <configuration default="false" name="JeecgSystemApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
     <option name="MAIN_CLASS_NAME" value="org.jeecg.JeecgSystemApplication" />
+    <option name="PROGRAM_PARAMETERS" value="--spring.profiles.active=dev" />
     <module name="jeecg-system-start" />
     <shortenClasspath name="ARGS_FILE" />
     <option name="SHORTEN_COMMAND_LINE" value="ARGS_FILE" />

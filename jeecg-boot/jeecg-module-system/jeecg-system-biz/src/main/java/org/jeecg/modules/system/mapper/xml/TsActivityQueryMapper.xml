@@ -7,6 +7,7 @@
             resultType="org.jeecg.modules.system.entity.TsActivityTask">
         SELECT id, task_name, task_type, task_category, description,
                condition_type, condition_value, reward_type, reward_value,
+               reward_claim_mode,
                start_time, end_time, status, sort, created_at, updated_at
         FROM activity_task
         WHERE status = 'ENABLED'
@@ -28,6 +29,7 @@
             resultType="org.jeecg.modules.system.entity.TsActivityTask">
         SELECT id, task_name, task_type, task_category, description,
                condition_type, condition_value, reward_type, reward_value,
+               reward_claim_mode,
                start_time, end_time, status, sort, created_at, updated_at
         FROM activity_task
         WHERE task_type = 'SIGN'
@@ -93,6 +95,17 @@
           AND status = 'DOING'
     </update>
 
+    <update id="markRewardClaimed">
+        UPDATE user_task_progress
+        SET reward_status = 'CLAIMED',
+            reward_time = #{now},
+            updated_at = #{now}
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND task_id = #{taskId}
+          AND reward_status IN ('UNCLAIMED', 'GRANTING')
+    </update>
+
     <insert id="insertProgressEventIgnore">
         INSERT IGNORE INTO activity_progress_event (
             user_id, condition_type, biz_id, count_value, created_at
@@ -103,21 +116,24 @@
 
     <insert id="insertSignIgnore" useGeneratedKeys="true" keyProperty="id">
         INSERT IGNORE INTO user_sign_record (
-            user_id, task_id, sign_date, continuous_days,
-            base_reward_amount, extra_reward_amount, reward_amount,
-            points_transaction_no, created_at
+            user_id, task_id, sign_date, continuous_days, cycle_day,
+            base_reward_amount, extra_reward_amount, milestone_day,
+            milestone_reward_amount, reward_amount, points_transaction_no,
+            milestone_points_transaction_no, created_at
         ) VALUES (
-            #{userId}, #{taskId}, #{signDate}, #{continuousDays},
-            #{baseRewardAmount}, #{extraRewardAmount}, #{rewardAmount},
-            #{pointsTransactionNo}, #{createdAt}
+            #{userId}, #{taskId}, #{signDate}, #{continuousDays}, #{cycleDay},
+            #{baseRewardAmount}, #{extraRewardAmount}, #{milestoneDay},
+            #{milestoneRewardAmount}, #{rewardAmount}, #{pointsTransactionNo},
+            #{milestonePointsTransactionNo}, #{createdAt}
         )
     </insert>
 
     <select id="selectSignByDate"
             resultType="org.jeecg.modules.system.entity.TsUserSignRecord">
-        SELECT id, user_id, task_id, sign_date, continuous_days,
-               base_reward_amount, extra_reward_amount, reward_amount,
-               points_transaction_no, created_at
+        SELECT id, user_id, task_id, sign_date, continuous_days, cycle_day,
+               base_reward_amount, extra_reward_amount, milestone_day,
+               milestone_reward_amount, reward_amount, points_transaction_no,
+               milestone_points_transaction_no, created_at
         FROM user_sign_record
         WHERE user_id = #{userId}
           AND sign_date = #{signDate}
@@ -126,13 +142,25 @@
 
     <select id="selectPreviousSign"
             resultType="org.jeecg.modules.system.entity.TsUserSignRecord">
-        SELECT id, user_id, task_id, sign_date, continuous_days,
-               base_reward_amount, extra_reward_amount, reward_amount,
-               points_transaction_no, created_at
+        SELECT id, user_id, task_id, sign_date, continuous_days, cycle_day,
+               base_reward_amount, extra_reward_amount, milestone_day,
+               milestone_reward_amount, reward_amount, points_transaction_no,
+               milestone_points_transaction_no, created_at
         FROM user_sign_record
         WHERE user_id = #{userId}
           AND sign_date &lt; #{signDate}
         ORDER BY sign_date DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectActiveSignMilestoneRule"
+            resultType="org.jeecg.modules.system.entity.TsActivitySignMilestoneRule">
+        SELECT id, task_id, milestone_day, reward_type, reward_value,
+               status, created_at, updated_at
+        FROM activity_sign_milestone_rule
+        WHERE task_id = #{taskId}
+          AND milestone_day = #{milestoneDay}
+          AND status = 1
         LIMIT 1
     </select>
 
@@ -173,7 +201,7 @@
             resultType="org.jeecg.modules.system.vo.tsactivity.TsActivityAdminTaskVo">
         SELECT id, task_name, task_type, task_category AS category,
                description, condition_type, condition_value, reward_type,
-               reward_value, start_time, end_time, status, sort,
+               reward_value, reward_claim_mode, start_time, end_time, status, sort,
                created_at, updated_at
         FROM activity_task
         <where>

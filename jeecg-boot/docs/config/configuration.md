@@ -86,7 +86,9 @@ Producer 开启幂等、`acks=all` 和 LZ4 压缩；消费者失败重试两次�
 
 ### 7.1 Docker 部署
 - 两套 Compose 均提供 `jeecg-boot-kafka` 单节点 KRaft Broker，并与后台服务加入同一 Docker 网络。
-- Kafka 数据持久化到 Compose 目录下的 `kafka/data`，不默认映射宿主机端口，仅供 Docker 网络内的后台服务访问。
+- Kafka 数据持久化到 Compose 目录下的 `kafka/data`，内部监听 `9092`，供 Docker 网络内的后台服务通过 `jeecg-boot-kafka:9092` 访问。
+- Kafka 外部调试监听 `9094` 映射到宿主机，端口可通过 `KAFKA_EXTERNAL_PORT` 调整；`KAFKA_EXTERNAL_HOST` 必须配置为外部调试客户端可访问的服务器 IP 或域名。
+- Kafka Controller 监听 `9093` 仅用于容器内部，不对宿主机暴露。
 - Docker 环境默认仍为 `TS_BEHAVIOR_KAFKA_ENABLED=false`；开启前需先确认 Broker、Topic、MySQL 明细消费者和 Redis 特征消费者链路。
 - 当前 `TS_BEHAVIOR_KAFKA_PARTITIONS=6`、`TS_BEHAVIOR_KAFKA_REPLICAS=1` 仅适用于单节点开发/测试部署，生产集群需要按 Broker 数量调整。
 
@@ -98,3 +100,29 @@ Producer 开启幂等、`acks=all` 和 LZ4 压缩；消费者失败重试两次�
   - 或 `jeecg.airag.prompt-chat.app-id` 对应应用绑定的文本模型。
 - 两项均未配置或模型不可用时，审核按失败关闭处理：输入不进入主模型，输出不直接返回用户。
 - 审核日志不记录完整原文，只记录阶段、类别、分数、动作、服务、时间、内容长度和 SHA-256 摘要前缀。
+
+## 9. 2026-08-26 ClickHouse 分析数据源
+- MySQL `master` 继续作为默认事务数据源；ClickHouse 仅用于行为、广告、AI 日志等分析查询。
+- ClickHouse 与 MySQL 一样配置在 `application-dev.yml`、`application-prod.yml`、`application-docker.yml` 的 `spring.datasource.dynamic.datasource` 下，数据源名称固定为 `clickhouse`。
+- 开发和生产连接值分别放在 `application-dev.properties`、`application-prod.properties`，Docker 连接值通过环境变量注入。
+- 后续分析 Service 或 Mapper 必须显式使用 `@DS("clickhouse")`，禁止将 MySQL 事务写入 ClickHouse。
+
+### 9.1 加载方式
+- 本地开发：启用现有 `dev` Profile，自动加载 `application-dev.properties` 中的 ClickHouse 连接值。
+- 生产环境：启用现有 `prod` Profile，自动加载 `application-prod.properties` 中的 ClickHouse 连接值。
+- Docker 环境：启用现有 `docker` Profile，自动读取 Compose 注入的 ClickHouse 环境变量。
+- 不再需要额外的 `clickhouse` Profile 或 `SPRING_PROFILES_INCLUDE`。
+
+### 9.2 环境变量
+- `CLICKHOUSE_URL`：JDBC 地址；本地示例为 `jdbc:clickhouse:http://localhost:8123/jeecg_analytics`。
+- `CLICKHOUSE_USERNAME` / `CLICKHOUSE_PASSWORD`：连接用户名和密码，生产环境必须覆盖示例值。
+- `CLICKHOUSE_DB`：Docker 初始化数据库名，默认 `jeecg_analytics`。
+- `CLICKHOUSE_HTTP_PORT` / `CLICKHOUSE_NATIVE_PORT`：Docker 映射端口，默认 `8123/9000`。
+- `CLICKHOUSE_POOL_MAX_ACTIVE` / `CLICKHOUSE_POOL_MAX_WAIT`：连接池最大连接数和最大等待毫秒数，默认 `20/60000`。
+
+### 9.3 部署边界
+- Docker 使用固定 ClickHouse `26.3.22.7` LTS 镜像，并持久化 `data` 与 `log` 目录。
+- JDBC 驱动使用官方 `com.clickhouse:clickhouse-jdbc:0.9.8:all`，驱动类为 `com.clickhouse.jdbc.ClickHouseDriver`。
+- ClickHouse 不参与当前 Flyway、Quartz、MySQL 本地事务和主数据源健康判断。
+- 各环境都会注册 ClickHouse 数据源；服务不可达时，首次执行 `@DS("clickhouse")` 查询会失败。
+- 当前仅完成连接配置；建表、数据同步、冷热分层和集群高可用需按具体分析场景另行设计。

@@ -14,6 +14,7 @@ import org.jeecg.modules.openapi.service.IPromptChatService;
 import org.jeecg.modules.openapi.service.PromptRenderService;
 import org.jeecg.modules.openapi.vo.MiniMaxImageResponseVo;
 import org.jeecg.modules.openapi.vo.PromptRenderedSectionsVo;
+import org.jeecg.modules.system.activity.TsActivityProgressReporter;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateImageByPromptDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleConfirmedGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateRoleDto;
@@ -33,6 +34,7 @@ import org.jeecg.modules.system.entity.TsUserVoiceConfig;
 import org.jeecg.modules.system.entity.TsVoiceProfile;
 import org.jeecg.modules.system.entity.TsVoiceProfileTag;
 import org.jeecg.modules.system.entity.TsVoiceTag;
+import org.jeecg.modules.system.enums.tsactivity.TsActivityConditionType;
 import org.jeecg.modules.system.mapper.TsPresetMapper;
 import org.jeecg.modules.system.mapper.TsPresetTagMapper;
 import org.jeecg.modules.system.mapper.TsRoleMapper;
@@ -164,6 +166,8 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
     private org.jeecg.modules.system.service.ITsWorkReviewService tsWorkReviewService;
     @Resource
     private RedisTemplate<String, Object> redisTemplate;
+    @Resource
+    private TsActivityProgressReporter activityProgressReporter;
 
     /**
      * 一键补全角色设定。
@@ -293,6 +297,10 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         vo.setPromptCode(PROMPT_CODE_IMAGE);
         vo.setPromptVersion(PROMPT_VERSION);
         vo.setSnapshotKey(snapshotKey);
+        activityProgressReporter.reportAfterCommit(
+                user == null ? null : user.getId(),
+                TsActivityConditionType.ROLE_IMAGE_GENERATE,
+                "role-image:" + snapshotKey);
         return vo;
     }
 
@@ -857,6 +865,12 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         vo.setOriginalImageUrls(imageResponse == null ? null : imageResponse.getOriginalImageUrls());
         vo.setImageUrls(imageResponse == null ? null : imageResponse.getImageUrls());
         vo.setSnapshotKey(snapshotKey);
+        if (hasGeneratedImage(imageResponse)) {
+            activityProgressReporter.reportAfterCommit(
+                    user == null ? null : user.getId(),
+                    TsActivityConditionType.ROLE_IMAGE_GENERATE,
+                    "role-image:" + snapshotKey);
+        }
         return vo;
     }
 
@@ -983,6 +997,10 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         vo.setPromptVersion(PROMPT_VERSION);
         vo.setRenderedPrompt(renderedPrompt);
         vo.setSnapshotKey(snapshotKey);
+        activityProgressReporter.reportAfterCommit(
+                user == null ? null : user.getId(),
+                TsActivityConditionType.ROLE_CREATE,
+                "role-create:" + role.getId());
         return vo;
     }
 
@@ -1041,7 +1059,37 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         result.setSettingResult(settingResult);
         result.setImageResult(imageResult);
         result.setVoiceResult(voiceResult);
+        activityProgressReporter.reportAfterCommit(
+                user == null ? null : user.getId(),
+                TsActivityConditionType.ROLE_CREATE,
+                "role-create:" + role.getId());
         return result;
+    }
+
+    /**
+     * 判断提示词直生图接口是否实际返回了至少一张图片。
+     */
+    private boolean hasGeneratedImage(MiniMaxImageResponseVo imageResponse) {
+        if (imageResponse == null) {
+            return false;
+        }
+        return hasTextValue(imageResponse.getOriginalImageUrls())
+                || hasTextValue(imageResponse.getImageUrls());
+    }
+
+    /**
+     * 判断图片地址集合中是否存在有效值。
+     */
+    private boolean hasTextValue(List<String> imageUrls) {
+        if (imageUrls == null) {
+            return false;
+        }
+        for (String imageUrl : imageUrls) {
+            if (StringUtils.hasText(imageUrl)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void persistAndAttachRoleImage(LoginUser user,

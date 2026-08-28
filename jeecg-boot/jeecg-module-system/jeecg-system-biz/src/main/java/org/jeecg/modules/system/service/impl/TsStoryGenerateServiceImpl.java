@@ -15,6 +15,7 @@ import org.jeecg.modules.openapi.service.IPromptChatService;
 import org.jeecg.modules.openapi.service.PromptRenderService;
 import org.jeecg.modules.openapi.vo.MiniMaxImageResponseVo;
 import org.jeecg.modules.openapi.vo.PromptRenderedSectionsVo;
+import org.jeecg.modules.system.activity.TsActivityProgressReporter;
 import org.jeecg.modules.system.dto.tsstory.TsStoryFullGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickOutlineGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneImageGenerateDto;
@@ -24,6 +25,7 @@ import org.jeecg.modules.system.dto.tsstory.TsStorySceneImagePromptOptimizeDto;
 import org.jeecg.modules.system.entity.TsPreset;
 import org.jeecg.modules.system.entity.TsPresetTag;
 import org.jeecg.modules.system.entity.TsTag;
+import org.jeecg.modules.system.enums.tsactivity.TsActivityConditionType;
 import org.jeecg.modules.system.mapper.TsPresetMapper;
 import org.jeecg.modules.system.mapper.TsPresetTagMapper;
 import org.jeecg.modules.system.mapper.TsTagMapper;
@@ -52,6 +54,7 @@ import java.util.List;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -118,6 +121,8 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     private TsTagMapper tsTagMapper;
     @Resource
     private ToolcallJsonRepairService toolcallJsonRepairService;
+    @Resource
+    private TsActivityProgressReporter activityProgressReporter;
 
     /**
      * 生成故事设定（标题/简介/模式/设定/背景）。
@@ -386,6 +391,10 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         vo.setImageUrl(imageUrl);
         vo.setPromptCode(PROMPT_CODE_STORY_SCENE_IMAGE);
         vo.setPromptVersion(PROMPT_VERSION_STORY_SCENE_IMAGE);
+        activityProgressReporter.reportAfterCommit(
+                user == null ? null : user.getId(),
+                TsActivityConditionType.STORY_BACKGROUND_GENERATE,
+                "story-background:" + UUID.randomUUID());
         return vo;
     }
 

@@ -27,6 +27,8 @@ public class TsActivityTaskVo {
     private String rewardType;
     /** 基础奖励数量。 */
     private Long rewardValue;
+    /** 奖励领取模式：MANUAL/AUTO。 */
+    private String rewardClaimMode;
     /** 完成状态。 */
     private String status;
     /** 领取状态。 */

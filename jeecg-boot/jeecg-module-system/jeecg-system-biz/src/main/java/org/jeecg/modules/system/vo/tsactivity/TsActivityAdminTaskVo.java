@@ -25,6 +25,8 @@ public class TsActivityAdminTaskVo {
     private String rewardType;
     /** 奖励数量。 */
     private Long rewardValue;
+    /** 奖励领取模式：MANUAL/AUTO。 */
+    private String rewardClaimMode;
     /** 开始时间。 */
     private Date startTime;
     /** 结束时间。 */

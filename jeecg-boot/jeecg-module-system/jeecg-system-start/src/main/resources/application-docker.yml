@@ -149,12 +149,28 @@ spring:
           username: root
           password: root
           driver-class-name: com.mysql.cj.jdbc.Driver
-          # 多数据源配置
-          #multi-datasource1:
-          #url: jdbc:mysql://localhost:3306/jeecg-boot2?useUnicode=true&characterEncoding=utf8&autoReconnect=true&zeroDateTimeBehavior=convertToNull&transformedBitIsBoolean=true&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
-          #username: root
-          #password: root
-          #driver-class-name: com.mysql.cj.jdbc.Driver
+        clickhouse:
+          url: ${CLICKHOUSE_URL:jdbc:clickhouse:http://jeecg-boot-clickhouse:8123/jeecg_analytics}
+          username: ${CLICKHOUSE_USERNAME:default}
+          password: ${CLICKHOUSE_PASSWORD:demo}
+          driver-class-name: com.clickhouse.jdbc.ClickHouseDriver
+          type: com.alibaba.druid.pool.DruidDataSource
+          druid:
+            initial-size: 0
+            min-idle: 0
+            max-active: ${CLICKHOUSE_POOL_MAX_ACTIVE:20}
+            max-wait: ${CLICKHOUSE_POOL_MAX_WAIT:60000}
+            validation-query: SELECT 1
+            test-while-idle: true
+            test-on-borrow: false
+            test-on-return: false
+            pool-prepared-statements: false
+        # 多数据源配置
+        #multi-datasource1:
+        #url: jdbc:mysql://localhost:3306/jeecg-boot2?useUnicode=true&characterEncoding=utf8&autoReconnect=true&zeroDateTimeBehavior=convertToNull&transformedBitIsBoolean=true&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+        #username: root
+        #password: root
+        #driver-class-name: com.mysql.cj.jdbc.Driver
   #redis 配置
   data:
     redis:

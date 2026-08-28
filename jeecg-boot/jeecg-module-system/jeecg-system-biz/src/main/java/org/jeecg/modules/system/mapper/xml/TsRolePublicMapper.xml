@@ -128,12 +128,23 @@
             r.gender AS gender,
             r.occupation AS occupation,
             COALESCE(NULLIF(rp.intro_text, ''), r.greeting) AS introText,
+            r.greeting AS greeting,
+            r.background_story AS backgroundStory,
+            r.dialogue_preview AS dialoguePreview,
+            r.dialogue_length AS dialogueLength,
+            r.tone_tendency AS toneTendency,
+            r.interaction_mode AS interactionMode,
+            r.voice_name AS voiceName,
             COALESCE(NULLIF(u.realname, ''), u.username) AS authorName,
             u.avatar AS authorAvatar,
+            COALESCE(st.connector_count, 0) AS connectorCount,
+            COALESCE(st.follower_count, 0) AS followerCount,
+            COALESCE(st.dialogue_count, 0) AS dialogueCount,
             r.updated_at AS updatedAt
         FROM ts_role_public rp
         INNER JOIN ts_role_info r ON r.id = rp.role_id
         LEFT JOIN sys_user u ON u.id = r.user_id
+        LEFT JOIN ts_role_stat st ON st.role_id = r.id
         WHERE rp.status = 'online'
           AND (r.status IS NULL OR r.status != 0)
           AND r.review_status = 'APPROVED'

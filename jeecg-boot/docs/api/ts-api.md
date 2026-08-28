@@ -72,7 +72,8 @@
 
 补充说明：
 - `ai-reply` 会在后端直接完成文本生成与语音生成编排。
-- `message-tts` 只负责按消息重新获取语音，不做服务端语音缓存落库。
+- `ai-reply` 与 `message-tts` 返回的 `audioUrl` 当前为临时 `data:audio/mpeg;base64,...` 播放地址，不写入 R2。
+- `message-tts` 只负责按消息重新获取语音，不做服务端语音缓存落库；临时音频也不会写入消息 `contentJson` 或附件表。
 - `audioCacheKey` 仅作为 Web 本地缓存键使用。
 - `/ts-chat-sessions` 列表响应同时返回 `roleName`、`roleAvatarUrl` 和 `lastMessageText`，用于直接渲染会话列表摘要，前端无需逐条请求角色详情或消息分页。
 
@@ -281,6 +282,10 @@ Agent SSE 确认交互说明：
 | POST | `/ts-story-publics/offline` | 下架故事公开记录 |
 | GET | `/ts-story-publics/story-options` | 故事公开目标下拉 |
 
+`GET /ts-roles/public/detail` 支持按 `id`、`publicId` 或 `channelCode` 查询在线且审核通过的公开角色。详情除公开列表基础字段外，还返回：
+- 角色资料：`greeting`、`backgroundStory`、`dialoguePreview`、`dialogueLength`、`toneTendency`、`interactionMode`、`voiceName`。
+- 角色统计：`connectorCount`、`followerCount`、`dialogueCount`。角色暂无统计记录时均返回 `0`。
+
 ### 3.6 预设与标签资源
 以下资源型控制器均遵循统一的标准 CRUD 形态：`list / add / edit / queryById / delete / deleteBatch`。
 
@@ -370,7 +375,7 @@ Agent SSE 确认交互说明：
 
 ### 4.4 当前语音链路说明
 - `POST /ts-chat-sessions/ai-reply` 会在后端直接产出语音元信息。
-- `POST /ts-chat-sessions/message-tts` 只负责按消息即时生成语音，不依赖服务端缓存表。
+- `POST /ts-chat-sessions/message-tts` 只负责按消息即时生成语音，不依赖服务端缓存表；当前音频以临时 data URL 返回。
 - `audioCacheKey` 仅作为 Web 本地缓存键使用。
 
 ### 4.5 模板与修复约束
@@ -472,7 +477,7 @@ Agent SSE 确认交互说明：
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/sys/ts-activity/home` | 查询签到状态、连续天数、每日/每周任务和星钻余额 |
-| POST | `/sys/ts-activity/sign` | 幂等执行每日签到并发放星钻 |
+| POST | `/sys/ts-activity/sign` | 幂等执行每日签到，并按配置发放每日及周期里程碑星钻 |
 | GET | `/sys/ts-activity/tasks` | 查询当前周期任务，可使用 `category` 查询参数 |
 | POST | `/sys/ts-activity/task/receive` | 领取任务奖励，`taskId` 通过 JSON Body 传递 |
 | GET | `/sys/ts-activity/rewards` | 分页查询当前用户奖励记录 |
@@ -488,6 +493,23 @@ Agent SSE 确认交互说明：
 | POST | `/sys/ts-activity-admin/reward/page` | 分页查询活动奖励记录 |
 | GET | `/sys/ts-activity-admin/reward-rule/list` | 查询会员奖励加成规则 |
 | POST | `/sys/ts-activity-admin/reward-rule/save` | 保存会员奖励加成规则 |
+| GET | `/sys/ts-activity-admin/sign-milestone/list` | 查询签到周期里程碑奖励规则，可选 `taskId` |
+| POST | `/sys/ts-activity-admin/sign-milestone/save` | 保存签到周期里程碑奖励规则 |
+
+创建或编辑活动任务时可传 `rewardClaimMode`：
+- `MANUAL`：任务完成后通过 `/sys/ts-activity/task/receive` 手动领取，默认值。
+- `AUTO`：任务首次完成后自动提交奖励事件，无需调用领取接口。
+
+自动任务完成后奖励状态先变为 `GRANTING`；奖励成功后变为 `CLAIMED`。
+发放失败由统一奖励事件定时重试，同一用户、任务和周期只会成功发放一次。
+
+签到里程碑规则只能绑定 `SIGN` 任务，`milestoneDay` 取值为 `1-7`。
+连续签到按七天循环，第 8 天进入下一轮第 1 天，第 11、14 天会再次命中
+第 4、7 天规则。里程碑奖励独立生成 `SIGN_MILESTONE` 奖励记录，不重复
+应用会员加成；幂等键包含用户、任务、周期轮次和周期天。
+同时包含周期起始日期，断签后重新连续签到不会与旧周期撞键。
+数据库迁移会为现有每日签到任务默认补充第 4 天 10 星钻、第 7 天 20 星钻，
+已有相同周期天规则时不覆盖。
 
 可信业务模块优先直接调用 `ITsActivityService`；HTTP 内部接口要求
 `ts:activity:internal` 权限：
@@ -500,6 +522,29 @@ Agent SSE 确认交互说明：
 `bizId` 在同一用户和行为类型下唯一，重复上报返回 `duplicate=true`，
 不重复增加进度。每日、每周和长期任务分别使用日期、ISO 周和 `LONG`
 作为周期键。
+
+`conditionType` 支持：
+- `LOGIN`：登录或签到。
+- `CHAT_COUNT`：AI 角色有效回复次数，同一次回复可同时推进每日和每周任务。
+- `ROLE_CREATE`、`STORY_CREATE`：角色或故事创建成功。
+- `ROLE_IMAGE_GENERATE`、`STORY_BACKGROUND_GENERATE`：角色图片或故事背景生成成功。
+- `STORY_INTERACTION_COUNT`：关联 `storyId` 的故事会话有效回复次数。
+- `IMAGE_GENERATE`、`VOICE_USE`：保留的历史通用图片和语音条件。
+
+业务入口通过事务提交后安全上报器推进活动进度；活动上报失败只记录告警，
+不会回滚聊天、创建或图片生成。独立补丁
+`activity-default-tasks-patch.sql` 可为现有数据库初始化以下自动发奖任务，
+该补丁不包含在完整数据库基线及 Jeecg Boot 版本迁移中：
+
+| 周期 | 任务 | 条件 | 奖励 |
+|---|---|---|---|
+| 每日 | 与 AI 角色聊天 10 次 | `CHAT_COUNT=10` | 5 星钻 |
+| 每日 | 生成角色图片 | `ROLE_IMAGE_GENERATE=1` | 10 星钻 |
+| 每日 | 生成故事背景 | `STORY_BACKGROUND_GENERATE=1` | 10 星钻 |
+| 每日 | 创建角色 | `ROLE_CREATE=1` | 20 星钻 |
+| 每日 | 创建故事 | `STORY_CREATE=1` | 20 星钻 |
+| 每日 | 故事互动 5 次 | `STORY_INTERACTION_COUNT=5` | 10 星钻 |
+| 每周 | 累计聊天 100 次 | `CHAT_COUNT=100` | 20 星钻 |
 
 星钻奖励统一经过 `ITsRewardService -> ITsPointsService.add()`，签到使用
 积分业务类型 `SIGN_IN`，其他任务使用 `ACTIVITY_REWARD`。现有会员
@@ -517,8 +562,9 @@ Agent SSE 确认交互说明：
 | GET | `/sys/ts-reward-admin/event/detail` | 查询事件详情，`id` 使用查询参数 |
 | POST | `/sys/ts-reward-admin/event/retry` | 重试失败事件，`eventId` 通过 JSON Body 传递 |
 
-事件类型包括 `SIGN_COMPLETED`、`TASK_REWARD_RECEIVED` 和
-`MEMBER_ACTIVATED`；状态包括 `PENDING`、`PROCESSING`、`SUCCESS`
+事件类型包括 `SIGN_COMPLETED`、`SIGN_MILESTONE_COMPLETED`、
+`TASK_REWARD_RECEIVED` 和 `MEMBER_ACTIVATED`；状态包括
+`PENDING`、`PROCESSING`、`SUCCESS`
 和 `FAILED`。只有 `FAILED` 且 `retryCount < maxRetryCount` 的事件
 可以手动重试，重复执行继续由事件 ID 和积分流水幂等 Key 防重。
 
@@ -616,6 +662,8 @@ Agent SSE 确认交互说明：
 用户ID和会员等级均由后端计算；匿名事件必须提供 `visitorId`。事件 Body
 包含 `eventId/contentId/slotCode/eventType/platform/occurredAt`，
 `eventType` 支持 `IMPRESSION/CLICK`，重复 `eventId` 返回 `false`。
+广告事件的 `occurredAt` 时间格式与推荐行为埋点一致，推荐使用带时区的
+ISO 8601 格式，同时兼容按 GMT+8 解释的 `yyyy-MM-dd HH:mm:ss` 和毫秒时间戳。
 
 ### 9.3 管理后台页面
 
@@ -638,7 +686,13 @@ Kafka，不直接写 MySQL 或 Redis：
 | POST | `/sys/ts-events/collect` | 上报单条访问、曝光、点击、停留或互动行为 |
 | POST | `/sys/ts-events/collect/batch` | 批量上报行为，单批最多100条 |
 
+当 `TS_BEHAVIOR_KAFKA_ENABLED=false` 时，接口正常返回成功结果且
+`acceptedCount=0`，不会发送 Kafka、写入 MySQL 明细或更新 Redis 特征。
+
 事件必填 `eventId/eventType/sessionId`；可选
 `resourceType/resourceId/impressionId/position/pagePath/platform/durationMs/properties/occurredAt`。
+`occurredAt` 推荐使用带时区的 ISO 8601 格式，例如
+`2026-08-26T12:15:39.125Z` 或 `2026-08-26T20:15:39.125+08:00`；
+为兼容既有调用，也接受按 GMT+8 解释的 `yyyy-MM-dd HH:mm:ss` 和毫秒时间戳。
 扩展 JSON 最大8KB，事件时间允许最近7天至未来5分钟。MySQL 明细和 Redis
 实时特征使用独立消费者组，明细按 `eventId` 去重，Redis 特征默认保留30天。

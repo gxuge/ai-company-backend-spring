@@ -7,6 +7,7 @@ import org.jeecg.modules.system.dto.tsactivity.TsActivityRewardUserQueryDto;
 import org.jeecg.modules.system.dto.tsactivity.TsActivityTaskQueryDto;
 import org.jeecg.modules.system.dto.tsactivity.TsActivityUserTaskQueryDto;
 import org.jeecg.modules.system.entity.TsActivityRewardRecord;
+import org.jeecg.modules.system.entity.TsActivitySignMilestoneRule;
 import org.jeecg.modules.system.entity.TsActivityTask;
 import org.jeecg.modules.system.entity.TsActivityTaskRewardRule;
 import org.jeecg.modules.system.entity.TsUserSignRecord;
@@ -53,6 +54,13 @@ public interface TsActivityQueryMapper {
             @Param("count") Long count,
             @Param("now") Date now);
 
+    /** 奖励成功后将用户任务进度标记为已领取。 */
+    int markRewardClaimed(
+            @Param("id") Long id,
+            @Param("userId") String userId,
+            @Param("taskId") Long taskId,
+            @Param("now") Date now);
+
     /** 幂等记录行为事件。 */
     int insertProgressEventIgnore(
             @Param("userId") String userId,
@@ -73,6 +81,11 @@ public interface TsActivityQueryMapper {
     TsUserSignRecord selectPreviousSign(
             @Param("userId") String userId,
             @Param("signDate") LocalDate signDate);
+
+    /** 查询启用的签到周期里程碑规则。 */
+    TsActivitySignMilestoneRule selectActiveSignMilestoneRule(
+            @Param("taskId") Long taskId,
+            @Param("milestoneDay") Integer milestoneDay);
 
     /** 按幂等Key查询奖励记录。 */
     TsActivityRewardRecord selectRewardByIdempotency(

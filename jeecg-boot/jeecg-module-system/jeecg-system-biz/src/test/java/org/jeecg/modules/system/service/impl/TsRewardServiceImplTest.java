@@ -91,6 +91,28 @@ class TsRewardServiceImplTest {
         verify(rewardRecordMapper, never()).insert(any(TsActivityRewardRecord.class));
     }
 
+    /** 签到里程碑奖励必须跳过会员加成并使用签到积分类型。 */
+    @Test
+    void grantShouldSkipMemberBonusForSignMilestone() {
+        when(queryMapper.selectCurrentMemberPlanCode(
+                eq("u1"), any(Date.class))).thenReturn("PRO");
+        TsPointsTransactionVo transaction = new TsPointsTransactionVo();
+        transaction.setTransactionNo("PTS2");
+        when(pointsService.add(any())).thenReturn(transaction);
+        TsActivityRewardGrantDto request = command("milestone-1")
+                .setSourceType("SIGN_MILESTONE")
+                .setApplyMemberBonus(false);
+
+        TsActivityRewardGrantVo result = service.grant(request);
+
+        assertEquals(10L, result.getRewardValue());
+        verify(queryMapper, never()).selectRewardRule(any(), any());
+        ArgumentCaptor<TsPointsChangeDto> captor =
+                ArgumentCaptor.forClass(TsPointsChangeDto.class);
+        verify(pointsService).add(captor.capture());
+        assertEquals("SIGN_IN", captor.getValue().getBizType());
+    }
+
     /** 构建奖励命令。 */
     private TsActivityRewardGrantDto command(String idempotencyKey) {
         return new TsActivityRewardGrantDto()

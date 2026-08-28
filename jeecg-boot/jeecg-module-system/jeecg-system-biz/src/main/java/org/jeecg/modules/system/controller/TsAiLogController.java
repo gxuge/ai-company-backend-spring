@@ -8,7 +8,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.api.vo.Result;
-import org.jeecg.common.aspect.annotation.AutoLog;
+// import org.jeecg.common.aspect.annotation.AutoLog;
 import org.jeecg.common.system.query.QueryGenerator;
 import org.jeecg.modules.system.entity.TsAiLog;
 import org.jeecg.modules.system.service.ITsAiLogService;
@@ -29,7 +29,7 @@ public class TsAiLogController {
     @Autowired
     private ITsAiLogService tsAiLogService;
 
-    @AutoLog(value = "ts AI调用监控-分页列表查询")
+    // @AutoLog(value = "ts AI调用监控-分页列表查询")
     @Operation(summary = "ts AI调用监控-分页列表查询")
     @GetMapping("/list")
     public Result<IPage<TsAiLog>> queryPageList(
@@ -49,7 +49,7 @@ public class TsAiLogController {
         return Result.OK(pageList);
     }
 
-    @AutoLog(value = "ts AI调用监控-通过id查询")
+    // @AutoLog(value = "ts AI调用监控-通过id查询")
     @Operation(summary = "ts AI调用监控-通过id查询")
     @GetMapping("/queryById")
     public Result<TsAiLog> queryById(@RequestParam(name = "id") Long id) {
@@ -60,7 +60,7 @@ public class TsAiLogController {
         return Result.OK(logEntity);
     }
 
-    @AutoLog(value = "ts AI调用监控-详情查询")
+    // @AutoLog(value = "ts AI调用监控-详情查询")
     @Operation(summary = "ts AI调用监控-详情查询")
     @GetMapping("/detail")
     public Result<TsAiLogDetailVo> detail(@RequestParam(name = "id") Long id) {

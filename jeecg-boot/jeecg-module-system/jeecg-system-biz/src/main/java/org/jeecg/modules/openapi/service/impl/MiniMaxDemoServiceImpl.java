@@ -39,6 +39,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -168,9 +169,10 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
         );
         MiniMaxTtsResponseVo responseVo = new MiniMaxTtsResponseVo();
         responseVo.setAudioHex(audioHex);
-        if (miniMaxDemoConfig.isUploadGeneratedMedia()) {
-            responseVo.setAudioUrl(uploadAudioHex(audioHex));
+        if (!StringUtils.hasText(audioHex)) {
+            throw new JeecgBootBizTipException("MiniMax tts未返回音频数据");
         }
+        responseVo.setAudioUrl(buildDataAudioUrl(audioHex));
         return responseVo;
     }
 
@@ -382,20 +384,6 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
     }
 
     /**
-     * 将十六进制音频上传到存储。
-     *
-     * @param audioHex 十六进制音频
-     * @return 上传后的URL
-     */
-    private String uploadAudioHex(String audioHex) {
-        if (!StringUtils.hasText(audioHex)) {
-            return null;
-        }
-        byte[] audioBytes = hexToBytes(audioHex);
-        return uploadBinary(audioBytes, miniMaxDemoConfig.getAudioUploadBizPath(), "mp3");
-    }
-
-    /**
      * 十六进制字符串转字节数组。
      *
      * @param hexValue 十六进制字符串
@@ -421,6 +409,23 @@ public class MiniMaxDemoServiceImpl implements IMiniMaxDemoService {
             result[i / 2] = (byte) ((high << 4) + low);
         }
         return result;
+    }
+
+    /**
+     * 将十六进制音频转换为仅用于当前响应的临时播放地址。
+     *
+     * @param audioHex 十六进制音频
+     * @return data URL，音频不写入对象存储
+     */
+    private String buildDataAudioUrl(String audioHex) {
+        if (!StringUtils.hasText(audioHex)) {
+            return null;
+        }
+        byte[] audioBytes = hexToBytes(audioHex);
+        if (audioBytes.length == 0) {
+            return null;
+        }
+        return "data:audio/mpeg;base64," + Base64.getEncoder().encodeToString(audioBytes);
     }
 
     /**

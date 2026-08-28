@@ -23,4 +23,6 @@ public class TsActivityRewardGrantDto {
     private String idempotencyKey;
     /** 奖励说明。 */
     private String description;
+    /** 是否应用会员额外奖励，默认应用。 */
+    private Boolean applyMemberBonus;
 }

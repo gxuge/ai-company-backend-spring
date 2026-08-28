@@ -19,11 +19,19 @@ export const conditionTypeOptions = [
   { label: '聊天次数', value: 'CHAT_COUNT' },
   { label: '创建角色', value: 'ROLE_CREATE' },
   { label: '创建故事', value: 'STORY_CREATE' },
-  { label: '生成图片', value: 'IMAGE_GENERATE' },
+  { label: '生成图片（兼容旧任务）', value: 'IMAGE_GENERATE' },
+  { label: '生成角色图片', value: 'ROLE_IMAGE_GENERATE' },
+  { label: '生成故事背景', value: 'STORY_BACKGROUND_GENERATE' },
+  { label: '故事互动次数', value: 'STORY_INTERACTION_COUNT' },
   { label: '使用语音', value: 'VOICE_USE' },
 ];
 
 export const rewardTypeOptions = [{ label: '星钻', value: 'STAR_DIAMOND' }];
+
+export const rewardClaimModeOptions = [
+  { label: '手动领取', value: 'MANUAL' },
+  { label: '自动发放', value: 'AUTO' },
+];
 
 export const taskStatusOptions = [
   { label: '启用', value: 'ENABLED' },
@@ -37,6 +45,7 @@ export const userTaskStatusOptions = [
 
 export const rewardStatusOptions = [
   { label: '未领取', value: 'UNCLAIMED' },
+  { label: '发放中', value: 'GRANTING' },
   { label: '已领取', value: 'CLAIMED' },
 ];
 
@@ -48,6 +57,7 @@ export const memberLevelOptions = [
 
 export const sourceTypeOptions = [
   { label: '签到', value: 'SIGN' },
+  { label: '签到里程碑', value: 'SIGN_MILESTONE' },
   { label: '任务', value: 'TASK' },
   { label: '成就', value: 'ACHIEVEMENT' },
   { label: '活动', value: 'EVENT' },
@@ -60,6 +70,7 @@ export const taskColumns: BasicColumn[] = [
   { title: '完成条件', dataIndex: 'conditionType', width: 120, slots: { customRender: 'conditionType' } },
   { title: '目标值', dataIndex: 'conditionValue', width: 90 },
   { title: '奖励', dataIndex: 'rewardValue', width: 90, slots: { customRender: 'reward' } },
+  { title: '发奖方式', dataIndex: 'rewardClaimMode', width: 100, slots: { customRender: 'rewardClaimMode' } },
   { title: '生效时间', dataIndex: 'startTime', width: 170 },
   { title: '失效时间', dataIndex: 'endTime', width: 170 },
   { title: '状态', dataIndex: 'status', width: 90, slots: { customRender: 'status' } },
@@ -147,6 +158,14 @@ export const taskFormSchema: FormSchema[] = [
     component: 'InputNumber',
     required: true,
     componentProps: { min: 1, precision: 0, style: { width: '100%' } },
+  },
+  {
+    field: 'rewardClaimMode',
+    label: '发奖方式',
+    component: 'Select',
+    required: true,
+    componentProps: { options: rewardClaimModeOptions },
+    defaultValue: 'MANUAL',
   },
   {
     field: 'startTime',
@@ -275,6 +294,16 @@ export const rewardRuleColumns: BasicColumn[] = [
   { title: '更新时间', dataIndex: 'updatedAt', width: 170 },
 ];
 
+export const signMilestoneColumns: BasicColumn[] = [
+  { title: '签到任务', dataIndex: 'taskName', width: 240 },
+  { title: '任务ID', dataIndex: 'taskId', width: 100 },
+  { title: '周期天数', dataIndex: 'milestoneDay', width: 110 },
+  { title: '奖励类型', dataIndex: 'rewardType', width: 110 },
+  { title: '奖励星钻', dataIndex: 'rewardValue', width: 110 },
+  { title: '状态', dataIndex: 'status', width: 90 },
+  { title: '更新时间', dataIndex: 'updatedAt', width: 170 },
+];
+
 export function getRewardRuleFormSchema(taskOptions: { label: string; value: number }[]): FormSchema[] {
   return [
     { field: 'id', label: 'ID', component: 'Input', show: false },
@@ -305,6 +334,53 @@ export function getRewardRuleFormSchema(taskOptions: { label: string; value: num
       component: 'InputNumber',
       required: true,
       componentProps: { min: 0, precision: 0, style: { width: '100%' } },
+    },
+    {
+      field: 'status',
+      label: '状态',
+      component: 'Select',
+      required: true,
+      componentProps: {
+        options: [
+          { label: '启用', value: 1 },
+          { label: '停用', value: 0 },
+        ],
+      },
+      defaultValue: 1,
+    },
+  ];
+}
+
+export function getSignMilestoneFormSchema(taskOptions: { label: string; value: number }[]): FormSchema[] {
+  return [
+    { field: 'id', label: 'ID', component: 'Input', show: false },
+    {
+      field: 'taskId',
+      label: '签到任务',
+      component: 'Select',
+      required: true,
+      componentProps: { options: taskOptions, placeholder: '请选择签到任务', showSearch: true, optionFilterProp: 'label' },
+    },
+    {
+      field: 'milestoneDay',
+      label: '周期天数',
+      component: 'InputNumber',
+      required: true,
+      componentProps: { min: 1, max: 7, precision: 0, style: { width: '100%' } },
+    },
+    {
+      field: 'rewardType',
+      label: '奖励类型',
+      component: 'Select',
+      required: true,
+      componentProps: { options: rewardTypeOptions, placeholder: '请选择奖励类型' },
+    },
+    {
+      field: 'rewardValue',
+      label: '奖励星钻',
+      component: 'InputNumber',
+      required: true,
+      componentProps: { min: 1, precision: 0, style: { width: '100%' } },
     },
     {
       field: 'status',

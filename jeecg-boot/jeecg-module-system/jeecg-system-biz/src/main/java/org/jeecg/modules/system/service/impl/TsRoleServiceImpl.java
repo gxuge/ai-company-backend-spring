@@ -7,6 +7,7 @@ import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.aop.TsRoleOwnershipAspect;
 import org.jeecg.modules.aop.TsRoleOwnershipAspect.CheckTsRoleOwnership;
+import org.jeecg.modules.system.activity.TsActivityProgressReporter;
 import org.jeecg.modules.system.annotation.TsBehaviorTrack;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateImageByPromptDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateRoleDto;
@@ -20,6 +21,7 @@ import org.jeecg.modules.system.dto.tsrole.TsRoleQueryDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleSaveDto;
 import org.jeecg.modules.system.constant.TsWorkReviewConstants;
 import org.jeecg.modules.system.entity.TsRole;
+import org.jeecg.modules.system.enums.tsactivity.TsActivityConditionType;
 import org.jeecg.modules.system.mapper.TsRoleMapper;
 import org.jeecg.modules.system.po.tsrole.TsRoleQueryPo;
 import org.jeecg.modules.system.po.tsrole.TsRoleSavePo;
@@ -47,6 +49,8 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
     private ITsRoleGenerateService tsRoleGenerateService;
     @Resource
     private ITsWorkReviewService tsWorkReviewService;
+    @Resource
+    private TsActivityProgressReporter activityProgressReporter;
 
     /**
      * 分页查询当前用户角色列表。
@@ -89,6 +93,10 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
         role.setUpdatedAt(new Date());
         this.save(role);
         tsWorkReviewService.submitRole(role.getId(), request.getIsPublic());
+        activityProgressReporter.reportAfterCommit(
+                userId,
+                TsActivityConditionType.ROLE_CREATE,
+                "role-create:" + role.getId());
         return Result.OK("新增成功", TsRoleVoConverter.fromEntity(this.getById(role.getId())));
     }
 

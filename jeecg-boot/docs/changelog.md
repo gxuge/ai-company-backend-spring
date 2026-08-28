@@ -6,6 +6,16 @@
 `type` 推荐值：`feat`、`fix`、`refactor`、`breaking`、`security`、`docs`
 
 ## 记录
+- [2026-08-28] [fix] [ts-activity] 七个默认活动任务从完整数据库基线和版本迁移中移出，改为项目外独立幂等补丁，供现有数据库按需执行
+- [2026-08-27] [feat] [ts-activity] 拆分角色图片、故事背景和故事互动活动条件，接入聊天、创建及生图成功入口，并新增七个自动发奖默认任务
+- [2026-08-27] [feat] [ts-activity] 新增签到七天周期里程碑奖励规则，默认第 4 天奖励 10 星钻、第 7 天奖励 20 星钻，可后台调整并循环触发，奖励使用独立幂等事件和积分流水且不重复叠加会员奖励
+- [2026-08-27] [feat] [ts-activity] 活动任务新增 `AUTO/MANUAL` 奖励领取模式，自动任务完成后通过统一奖励事件幂等发放并支持失败重试
+- [2026-08-27] [fix] [ts-behavior] 行为采集开关关闭时返回 `acceptedCount=0` 并跳过 Kafka 发布，避免接口持续产生 500 错误
+- [2026-08-27] [feat] [ts-role] 公开角色详情补充角色核心资料和连接者、粉丝、对话统计，供 Web 角色详情页展示真实数据
+- [2026-08-26] [fix] [ts-event] 行为埋点和广告事件的 `occurredAt` 局部兼容 ISO 8601、旧版 GMT+8 时间及毫秒时间戳，避免浏览器 `toISOString()` 上报失败
+- [2026-08-26] [feat] [infra] 在 dev/prod/docker 环境中新增与 MySQL 同级的 ClickHouse 动态数据源、官方 JDBC 驱动及两套单体 Docker Compose 的 ClickHouse LTS 服务配置
+- [2026-08-26] [refactor] [ts-chat] 聊天 TTS 暂停 R2 上传，改为返回临时 data URL，并避免将音频 Base64 写入消息、附件和 AI 日志
+- [2026-08-25] [feat] [infra] Kafka 增加宿主机 `9094` 外部调试监听，同时保留 Docker 内部 `9092` 连接
 - [2026-08-25] [perf] [ts-chat] 会话列表响应补充角色名称、头像和最后消息摘要，移除前端逐会话详情/消息请求
 - [2026-08-24] [feat] [ts-story] 场景生图接口支持 `time/weather/mood` 的英文 `key + description` 结构，并注入数据库 Prompt 模板
 - [2026-08-24] [feat] [ts-ad] 扩展运营内容管理为自有/外部图片、视频、卡片和深层动作，新增统一媒体预览、投放响应字段及兼容迁移

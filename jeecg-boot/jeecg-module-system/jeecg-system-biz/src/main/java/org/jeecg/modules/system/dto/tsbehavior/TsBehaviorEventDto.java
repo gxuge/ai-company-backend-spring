@@ -1,11 +1,13 @@
 package org.jeecg.modules.system.dto.tsbehavior;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
+import org.jeecg.modules.system.jackson.TsEventOccurredAtDeserializer;
 
 import java.util.Date;
 import java.util.Map;
@@ -58,5 +60,6 @@ public class TsBehaviorEventDto {
     /** 扩展属性，不允许存放敏感明文。 */
     private Map<String, Object> properties;
     /** 客户端事件发生时间，为空时使用服务端时间。 */
+    @JsonDeserialize(using = TsEventOccurredAtDeserializer.class)
     private Date occurredAt;
 }

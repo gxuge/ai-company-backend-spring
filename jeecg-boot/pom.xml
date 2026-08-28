@@ -49,6 +49,7 @@
 		<ojdbc6.version>11.2.0.3</ojdbc6.version>
 		<sqljdbc4.version>12.6.1.jre8</sqljdbc4.version>
 		<mysql-connector-java.version>8.0.27</mysql-connector-java.version>
+		<clickhouse-jdbc.version>0.9.8</clickhouse-jdbc.version>
         <hutool.version>5.8.25</hutool.version>
 		<!-- 国产数据库驱动 -->
 		<kingbase8.version>9.0.0</kingbase8.version>

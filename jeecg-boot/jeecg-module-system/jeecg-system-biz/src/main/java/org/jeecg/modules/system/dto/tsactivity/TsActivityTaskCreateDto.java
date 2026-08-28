@@ -35,6 +35,8 @@ public class TsActivityTaskCreateDto {
     @NotNull
     @Positive
     private Long rewardValue;
+    /** 奖励领取模式：MANUAL手动、AUTO自动，默认MANUAL。 */
+    private String rewardClaimMode;
     /** 开始时间。 */
     private Date startTime;
     /** 结束时间。 */

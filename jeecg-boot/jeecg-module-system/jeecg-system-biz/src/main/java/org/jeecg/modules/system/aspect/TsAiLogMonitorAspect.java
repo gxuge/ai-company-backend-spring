@@ -157,9 +157,36 @@ public class TsAiLogMonitorAspect {
             return null;
         }
         if (result instanceof Result<?> apiResult) {
-            return collector.toJsonString(apiResult.getResult());
+            return sanitizeAudioUrl(collector.toJsonString(apiResult.getResult()));
         }
-        return collector.toJsonString(result);
+        return sanitizeAudioUrl(collector.toJsonString(result));
+    }
+
+    /**
+     * 对 AI 接口日志中的临时音频 data URL 脱敏，避免持久化大段 Base64。
+     */
+    private String sanitizeAudioUrl(String json) {
+        if (!StringUtils.hasText(json)) {
+            return json;
+        }
+        try {
+            JSONObject payload = JSONObject.parseObject(json);
+            String audioUrl = payload.getString("audioUrl");
+            if (isTransientAudioUrl(audioUrl)) {
+                payload.put("audioUrl", "[temporary audio omitted]");
+            }
+            return payload.toJSONString();
+        } catch (Exception ignored) {
+            return json;
+        }
+    }
+
+    /**
+     * 判断地址是否为临时 data URL。
+     */
+    private boolean isTransientAudioUrl(String audioUrl) {
+        return StringUtils.hasText(audioUrl)
+                && audioUrl.trim().regionMatches(true, 0, "data:", 0, "data:".length());
     }
 
     private String trimToNull(String value) {

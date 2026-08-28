@@ -111,3 +111,9 @@ Proposed
   - 移除 `ts_tts_audio_cache` 相关表脚本、实体与 Mapper 依赖
 - 验证：
   - 执行 `mvn -pl jeecg-module-system/jeecg-system-start -am -DskipTests compile`，编译通过
+
+### 2026-08-26（聊天 TTS 暂停对象存储）
+- 当前阶段取消 MiniMax TTS 音频上传 R2，直接将返回的十六进制音频转换为临时 `data:audio/mpeg;base64,...` 地址。
+- `audioUrl` 仍保留在接口响应中，兼容 `/pages/chat` 现有 `new Audio(audioUrl)` 播放方式。
+- 临时音频不写入 `ts_chat_message.content_json`、`ts_chat_message_attachment.file_url` 或 AI 日志；历史消息播放时继续按消息重新生成。
+- 图片生成的对象存储上传逻辑保持不变，后续恢复音频持久化时可独立接回。

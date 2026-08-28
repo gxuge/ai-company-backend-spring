@@ -7,7 +7,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.jeecg.common.api.vo.Result;
-import org.jeecg.common.aspect.annotation.AutoLog;
+// import org.jeecg.common.aspect.annotation.AutoLog;
 import org.jeecg.common.system.query.QueryGenerator;
 import org.jeecg.common.util.oConvertUtils;
 import org.jeecg.modules.system.entity.TsPreset;
@@ -35,7 +35,7 @@ public class TsPresetController {
     /**
      * 分页列表查询
      */
-    @AutoLog(value = "生成预设主表-分页列表查询")
+    // @AutoLog(value = "生成预设主表-分页列表查询")
     @Operation(summary = "生成预设主表-分页列表查询")
     @GetMapping("/list")
     public Result<IPage<TsPreset>> queryPageList(
@@ -52,7 +52,7 @@ public class TsPresetController {
     /**
      * 新增
      */
-    @AutoLog(value = "生成预设主表-新增")
+    // @AutoLog(value = "生成预设主表-新增")
     @Operation(summary = "生成预设主表-新增")
     @PostMapping("/add")
     public Result<?> add(@RequestBody TsPreset tsPreset) {
@@ -66,7 +66,7 @@ public class TsPresetController {
     /**
      * 编辑
      */
-    @AutoLog(value = "生成预设主表-编辑")
+    // @AutoLog(value = "生成预设主表-编辑")
     @Operation(summary = "生成预设主表-编辑")
     @RequestMapping(value = "/edit", method = {RequestMethod.PUT, RequestMethod.POST})
     public Result<?> edit(@RequestBody TsPreset tsPreset) {
@@ -84,7 +84,7 @@ public class TsPresetController {
     /**
      * 通过id查询
      */
-    @AutoLog(value = "生成预设主表-通过id查询")
+    // @AutoLog(value = "生成预设主表-通过id查询")
     @Operation(summary = "生成预设主表-通过id查询")
     @GetMapping("/queryById")
     public Result<TsPreset> queryById(@RequestParam(name = "id") String id) {
@@ -98,7 +98,7 @@ public class TsPresetController {
     /**
      * 通过id删除
      */
-    @AutoLog(value = "生成预设主表-通过id删除")
+    // @AutoLog(value = "生成预设主表-通过id删除")
     @Operation(summary = "生成预设主表-通过id删除")
     @DeleteMapping("/delete")
     public Result<?> delete(@RequestParam(name = "id") String id) {
@@ -109,7 +109,7 @@ public class TsPresetController {
     /**
      * 批量删除
      */
-    @AutoLog(value = "生成预设主表-批量删除")
+    // @AutoLog(value = "生成预设主表-批量删除")
     @Operation(summary = "生成预设主表-批量删除")
     @DeleteMapping("/deleteBatch")
     public Result<?> deleteBatch(@RequestParam(name = "ids") String ids) {

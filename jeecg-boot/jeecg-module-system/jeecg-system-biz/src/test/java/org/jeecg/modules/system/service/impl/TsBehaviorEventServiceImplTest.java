@@ -33,8 +33,22 @@ class TsBehaviorEventServiceImplTest {
     void setUp() {
         publisher = mock(TsBehaviorEventPublisher.class);
         config = new TsBehaviorConfigBean();
+        config.getKafka().setEnabled(true);
         service = new TsBehaviorEventServiceImpl(
                 publisher, config, new ObjectMapper());
+    }
+
+    /** 行为采集关闭时应返回零并且不提交Kafka。 */
+    @Test
+    void collectShouldSkipWhenKafkaIsDisabled() {
+        LoginUser user = new LoginUser();
+        user.setId("u1");
+        config.getKafka().setEnabled(false);
+
+        assertEquals(
+                0,
+                service.collect(user, List.of(validRequest())).getAcceptedCount());
+        verify(publisher, never()).publish(any());
     }
 
     /** 用户ID必须由登录态覆盖并按事件数量逐条提交。 */

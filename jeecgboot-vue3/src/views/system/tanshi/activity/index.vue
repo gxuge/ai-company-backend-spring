@@ -10,6 +10,7 @@
           <template #category="{ text }">{{ getOptionLabel(categoryOptions, text) }}</template>
           <template #conditionType="{ text }">{{ getOptionLabel(conditionTypeOptions, text) }}</template>
           <template #reward="{ record }">{{ record.rewardValue }} 星钻</template>
+          <template #rewardClaimMode="{ text }">{{ getOptionLabel(rewardClaimModeOptions, text) }}</template>
           <template #status="{ text }">
             <a-tag :color="text === 'ENABLED' ? 'success' : 'default'">{{ getOptionLabel(taskStatusOptions, text) }}</a-tag>
           </template>
@@ -26,7 +27,9 @@
             <a-tag :color="text === 'COMPLETED' ? 'success' : 'processing'">{{ getOptionLabel(userTaskStatusOptions, text) }}</a-tag>
           </template>
           <template #rewardStatus="{ text }">
-            <a-tag :color="text === 'CLAIMED' ? 'success' : 'default'">{{ getOptionLabel(rewardStatusOptions, text) }}</a-tag>
+            <a-tag :color="text === 'CLAIMED' ? 'success' : text === 'GRANTING' ? 'processing' : 'default'">
+              {{ getOptionLabel(rewardStatusOptions, text) }}
+            </a-tag>
           </template>
         </BasicTable>
       </a-tab-pane>
@@ -66,10 +69,41 @@
           </a-table>
         </a-spin>
       </a-tab-pane>
+
+      <a-tab-pane key="signMilestones" tab="签到里程碑">
+        <div class="rule-toolbar">
+          <a-button @click="loadSignMilestoneRules">刷新</a-button>
+          <a-button type="primary" @click="openSignMilestoneEditor()">新增规则</a-button>
+        </div>
+        <a-spin :spinning="signMilestoneLoading">
+          <a-table
+            :columns="signMilestoneTableColumns"
+            :data-source="signMilestoneTableData"
+            :pagination="false"
+            :scroll="{ x: 900 }"
+            row-key="id"
+            bordered
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.dataIndex === 'rewardType'">
+                {{ getOptionLabel(rewardTypeOptions, record.rewardType) }}
+              </template>
+              <template v-else-if="column.dataIndex === 'status'">
+                <a-tag :color="record.status === 1 ? 'success' : 'default'">{{ record.status === 1 ? '启用' : '停用' }}</a-tag>
+              </template>
+              <template v-else-if="column.dataIndex === 'action'">
+                <a @click="openSignMilestoneEditor(record)">编辑</a>
+              </template>
+              <template v-else>{{ record[column.dataIndex] ?? '-' }}</template>
+            </template>
+          </a-table>
+        </a-spin>
+      </a-tab-pane>
     </a-tabs>
 
     <ActivityTaskModal @register="registerTaskModal" @success="handleTaskSuccess" />
     <ActivityRewardRuleModal @register="registerRuleModal" @success="loadRewardRules" />
+    <ActivitySignMilestoneModal @register="registerSignMilestoneModal" @success="loadSignMilestoneRules" />
   </div>
 </template>
 
@@ -80,11 +114,13 @@
   import { useModal } from '/@/components/Modal';
   import { useMessage } from '/@/hooks/web/useMessage';
   import {
+    listActivitySignMilestoneRules,
     listActivityRewardRules,
     pageActivityRewards,
     pageActivityTasks,
     pageUserTaskProgress,
     type ActivityRewardRule,
+    type ActivitySignMilestoneRule,
     type ActivityTask,
   } from './activity.api';
   import {
@@ -92,12 +128,14 @@
     conditionTypeOptions,
     getOptionLabel,
     memberLevelOptions,
+    rewardClaimModeOptions,
     rewardColumns,
     rewardSearchFormSchema,
     rewardStatusOptions,
     rewardRuleColumns,
     rewardTypeOptions,
     sourceTypeOptions,
+    signMilestoneColumns,
     taskColumns,
     taskSearchFormSchema,
     taskStatusOptions,
@@ -108,16 +146,21 @@
   } from './activity.data';
   import ActivityTaskModal from './components/ActivityTaskModal.vue';
   import ActivityRewardRuleModal from './components/ActivityRewardRuleModal.vue';
+  import ActivitySignMilestoneModal from './components/ActivitySignMilestoneModal.vue';
 
   defineOptions({ name: 'SystemTanshiActivity' });
 
   const { createMessage } = useMessage();
   const activeTab = ref('tasks');
   const ruleLoading = ref(false);
+  const signMilestoneLoading = ref(false);
   const taskOptions = ref<{ label: string; value: number }[]>([]);
+  const signTaskOptions = ref<{ label: string; value: number }[]>([]);
   const rewardRules = ref<ActivityRewardRule[]>([]);
+  const signMilestoneRules = ref<ActivitySignMilestoneRule[]>([]);
   const [registerTaskModal, { openModal: openTaskModal }] = useModal();
   const [registerRuleModal, { openModal: openRuleModal }] = useModal();
+  const [registerSignMilestoneModal, { openModal: openSignMilestoneModal }] = useModal();
 
   const { tableContext: taskTableContext } = useListPage({
     designScope: 'tanshi-activity-tasks',
@@ -169,6 +212,16 @@
       taskName: getTaskName(item.taskId),
     }))
   );
+  const signMilestoneTableColumns = computed(() => [
+    ...signMilestoneColumns,
+    { title: '操作', dataIndex: 'action', width: 90, fixed: 'right' },
+  ]);
+  const signMilestoneTableData = computed(() =>
+    signMilestoneRules.value.map((item) => ({
+      ...item,
+      taskName: getTaskName(item.taskId),
+    }))
+  );
 
   function stripTableSort(params: Recordable) {
     delete params.column;
@@ -192,11 +245,25 @@
     openRuleModal(true, { record, taskOptions: taskOptions.value });
   }
 
+  function openSignMilestoneEditor(record?: ActivitySignMilestoneRule) {
+    if (!signTaskOptions.value.length) {
+      createMessage.warning('暂无可配置的签到任务');
+      return;
+    }
+    openSignMilestoneModal(true, { record, taskOptions: signTaskOptions.value });
+  }
+
   async function loadTaskOptions() {
     const result: any = await pageActivityTasks({ pageNo: 1, pageSize: 100 });
     const page = result?.records ? result : result?.result;
     taskOptions.value = (page?.records || [])
       .filter((item) => typeof item.id === 'number')
+      .map((item) => ({
+        label: `${item.taskName || '-'}（ID：${item.id}）`,
+        value: item.id,
+      }));
+    signTaskOptions.value = (page?.records || [])
+      .filter((item) => typeof item.id === 'number' && item.taskType === 'SIGN')
       .map((item) => ({
         label: `${item.taskName || '-'}（ID：${item.id}）`,
         value: item.id,
@@ -213,9 +280,21 @@
     }
   }
 
+  async function loadSignMilestoneRules() {
+    signMilestoneLoading.value = true;
+    try {
+      const result: any = await listActivitySignMilestoneRules();
+      signMilestoneRules.value = Array.isArray(result) ? result : result?.result || [];
+    } finally {
+      signMilestoneLoading.value = false;
+    }
+  }
+
   function handleTabChange(key: string) {
     if (key === 'rules') {
       loadRewardRules();
+    } else if (key === 'signMilestones') {
+      loadSignMilestoneRules();
     }
   }
 

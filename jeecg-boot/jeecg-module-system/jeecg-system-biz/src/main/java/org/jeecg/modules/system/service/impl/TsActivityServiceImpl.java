@@ -9,12 +9,14 @@ import org.jeecg.modules.system.dto.tsactivity.TsActivityTaskReceiveDto;
 import org.jeecg.modules.system.dto.tsreward.TsRewardEventCommand;
 import org.jeecg.modules.system.entity.SysUser;
 import org.jeecg.modules.system.entity.TsActivityRewardRecord;
+import org.jeecg.modules.system.entity.TsActivitySignMilestoneRule;
 import org.jeecg.modules.system.entity.TsActivityTask;
 import org.jeecg.modules.system.entity.TsUserSignRecord;
 import org.jeecg.modules.system.entity.TsUserTaskProgress;
 import org.jeecg.modules.system.enums.tsactivity.TsActivityConditionType;
 import org.jeecg.modules.system.enums.tsactivity.TsActivityErrorCode;
 import org.jeecg.modules.system.enums.tsactivity.TsActivityProgressStatus;
+import org.jeecg.modules.system.enums.tsactivity.TsActivityRewardClaimMode;
 import org.jeecg.modules.system.enums.tsactivity.TsActivityRewardStatus;
 import org.jeecg.modules.system.enums.tsactivity.TsActivityRewardType;
 import org.jeecg.modules.system.enums.tsactivity.TsActivityTaskCategory;
@@ -124,8 +126,10 @@ public class TsActivityServiceImpl implements ITsActivityService {
                 .setTaskId(task.getId())
                 .setSignDate(today)
                 .setContinuousDays(1)
+                .setCycleDay(1)
                 .setBaseRewardAmount(0L)
                 .setExtraRewardAmount(0L)
+                .setMilestoneRewardAmount(0L)
                 .setRewardAmount(0L)
                 .setCreatedAt(now);
         if (queryMapper.insertSignIgnore(record) == 0) {
@@ -138,6 +142,8 @@ public class TsActivityServiceImpl implements ITsActivityService {
                 && today.minusDays(1).equals(previous.getSignDate())
                 ? previous.getContinuousDays() + 1
                 : 1;
+        int cycleDay = cycleDay(continuousDays);
+        int cycleRound = cycleRound(continuousDays);
         String eventId = "SIGN:" + userId + ":" + today;
         TsActivityRewardGrantDto grantRequest = new TsActivityRewardGrantDto()
                 .setUserId(userId)
@@ -157,13 +163,74 @@ public class TsActivityServiceImpl implements ITsActivityService {
                                 .setBizId(String.valueOf(record.getId()))
                                 .setPayload(grantRequest)));
 
+        TsActivityRewardGrantVo milestoneReward = grantSignMilestone(
+                userId, task, record.getId(), today, cycleDay, cycleRound);
+        long milestoneRewardAmount =
+                milestoneReward == null ? 0L : milestoneReward.getRewardValue();
+        long totalReward;
+        try {
+            totalReward = Math.addExact(
+                    reward.getRewardValue(), milestoneRewardAmount);
+        } catch (ArithmeticException exception) {
+            throw new TsActivityBizException(
+                    TsActivityErrorCode.ACTIVITY_INVALID_ARGUMENT,
+                    "签到奖励数量超出允许范围");
+        }
         record.setContinuousDays(continuousDays)
+                .setCycleDay(cycleDay)
                 .setBaseRewardAmount(reward.getBaseRewardValue())
                 .setExtraRewardAmount(reward.getExtraRewardValue())
-                .setRewardAmount(reward.getRewardValue())
-                .setPointsTransactionNo(reward.getPointsTransactionNo());
+                .setMilestoneDay(milestoneReward == null ? null : cycleDay)
+                .setMilestoneRewardAmount(milestoneRewardAmount)
+                .setRewardAmount(totalReward)
+                .setPointsTransactionNo(reward.getPointsTransactionNo())
+                .setMilestonePointsTransactionNo(
+                        milestoneReward == null
+                                ? null
+                                : milestoneReward.getPointsTransactionNo());
         signRecordMapper.updateById(record);
         return toSignVo(record, false);
+    }
+
+    /** 匹配当前周期天并发放独立的签到里程碑奖励。 */
+    private TsActivityRewardGrantVo grantSignMilestone(
+            String userId,
+            TsActivityTask task,
+            Long signRecordId,
+            LocalDate signDate,
+            int cycleDay,
+            int cycleRound) {
+        TsActivitySignMilestoneRule rule =
+                queryMapper.selectActiveSignMilestoneRule(
+                        task.getId(), cycleDay);
+        if (rule == null) {
+            return null;
+        }
+        LocalDate cycleStartDate = signDate.minusDays(cycleDay - 1L);
+        String eventId = "SIGN_MILESTONE:"
+                + userId + ":" + task.getId() + ":"
+                + cycleStartDate + ":" + cycleRound + ":" + cycleDay;
+        TsActivityRewardGrantDto grantRequest = new TsActivityRewardGrantDto()
+                .setUserId(userId)
+                .setTaskId(task.getId())
+                .setRewardType(rule.getRewardType())
+                .setRewardValue(rule.getRewardValue())
+                .setSourceType("SIGN_MILESTONE")
+                .setSourceId(String.valueOf(signRecordId))
+                .setIdempotencyKey(eventId)
+                .setDescription(task.getTaskName() + "第" + cycleDay + "天里程碑")
+                .setApplyMemberBonus(false);
+        return toActivityGrantVo(
+                rewardEventCoordinator.processNow(
+                        new TsRewardEventCommand()
+                                .setEventId(eventId)
+                                .setEventType(
+                                        TsRewardEventType
+                                                .SIGN_MILESTONE_COMPLETED
+                                                .name())
+                                .setUserId(userId)
+                                .setBizId(String.valueOf(signRecordId))
+                                .setPayload(grantRequest)));
     }
 
     /** {@inheritDoc} */
@@ -308,13 +375,59 @@ public class TsActivityServiceImpl implements ITsActivityService {
             }
             matched++;
             TsUserTaskProgress progress = ensureProgress(request.getUserId(), task, now);
-            updated += queryMapper.incrementProgress(
+            int affected = queryMapper.incrementProgress(
                     progress.getId(), request.getCount(), now);
+            updated += affected;
+            if (affected > 0) {
+                scheduleAutoReward(request.getUserId(), task, now);
+            }
         }
         result.setDuplicate(false);
         result.setMatchedTaskCount(matched);
         result.setUpdatedTaskCount(updated);
         return result;
+    }
+
+    /** 自动任务首次完成后标记发放中，并在事务提交后发布奖励事件。 */
+    private void scheduleAutoReward(
+            String userId, TsActivityTask task, Date now) {
+        if (!TsActivityRewardClaimMode.AUTO.name().equals(
+                task.getRewardClaimMode())) {
+            return;
+        }
+        String cycleKey = TsActivityCycleUtils.cycleKey(
+                task.getTaskCategory(), now);
+        TsUserTaskProgress progress = queryMapper.selectProgressForUpdate(
+                userId, task.getId(), cycleKey);
+        if (progress == null
+                || !TsActivityProgressStatus.COMPLETED.name().equals(
+                        progress.getStatus())
+                || !TsActivityRewardStatus.UNCLAIMED.name().equals(
+                        progress.getRewardStatus())) {
+            return;
+        }
+        progress.setRewardStatus(TsActivityRewardStatus.GRANTING.name())
+                .setUpdatedAt(now);
+        progressMapper.updateById(progress);
+
+        String idempotencyKey = taskRewardKey(userId, task.getId(), cycleKey);
+        TsActivityRewardGrantDto grantRequest = new TsActivityRewardGrantDto()
+                .setUserId(userId)
+                .setTaskId(task.getId())
+                .setRewardType(task.getRewardType())
+                .setRewardValue(task.getRewardValue())
+                .setSourceType(task.getTaskType())
+                .setSourceId(String.valueOf(progress.getId()))
+                .setIdempotencyKey(idempotencyKey)
+                .setDescription(task.getTaskName());
+        rewardEventCoordinator.publishAfterCommit(
+                new TsRewardEventCommand()
+                        .setEventId(idempotencyKey)
+                        .setEventType(
+                                TsRewardEventType.TASK_REWARD_RECEIVED.name())
+                        .setUserId(userId)
+                        .setBizId(String.valueOf(progress.getId()))
+                        .setPayload(grantRequest));
     }
 
     /** 查询任务并补齐当前周期进度。 */
@@ -401,6 +514,7 @@ public class TsActivityServiceImpl implements ITsActivityService {
         vo.setTargetValue(progress.getTargetValue());
         vo.setRewardType(task.getRewardType());
         vo.setRewardValue(task.getRewardValue());
+        vo.setRewardClaimMode(task.getRewardClaimMode());
         vo.setStatus(progress.getStatus());
         vo.setRewardStatus(progress.getRewardStatus());
         vo.setCompleteTime(progress.getCompleteTime());
@@ -414,10 +528,15 @@ public class TsActivityServiceImpl implements ITsActivityService {
         vo.setSignRecordId(record.getId());
         vo.setSignDate(record.getSignDate());
         vo.setContinuousDays(record.getContinuousDays());
+        vo.setCycleDay(record.getCycleDay());
         vo.setBaseRewardAmount(record.getBaseRewardAmount());
         vo.setExtraRewardAmount(record.getExtraRewardAmount());
+        vo.setMilestoneDay(record.getMilestoneDay());
+        vo.setMilestoneRewardAmount(record.getMilestoneRewardAmount());
         vo.setRewardAmount(record.getRewardAmount());
         vo.setPointsTransactionNo(record.getPointsTransactionNo());
+        vo.setMilestonePointsTransactionNo(
+                record.getMilestonePointsTransactionNo());
         vo.setIdempotent(idempotent);
         return vo;
     }
@@ -438,6 +557,16 @@ public class TsActivityServiceImpl implements ITsActivityService {
     /** 构建任务奖励幂等Key。 */
     private String taskRewardKey(String userId, Long taskId, String cycleKey) {
         return "TASK_REWARD:" + userId + ":" + taskId + ":" + cycleKey;
+    }
+
+    /** 将连续签到总天数转换为七天周期内天数。 */
+    static int cycleDay(int continuousDays) {
+        return Math.floorMod(continuousDays - 1, 7) + 1;
+    }
+
+    /** 将连续签到总天数转换为从1开始的七天周期轮次。 */
+    static int cycleRound(int continuousDays) {
+        return Math.floorDiv(continuousDays - 1, 7) + 1;
     }
 
     /** 解析必填枚举。 */

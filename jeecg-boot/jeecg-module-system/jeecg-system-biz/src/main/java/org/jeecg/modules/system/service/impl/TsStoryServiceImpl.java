@@ -7,6 +7,7 @@ import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.aop.TsStoryOwnershipAspect;
 import org.jeecg.modules.aop.TsStoryOwnershipAspect.CheckTsStoryOwnership;
+import org.jeecg.modules.system.activity.TsActivityProgressReporter;
 import org.jeecg.modules.system.annotation.TsBehaviorTrack;
 import org.jeecg.modules.system.dto.tsstory.TsStoryFullGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickOutlineGenerateDto;
@@ -21,6 +22,7 @@ import org.jeecg.modules.system.constant.TsWorkReviewConstants;
 import org.jeecg.modules.system.entity.TsStory;
 import org.jeecg.modules.system.entity.TsStoryRoleRel;
 import org.jeecg.modules.system.entity.TsStoryStat;
+import org.jeecg.modules.system.enums.tsactivity.TsActivityConditionType;
 import org.jeecg.modules.system.mapper.TsRoleMapper;
 import org.jeecg.modules.system.mapper.TsStoryChapterMapper;
 import org.jeecg.modules.system.mapper.TsStoryMapper;
@@ -69,6 +71,8 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
     private ITsStoryGenerateService tsStoryGenerateService;
     @Resource
     private ITsWorkReviewService tsWorkReviewService;
+    @Resource
+    private TsActivityProgressReporter activityProgressReporter;
     @Override
     public Result<Page<TsStoryVo>> pageStories(LoginUser user, TsStoryQueryDto request) {
         String userId = user.getId();
@@ -173,6 +177,10 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
 
         List<TsStoryRoleRel> roleRelList = tsStoryRoleRelMapper.selectByStoryId(story.getId());
         tsWorkReviewService.submitStory(story.getId(), request.getIsPublic());
+        activityProgressReporter.reportAfterCommit(
+                userId,
+                TsActivityConditionType.STORY_CREATE,
+                "story-create:" + story.getId());
         return Result.OK("创建成功", TsStoryVoConverter.fromEntity(
                 this.getById(story.getId()), stat, roleRelList));
     }

@@ -53,6 +53,9 @@ public class TsBehaviorEventServiceImpl implements ITsBehaviorEventService {
             throw new JeecgBootException(
                     "单批行为事件不能超过" + config.getMaxBatchSize() + "条");
         }
+        if (!config.getKafka().isEnabled()) {
+            return new TsBehaviorCollectVo(0);
+        }
         Date receivedAt = new Date();
         List<TsBehaviorEventMessage> messages = new ArrayList<>(events.size());
         for (TsBehaviorEventDto request : events) {

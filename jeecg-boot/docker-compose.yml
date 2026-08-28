@@ -57,6 +57,30 @@ services:
     networks:
       - jeecg-boot
 
+  jeecg-boot-clickhouse:
+    image: clickhouse/clickhouse-server:26.3.22.7
+    restart: always
+    container_name: jeecg-boot-clickhouse
+    hostname: jeecg-boot-clickhouse
+    ports:
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-jeecg_analytics}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USERNAME:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-demo}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - ./clickhouse/data:/var/lib/clickhouse
+      - ./clickhouse/log:/var/log/clickhouse-server
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user \"$$CLICKHOUSE_USER\" --password \"$$CLICKHOUSE_PASSWORD\" --query \"SELECT 1\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - jeecg-boot
+
   jeecg-boot-pgvector:
     image: registry.cn-hangzhou.aliyuncs.com/jeecgdocker/pgvector
     container_name: jeecg-boot-pgvector
@@ -93,6 +117,7 @@ services:
       - jeecg-boot-mysql
       - jeecg-boot-redis
       - jeecg-boot-kafka
+      - jeecg-boot-clickhouse
     container_name: jeecg-boot-system
     image: jeecg-boot-system
     hostname: jeecg-boot-system
@@ -101,6 +126,9 @@ services:
     environment:
       KAFKA_BOOTSTRAP_SERVERS: jeecg-boot-kafka:9092
       TS_BEHAVIOR_KAFKA_ENABLED: "false"
+      CLICKHOUSE_URL: jdbc:clickhouse:http://jeecg-boot-clickhouse:8123/${CLICKHOUSE_DB:-jeecg_analytics}
+      CLICKHOUSE_USERNAME: ${CLICKHOUSE_USERNAME:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-demo}
     networks:
       - jeecg-boot
     volumes:

@@ -36,14 +36,16 @@ services:
     restart: always
     container_name: jeecg-boot-kafka
     hostname: jeecg-boot-kafka
+    ports:
+      - "${KAFKA_EXTERNAL_PORT:-9094}:9094"
     environment:
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://jeecg-boot-kafka:9092
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:9094,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://jeecg-boot-kafka:9092,EXTERNAL://${KAFKA_EXTERNAL_HOST:-127.0.0.1}:${KAFKA_EXTERNAL_PORT:-9094}
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@jeecg-boot-kafka:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
@@ -53,6 +55,32 @@ services:
       KAFKA_NUM_PARTITIONS: 6
     volumes:
       - ./kafka/data:/var/lib/kafka/data
+    networks:
+      - share-net
+
+  jeecg-boot-clickhouse:
+    image: clickhouse/clickhouse-server:26.3.22.7
+    restart: always
+    container_name: jeecg-boot-clickhouse
+    hostname: jeecg-boot-clickhouse
+    ports:
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
+    env_file:
+      - ./.env
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-jeecg_analytics}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USERNAME:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-demo}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - ./clickhouse/data:/var/lib/clickhouse
+      - ./clickhouse/log:/var/log/clickhouse-server
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user \"$$CLICKHOUSE_USER\" --password \"$$CLICKHOUSE_PASSWORD\" --query \"SELECT 1\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     networks:
       - share-net
 
@@ -71,6 +99,7 @@ services:
       - jeecg-boot-mysql
       - jeecg-boot-redis
       - jeecg-boot-kafka
+      - jeecg-boot-clickhouse
     networks:
       - share-net
 

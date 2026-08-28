@@ -30,6 +30,7 @@
       conditionValue: 1,
       rewardType: 'STAR_DIAMOND',
       rewardValue: 1,
+      rewardClaimMode: 'MANUAL',
       status: 'ENABLED',
       sort: 0,
       ...(data?.record || {}),

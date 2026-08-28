@@ -72,7 +72,9 @@ public class TsRewardServiceImpl implements ITsRewardService {
         TsPointsChangeDto pointsRequest = new TsPointsChangeDto();
         pointsRequest.setUserId(request.getUserId());
         pointsRequest.setAmount(finalReward);
-        pointsRequest.setBizType("SIGN".equals(request.getSourceType())
+        pointsRequest.setBizType(
+                "SIGN".equals(request.getSourceType())
+                        || "SIGN_MILESTONE".equals(request.getSourceType())
                 ? TsPointsBizType.SIGN_IN.name()
                 : TsPointsBizType.ACTIVITY_REWARD.name());
         pointsRequest.setBizId(request.getSourceId());
@@ -106,7 +108,8 @@ public class TsRewardServiceImpl implements ITsRewardService {
     private long resolveExtraReward(
             TsActivityRewardGrantDto request,
             TsActivityMemberLevel memberLevel) {
-        if (request.getTaskId() == null) {
+        if (request.getTaskId() == null
+                || Boolean.FALSE.equals(request.getApplyMemberBonus())) {
             return 0L;
         }
         TsActivityTaskRewardRule rule = queryMapper.selectRewardRule(

@@ -140,6 +140,14 @@
 			<version>${mysql-connector-java.version}</version>
 			<scope>runtime</scope>
 		</dependency>
+		<!-- clickhouse -->
+		<dependency>
+			<groupId>com.clickhouse</groupId>
+			<artifactId>clickhouse-jdbc</artifactId>
+			<version>${clickhouse-jdbc.version}</version>
+			<classifier>all</classifier>
+			<scope>runtime</scope>
+		</dependency>
 		<!--  sqlserver-->
 		<dependency>
 			<groupId>com.microsoft.sqlserver</groupId>

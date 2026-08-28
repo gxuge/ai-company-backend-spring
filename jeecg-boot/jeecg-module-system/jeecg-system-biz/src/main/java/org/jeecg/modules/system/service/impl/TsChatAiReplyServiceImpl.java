@@ -19,6 +19,7 @@ import org.jeecg.modules.openapi.service.IPromptChatService;
 import org.jeecg.modules.openapi.service.PromptRenderService;
 import org.jeecg.modules.openapi.vo.PromptRenderedSectionsVo;
 import org.jeecg.modules.openapi.vo.MiniMaxChatResponseVo;
+import org.jeecg.modules.system.activity.TsActivityProgressReporter;
 import org.jeecg.modules.system.dto.tschatsession.TsChatAiReplyDto;
 import org.jeecg.modules.system.dto.tschatsession.TsChatMessageTtsDto;
 import org.jeecg.modules.system.dto.tschatsession.TsChatReplySuggestionsDto;
@@ -32,6 +33,7 @@ import org.jeecg.modules.system.entity.TsStory;
 import org.jeecg.modules.system.entity.TsStoryRoleRel;
 import org.jeecg.modules.system.entity.TsUserVoiceConfig;
 import org.jeecg.modules.system.entity.TsVoiceProfile;
+import org.jeecg.modules.system.enums.tsactivity.TsActivityConditionType;
 import org.jeecg.modules.system.mapper.TsChatMessageAttachmentMapper;
 import org.jeecg.modules.system.mapper.TsChatMessageMapper;
 import org.jeecg.modules.system.mapper.TsChatSessionMapper;
@@ -180,6 +182,8 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
     private AiUsageRecorderService aiUsageRecorderService;
     @Resource
     private TsMultimodalUsageRecorder multimodalUsageRecorder;
+    @Resource
+    private TsActivityProgressReporter activityProgressReporter;
 
     /**
      * 在会话内完成“用户消息入库 + AI 文本生成 + 语音合成 + 附件落库”的编排流程。
@@ -279,6 +283,7 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         String audioUrl = null;
         TsChatTtsResultVo ttsResult = null;
         JSONObject assistantContentJson = null;
+        boolean transientAudio = false;
         if (shouldGenerateVoice) {
             TsChatTtsSynthesizeDto ttsRequest = new TsChatTtsSynthesizeDto();
             String ttsText = sanitizeTtsText(assistantContent);
@@ -305,9 +310,14 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
                 throw new JeecgBootException("语音生成成功但未返回可播放地址，请检查当前语音模型配置");
             }
 
+            transientAudio = isTransientAudioUrl(audioUrl);
             assistantContentJson = new JSONObject();
-            assistantContentJson.put("audioUrl", audioUrl);
-            assistantContentJson.put("audioCacheKey", ttsResult == null ? null : ttsResult.getCacheKey());
+            if (transientAudio) {
+                assistantContentJson.put("audioTransient", true);
+            } else {
+                assistantContentJson.put("audioUrl", audioUrl);
+                assistantContentJson.put("audioCacheKey", ttsResult == null ? null : ttsResult.getCacheKey());
+            }
             assistantContentJson.put("voiceId", resolvedVoiceId);
             assistantContentJson.put("voiceProfileId", resolvedVoiceProfileId);
             assistantContentJson.put("matchSource", voiceMatchSource);
@@ -334,7 +344,7 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         tsChatMessageMapper.insert(assistantMessage);
 
         TsChatMessageAttachment attachment = null;
-        if (shouldGenerateVoice) {
+        if (shouldGenerateVoice && !transientAudio) {
             attachment = new TsChatMessageAttachment();
             attachment.setMessageId(assistantMessage.getId());
             attachment.setFileType(FILE_TYPE_VOICE);
@@ -363,10 +373,11 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         response.setContentText(assistantContent);
         response.setAudioUrl(audioUrl);
         response.setAudioCacheKey(ttsResult == null ? null : ttsResult.getCacheKey());
-        response.setAudioFileSize(attachment == null ? null : attachment.getFileSize());
-        response.setDurationSec(attachment == null ? null : attachment.getDurationSec());
-        response.setMimeType(attachment == null ? null : attachment.getMimeType());
+        response.setAudioFileSize(ttsResult == null ? null : ttsResult.getFileSize());
+        response.setDurationSec(ttsResult == null ? null : ttsResult.getDurationSec());
+        response.setMimeType(ttsResult == null ? null : ttsResult.getMimeType());
         response.setCreatedAt(assistantMessage.getCreatedAt());
+        reportChatActivity(user, session, assistantMessage.getId());
         return Result.OK("生成成功", response);
     }
 
@@ -489,7 +500,30 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         response.setRenderedPrompt(renderedPrompt);
         response.setSnapshotKey(snapshotKey);
         response.setCreatedAt(assistantMessage.getCreatedAt());
+        reportChatActivity(user, session, assistantMessage.getId());
         return Result.OK("生成成功", response);
+    }
+
+    /**
+     * AI 角色回复成功后推进聊天任务，故事会话同时推进故事互动任务。
+     */
+    private void reportChatActivity(
+            LoginUser user,
+            TsChatSession session,
+            Long assistantMessageId) {
+        if (user == null || assistantMessageId == null) {
+            return;
+        }
+        activityProgressReporter.reportAfterCommit(
+                user.getId(),
+                TsActivityConditionType.CHAT_COUNT,
+                "chat-reply:" + assistantMessageId);
+        if (session != null && session.getStoryId() != null) {
+            activityProgressReporter.reportAfterCommit(
+                    user.getId(),
+                    TsActivityConditionType.STORY_INTERACTION_COUNT,
+                    "story-interaction:" + assistantMessageId);
+        }
     }
 
     @Override
@@ -541,8 +575,16 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
                 : (ttsResult == null ? null : ttsResult.getVoiceId());
 
         JSONObject contentJson = parseMessageContentJson(message.getContentJson());
-        contentJson.put("audioUrl", audioUrl);
-        contentJson.put("audioCacheKey", ttsResult == null ? null : ttsResult.getCacheKey());
+        boolean transientAudio = isTransientAudioUrl(audioUrl);
+        if (transientAudio) {
+            contentJson.remove("audioUrl");
+            contentJson.remove("audioCacheKey");
+            contentJson.put("audioTransient", true);
+        } else {
+            contentJson.put("audioUrl", audioUrl);
+            contentJson.put("audioCacheKey", ttsResult == null ? null : ttsResult.getCacheKey());
+            contentJson.remove("audioTransient");
+        }
         contentJson.put("voiceId", resolvedVoiceId);
         contentJson.put("voiceProfileId", voiceSelection.getVoiceProfileId());
         contentJson.put("matchSource", voiceSelection.getMatchSource());
@@ -1011,6 +1053,14 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         }
     }
 
+    /**
+     * 判断地址是否为仅用于当前响应的临时 data URL，避免把音频 Base64 写入数据库。
+     */
+    private boolean isTransientAudioUrl(String audioUrl) {
+        return StringUtils.hasText(audioUrl)
+                && audioUrl.trim().regionMatches(true, 0, "data:", 0, "data:".length());
+    }
+
     private VoiceSelection resolveVoiceSelection(String userId, Long requestedVoiceProfileId, String requestedVoiceId) {
         String directVoiceId = PromptRuntimeUtil.trimToNull(requestedVoiceId);
         if (StringUtils.hasText(directVoiceId)) {
@@ -1197,8 +1247,27 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
     private void logTtsResponse(TsChatTtsResultVo response) {
         String audioUrl = response == null ? null : response.getAudioUrl();
         tsAiLogCollector.appendStep("tts_response", "语音返回", StringUtils.hasText(audioUrl) ? "success" : "failed", step -> {
-            step.setResponseRaw(tsAiLogCollector.toJsonString(response));
-            step.setFinalOutputJson(PromptRuntimeUtil.trimToNull(audioUrl));
+            step.setResponseRaw(buildTtsResponseLog(response));
+            step.setFinalOutputJson(isTransientAudioUrl(audioUrl)
+                    ? "[temporary audio omitted]"
+                    : PromptRuntimeUtil.trimToNull(audioUrl));
         });
+    }
+
+    /**
+     * 构建不包含临时音频 Base64 的语音日志内容。
+     */
+    private String buildTtsResponseLog(TsChatTtsResultVo response) {
+        String rawJson = tsAiLogCollector.toJsonString(response);
+        if (!StringUtils.hasText(rawJson) || response == null || !isTransientAudioUrl(response.getAudioUrl())) {
+            return rawJson;
+        }
+        try {
+            JSONObject responseJson = JSONObject.parseObject(rawJson);
+            responseJson.put("audioUrl", "[temporary audio omitted]");
+            return responseJson.toJSONString();
+        } catch (Exception ignored) {
+            return "{\"audioUrl\":\"[temporary audio omitted]\"}";
+        }
     }
 }

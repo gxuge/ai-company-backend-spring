@@ -7,11 +7,13 @@ import org.apache.shiro.authz.annotation.RequiresRoles;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.modules.system.dto.tsactivity.TsActivityRewardQueryDto;
 import org.jeecg.modules.system.dto.tsactivity.TsActivityRewardRuleSaveDto;
+import org.jeecg.modules.system.dto.tsactivity.TsActivitySignMilestoneRuleSaveDto;
 import org.jeecg.modules.system.dto.tsactivity.TsActivityTaskCreateDto;
 import org.jeecg.modules.system.dto.tsactivity.TsActivityTaskQueryDto;
 import org.jeecg.modules.system.dto.tsactivity.TsActivityTaskUpdateDto;
 import org.jeecg.modules.system.dto.tsactivity.TsActivityUserTaskQueryDto;
 import org.jeecg.modules.system.entity.TsActivityTaskRewardRule;
+import org.jeecg.modules.system.entity.TsActivitySignMilestoneRule;
 import org.jeecg.modules.system.service.ITsActivityAdminService;
 import org.jeecg.modules.system.vo.tsactivity.TsActivityAdminTaskVo;
 import org.jeecg.modules.system.vo.tsactivity.TsActivityAdminUserTaskVo;
@@ -21,6 +23,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -94,6 +97,24 @@ public class TsActivityAdminController {
     public Result<Void> saveRewardRule(
             @Validated @RequestBody TsActivityRewardRuleSaveDto request) {
         activityAdminService.saveRewardRule(request);
+        return Result.OK("保存成功");
+    }
+
+    /** 查询签到周期里程碑奖励规则。 */
+    @Operation(summary = "查询签到周期里程碑奖励规则")
+    @GetMapping("/sign-milestone/list")
+    public Result<List<TsActivitySignMilestoneRule>> listSignMilestoneRules(
+            @RequestParam(required = false) Long taskId) {
+        return Result.OK(activityAdminService.listSignMilestoneRules(taskId));
+    }
+
+    /** 保存签到周期里程碑奖励规则。 */
+    @Operation(summary = "保存签到周期里程碑奖励规则")
+    @PostMapping("/sign-milestone/save")
+    public Result<Void> saveSignMilestoneRule(
+            @Validated
+            @RequestBody TsActivitySignMilestoneRuleSaveDto request) {
+        activityAdminService.saveSignMilestoneRule(request);
         return Result.OK("保存成功");
     }
 }

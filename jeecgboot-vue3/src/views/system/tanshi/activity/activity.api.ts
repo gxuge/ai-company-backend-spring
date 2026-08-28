@@ -18,6 +18,7 @@ export interface ActivityTask {
   conditionValue?: number;
   rewardType?: string;
   rewardValue?: number;
+  rewardClaimMode?: string;
   startTime?: string;
   endTime?: string;
   status?: string;
@@ -72,6 +73,17 @@ export interface ActivityRewardRule {
   updatedAt?: string;
 }
 
+export interface ActivitySignMilestoneRule {
+  id?: number;
+  taskId?: number;
+  milestoneDay?: number;
+  rewardType?: string;
+  rewardValue?: number;
+  status?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface ActivityTaskQuery {
   keyword?: string;
   taskType?: string;
@@ -109,6 +121,7 @@ export interface ActivityTaskSave {
   conditionValue: number;
   rewardType: string;
   rewardValue: number;
+  rewardClaimMode: string;
   startTime?: string;
   endTime?: string;
   status: string;
@@ -124,6 +137,15 @@ export interface ActivityRewardRuleSave {
   status: number;
 }
 
+export interface ActivitySignMilestoneRuleSave {
+  id?: number;
+  taskId: number;
+  milestoneDay: number;
+  rewardType: string;
+  rewardValue: number;
+  status: number;
+}
+
 enum Api {
   taskPage = '/sys/ts-activity-admin/task/page',
   taskCreate = '/sys/ts-activity-admin/task/create',
@@ -132,6 +154,8 @@ enum Api {
   rewardPage = '/sys/ts-activity-admin/reward/page',
   rewardRuleList = '/sys/ts-activity-admin/reward-rule/list',
   rewardRuleSave = '/sys/ts-activity-admin/reward-rule/save',
+  signMilestoneList = '/sys/ts-activity-admin/sign-milestone/list',
+  signMilestoneSave = '/sys/ts-activity-admin/sign-milestone/save',
 }
 
 export const pageActivityTasks = (data: ActivityTaskQuery) => defHttp.post<ActivityPage<ActivityTask>>({ url: Api.taskPage, data });
@@ -147,3 +171,9 @@ export const pageActivityRewards = (data: ActivityRewardQuery) => defHttp.post<A
 export const listActivityRewardRules = () => defHttp.get<ActivityRewardRule[]>({ url: Api.rewardRuleList });
 
 export const saveActivityRewardRule = (data: ActivityRewardRuleSave) => defHttp.post<void>({ url: Api.rewardRuleSave, data });
+
+export const listActivitySignMilestoneRules = (params?: { taskId?: number }) =>
+  defHttp.get<ActivitySignMilestoneRule[]>({ url: Api.signMilestoneList, params });
+
+export const saveActivitySignMilestoneRule = (data: ActivitySignMilestoneRuleSave) =>
+  defHttp.post<void>({ url: Api.signMilestoneSave, data });
