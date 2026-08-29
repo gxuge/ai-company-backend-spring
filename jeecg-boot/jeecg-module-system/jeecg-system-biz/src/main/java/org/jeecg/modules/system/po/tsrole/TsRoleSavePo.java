@@ -1,5 +1,6 @@
 package org.jeecg.modules.system.po.tsrole;
 
+import com.alibaba.fastjson.JSONObject;
 import lombok.Data;
 import org.jeecg.modules.system.dto.tsrole.TsRoleSaveDto;
 import org.jeecg.modules.system.entity.TsRole;
@@ -44,7 +45,23 @@ public class TsRoleSavePo {
         po.setInteractionMode(trimToNull(request.getInteractionMode()));
         po.setVoiceName(trimToNull(request.getVoiceName()));
         po.setVoiceProfileId(request.getVoiceProfileId());
-        po.setExtJson(request.getExtJson());
+        String extJson = request.getExtJson();
+        if (request.getVoiceProfileId() != null) {
+            JSONObject ext = new JSONObject();
+            if (extJson != null && !extJson.trim().isEmpty()) {
+                try {
+                    JSONObject parsed = JSONObject.parseObject(extJson);
+                    if (parsed != null) {
+                        ext = parsed;
+                    }
+                } catch (Exception ignored) {
+                    ext.put("rawExtJson", extJson);
+                }
+            }
+            ext.put("voiceProfileId", request.getVoiceProfileId());
+            extJson = ext.toJSONString();
+        }
+        po.setExtJson(extJson);
         po.setIsPublic(request.getIsPublic());
         po.setBasicAiGenerated(request.getBasicAiGenerated());
         po.setAdvancedAiGenerated(request.getAdvancedAiGenerated());

@@ -8,7 +8,7 @@ import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.aop.TsRoleOwnershipAspect;
 import org.jeecg.modules.aop.TsRoleOwnershipAspect.CheckTsRoleOwnership;
 import org.jeecg.modules.system.activity.TsActivityProgressReporter;
-import org.jeecg.modules.system.annotation.TsBehaviorTrack;
+import org.jeecg.modules.system.behavior.TsBehaviorEventReporter;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateImageByPromptDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateRoleDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateImagePromptByTemplateDto;
@@ -21,6 +21,7 @@ import org.jeecg.modules.system.dto.tsrole.TsRoleQueryDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleSaveDto;
 import org.jeecg.modules.system.constant.TsWorkReviewConstants;
 import org.jeecg.modules.system.entity.TsRole;
+import org.jeecg.modules.system.enums.tsbehavior.TsBehaviorEventType;
 import org.jeecg.modules.system.enums.tsactivity.TsActivityConditionType;
 import org.jeecg.modules.system.mapper.TsRoleMapper;
 import org.jeecg.modules.system.po.tsrole.TsRoleQueryPo;
@@ -42,6 +43,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Date;
+import java.util.Map;
 
 @Service
 public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> implements ITsRoleService {
@@ -51,6 +53,8 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
     private ITsWorkReviewService tsWorkReviewService;
     @Resource
     private TsActivityProgressReporter activityProgressReporter;
+    @Resource
+    private TsBehaviorEventReporter behaviorEventReporter;
 
     /**
      * 分页查询当前用户角色列表。
@@ -97,6 +101,13 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
                 userId,
                 TsActivityConditionType.ROLE_CREATE,
                 "role-create:" + role.getId());
+        behaviorEventReporter.reportAfterCommit(
+                userId,
+                TsBehaviorEventType.ROLE_CREATE,
+                "role",
+                role.getId(),
+                role.getGender() == null
+                        ? Map.of() : Map.of("gender", role.getGender()));
         return Result.OK("新增成功", TsRoleVoConverter.fromEntity(this.getById(role.getId())));
     }
 
@@ -137,13 +148,11 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
      * 一键补全角色设定。
      */
     @Override
-    @TsBehaviorTrack(eventType = "generate", resourceType = "role")
     public Result<TsRoleOneClickSettingGenerateVo> generateRoleSetting(LoginUser user, TsRoleOneClickSettingGenerateDto request) {
         return Result.OK(tsRoleGenerateService.generateRoleSetting(user, request));
     }
 
     @Override
-    @TsBehaviorTrack(eventType = "generate", resourceType = "role")
     public Result<TsRoleOneClickSettingGenerateVo> generateRoleSettingPreset(LoginUser user, TsRoleOneClickSettingGenerateDto request) {
         return Result.OK(tsRoleGenerateService.generateRoleSettingPreset(user, request));
     }
@@ -153,7 +162,6 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @TsBehaviorTrack(eventType = "generate", resourceType = "role")
     public Result<TsRoleOneClickImageGenerateVo> generateRoleImage(LoginUser user, TsRoleOneClickImageGenerateDto request) {
         return Result.OK(tsRoleGenerateService.generateRoleImage(user, request));
     }
@@ -163,7 +171,6 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @TsBehaviorTrack(eventType = "generate", resourceType = "role")
     public Result<TsRoleOneClickVoiceGenerateVo> generateRoleVoice(LoginUser user, TsRoleOneClickVoiceGenerateDto request) {
         return Result.OK(tsRoleGenerateService.generateRoleVoice(user, request));
     }
@@ -173,14 +180,12 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @TsBehaviorTrack(eventType = "generate", resourceType = "role")
     public Result<TsRoleGenerateRoleVo> generateRole(LoginUser user, TsRoleGenerateRoleDto request) {
         return Result.OK(tsRoleGenerateService.generateRole(user, request));
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @TsBehaviorTrack(eventType = "generate", resourceType = "role")
     public Result<TsRoleGenerateImageByPromptVo> generateImageByPrompt(LoginUser user, TsRoleGenerateImageByPromptDto request) {
         return Result.OK(tsRoleGenerateService.generateImageByPrompt(user, request));
     }

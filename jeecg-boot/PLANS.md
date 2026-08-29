@@ -1,5 +1,49 @@
 # PLANS.md
 
+## 20260830-recommend-etl-automation
+
+### 背景
+- 推荐训练需要把 ClickHouse 行为数据稳定转换为 EasyRec 的 train/eval 数据集。
+- Python 脚本由算法侧维护，Java 管理系统负责任务配置、定时编排、异步执行和结果审计。
+
+### 目标
+1. 提供角色/故事推荐 ETL 任务的增删改查、启停、手动执行和 Cron 调度。
+2. 通过 `ProcessBuilder` 安全启动 Python，支持超时、异常、重复运行拦截和结构化结果解析。
+3. 提供执行记录后台页面，展示数量、文件路径、错误和运行日志。
+
+### 非目标
+- 不实现 Python ETL 算法、EasyRec 训练、模型评估、模型版本和模型发布。
+- 不允许在任务参数中保存 ClickHouse、OSS 密钥，敏感信息仅通过环境变量传递。
+
+### 执行步骤
+1. 新增任务、执行记录表及探拾后台菜单迁移。
+2. 实现后端 CRUD、执行协调、Quartz 调度、local/Kafka 分发和 Python 运行器。
+3. 增加 Vue3 任务管理与执行记录页面。
+4. 增加应用和 Docker 配置，同步 API、配置、ADR 和变更记录。
+5. 执行后端编译/测试、前端类型与格式检查。
+
+### 进度
+- [x] 步骤 1：完成现有 Quartz、Kafka、ClickHouse、菜单和前端模式分析。
+- [x] 步骤 2：数据库与后端业务实现。
+- [x] 步骤 3：Vue3 管理页面实现。
+- [x] 步骤 4：配置与文档同步。
+- [x] 步骤 5：验证与证据归档。
+
+### 风险与回退
+- 风险：脚本路径、Python 运行时或输出挂载错误会导致执行失败；通过允许目录校验和明确错误码定位。
+- 风险：应用重启可能留下 RUNNING 记录；通过超时恢复任务释放数据库占位锁。
+- 回退：关闭 `RECOMMEND_ETL_ENABLED`，删除 Quartz 任务和新增菜单；业务表可按迁移末尾 SQL 独立删除。
+
+### 未完成项
+- 未提供真实 Python ETL 脚本，未启动 MySQL、Kafka、ClickHouse 执行端到端任务。
+
+### 验证记录
+- 后端：`mvn -Pdev -pl jeecg-module-system/jeecg-system-biz -am -DskipTests compile`，8 个 Reactor 模块成功。
+- 测试：JUnit Platform Launcher 实际执行 `TsRecommendEtlResultParserTest`，3 条成功、0 失败。
+- 前端：目标目录 ESLint 通过，3 个 Vue SFC 编译和 2 个 TypeScript 文件转译通过。
+- 配置：应用 YAML、三套 Compose YAML、两个 Mapper XML 解析通过；根 Compose `config --quiet` 通过。
+- 编码：新增后端 19 个目标文件和前端 5 个文件均为 UTF-8 无 BOM、LF。
+
 ## 使用说明
 用于记录中大型任务的执行过程，强调“先记录、再实现、持续更新”。
 
@@ -2083,3 +2127,185 @@
 - SQL 静态检查：独立补丁包含 7 个默认任务和 7 组 `NOT EXISTS` 幂等条件。
 - 编码：`ts-api.md` 保持 UTF-8 BOM/CRLF，完整数据库 SQL 保持
   UTF-8 无 BOM/CRLF，其余新增和修改文件保持 UTF-8 无 BOM/LF。
+
+# 20260829-chat-message-tts-stream
+
+## 元信息
+- 任务名称：聊天消息音色快照与流式 TTS
+- 分级：H2
+- 负责人：Codex
+- 开始时间：2026-08-29
+- 关联：聊天模板回复、消息 TTS、Web Chat
+
+## 目标与非目标
+- 目标：新角色消息固化角色与音色快照，播放时不重复查询角色。
+- 目标：`message-tts` 同接口支持 JSON 和 `audio/mpeg` 流式响应。
+- 目标：Web Chat 支持渐进播放并保留非流式回退。
+- 非目标：不处理或补写缺少快照的旧消息。
+
+## 任务分解
+- [x] T1：角色回复消息写入 `senderId` 与 `voiceSnapshot`。
+- [x] T2：后端 `message-tts` 增加流式分支和 MiniMax 分片透传。
+- [x] T3：Web 前端接入 Fetch + MediaSource 渐进播放。
+- [x] T4：同步 API、变更记录并完成前后端验证。
+
+## 风险与回退
+- 风险：部分浏览器不支持 MP3 MediaSource；前端回退非流式播放。
+- 风险：旧消息没有音色快照；按需求直接返回明确错误。
+- 回退：前端关闭 `stream` 参数即可恢复原播放链路。
+
+## 未完成项
+- 未使用真实 MiniMax 密钥执行在线流式接口冒烟。
+- 全仓前端 lint 受存量格式、复杂度和类型规则问题阻断；本次新增
+  `chat-audio-stream.ts` 无定向 lint 错误，TypeScript 全量检查通过。
+
+## 验证记录
+- 后端：`mvn -pl jeecg-module-system/jeecg-system-biz -am -DskipTests compile`
+  通过，8 个 Reactor 模块全部成功。
+- 前端：`bun run check:types` 通过。
+- 前后端：`git diff --check` 通过。
+- 编码：既有 Java/TypeScript 保持 UTF-8 无 BOM/LF，
+  `docs/api/ts-api.md` 保持 UTF-8 BOM/CRLF。
+
+# 20260829-postiz-shared-infrastructure
+
+## 元信息
+- 任务名称：Postiz 复用 Jeecg PostgreSQL/Redis 的独立部署
+- 分级：H2
+- 负责人：Codex
+- 开始时间：2026-08-29
+- 关联：Jeecg Jenkins 单体部署、Postiz Docker Compose
+
+## 目标与非目标
+- 目标：重新构建并持久化 Jeecg pgvector/PostgreSQL，为 Postiz 创建独立数据库和账号。
+- 目标：Postiz 复用 Jeecg Redis DB 1，保留 Temporal + Temporal PostgreSQL，移除 Elasticsearch。
+- 目标：Jenkins 通过独立开关部署 Postiz，不影响现有 Jeecg 默认发布。
+- 非目标：不修改 Jeecg 业务主库，不修改 Postiz 上游源码，不配置社交平台 OAuth。
+
+## 任务分解
+- [x] T1：新增共享 PostgreSQL profile、固定 named volume 和幂等建库脚本。
+- [x] T2：新增 Postiz 精简 Compose，接入共享 PostgreSQL/Redis 并移除 Elasticsearch。
+- [x] T3：扩展单体打包脚本和 Jenkins 可选部署阶段。
+- [x] T4：同步配置文档、ADR、变更记录并执行 Compose/脚本验证。
+
+## 验证矩阵
+| 验证项 | 方法 | 期望 |
+|---|---|---|
+| Jeecg 默认部署 | Compose config | 未启用 `postiz` profile 时现有服务不受影响 |
+| PostgreSQL | Compose config + init 脚本静态检查 | 数据持久化，Postiz 库和账号可幂等创建 |
+| Postiz | Compose config | 无自带 PostgreSQL、Redis、Elasticsearch |
+| Redis 隔离 | 配置检查 | Postiz 使用 DB 1，Jeecg 继续使用 DB 0 |
+| Jenkins | Jenkinsfile/脚本静态检查 | `DEPLOY_POSTIZ=false` 时不执行 Postiz 阶段 |
+
+## 风险与回退
+- 风险：PostgreSQL 首次拉取镜像和初始化会增加部署时间。
+- 风险：共享 Redis 存在资源竞争，必须监控内存、淘汰策略和延迟。
+- 风险：Postiz 数据库密码必须使用 URL 安全字符，避免连接串解析失败。
+- 回退：停止 Postiz Compose，停用 `postiz` profile；保留 PostgreSQL 与 Temporal 数据卷，不执行删卷。
+
+## 未完成项
+- 未实际启动 Docker、拉取镜像或连接生产 Jenkins；首次发布仍需观察镜像兼容性和容器健康状态。
+
+## 验证记录
+- Jeecg 默认 Compose 与 `postiz` profile 均可解析，默认服务列表不包含 PostgreSQL。
+- Postiz Compose 默认及 `tools` profile 可解析，未包含 Elasticsearch 或自带 Redis。
+- Bash 建库/打包脚本通过 `bash -n`，PowerShell 打包脚本通过 AST 语法解析。
+- `git diff --check` 通过；既有文件 BOM 与换行格式保持不变。
+## 20260829-sign-calendar-integration
+
+- 任务名称：活动页签到奖励日历对接
+- 分级：H2
+- 目标：活动首页返回七天签到奖励日历；本地数据库注入每日 10 星钻签到任务及第 4/7 天里程碑奖励；Web 活动页使用真实接口数据渲染。
+- 非目标：不支持补签，不新增非星钻奖励类型，不修改现有签到幂等与会员加成规则。
+- [x] T1：扩展活动首页 VO 和签到日历组装逻辑。
+- [x] T2：补充服务单元测试与接口文档。
+- [x] T3：新增并执行幂等签到默认数据补丁。
+- [x] T4：Web 活动页使用 `signRewards` 渲染七天奖励。
+- [x] T5：完成后端测试、前端类型检查和数据库复核。
+
+### 风险与回退
+
+- 风险：旧客户端忽略新增字段，不影响兼容；未执行数据补丁时签到接口仍返回无可用任务。
+- 回退：移除 `signRewards` 字段与前端映射，并停用新增签到任务和里程碑规则。
+# 20260829-business-behavior-analytics
+
+## 背景
+- 现有推荐埋点允许任意事件，并包含曝光位置、停留时长、评论、点赞、发布和泛化生成权重。
+- 当前阶段只需要围绕语言、详情浏览、收藏、连接、聊天和创作素材形成可分析的业务事实。
+- 角色与故事暂不保留标签信息。
+
+## 目标
+1. 统一事件为 `user_language/detail_view/impression/favorite/connection/chat_message/role_create/story_create/role_image_generate/story_background_generate`。
+2. 移除旧行为 AOP、Redis 推荐权重和 MySQL 明细消费，新明细通过 Kafka 写入 ClickHouse。
+3. 后端成功结果产生可信业务事件，前端只上报语言和详情浏览。
+
+## 非目标
+- 不采集角色或故事标签、详情停留时长、任意曝光字段和匿名访客；推荐曝光
+  仅保留 `scene/requestId/position`。
+- 不实现推荐排序、画像查询接口和历史 MySQL 明细迁移。
+- 不改动广告事件的独立采集链路。
+
+## 执行步骤
+1. 收敛事件 DTO、消息字段、事件校验和 Kafka 消费模型。
+2. 增加 ClickHouse 行为表初始化脚本及部署打包复制。
+3. 在角色、故事、收藏、会话、聊天和生图成功点产生后端事件。
+4. 前端增加统一埋点 API，并在语言切换、角色详情和故事详情接入。
+5. 更新 API、配置、变更记录并执行定向测试。
+
+## 进度
+- [x] 步骤 1：十类事件白名单、DTO 和 Kafka 消息模型收敛。
+- [x] 步骤 2：ClickHouse Mapper、消费者、初始化脚本及打包复制。
+- [x] 步骤 3：后端六类业务成功点可信上报。
+- [x] 步骤 4：前端语言、角色详情和故事详情上报。
+- [x] 步骤 5：文档、编译、定向测试与前端转译验证。
+
+## 风险与回退
+- 风险：ClickHouse 未初始化时 Kafka 明细消费者会重试并进入死信 Topic。
+- 风险：前端重复进入详情页会产生多条浏览事实，这是预期统计口径。
+- 回退：关闭 `TS_BEHAVIOR_KAFKA_ENABLED` 即停止新事件；业务接口继续正常执行。
+- 数据回退：ClickHouse 新表可独立删除，不影响 MySQL 业务表。
+
+## 验证记录
+- 后端 Reactor 8 个模块编译成功，目标模块 33 个测试源文件编译成功。
+- JUnit Platform 独立执行 3 个埋点测试类，11 条测试成功、0 失败。
+- 前端 4 个目标 TypeScript/TSX 文件通过 Babel Web 转译。
+- 旧 AOP、Redis 特征消费者和对应环境变量引用扫描为空。
+
+## 未完成项
+- 未启动真实 Kafka、ClickHouse 容器进行端到端消费冒烟。
+
+# 20260829-recommendation-impression
+
+## 背景
+- 推荐训练需要知道用户实际看见过哪些内容，否则只有点击等正向行为，无法形成可靠的候选负样本。
+- 当前发现页的故事卡片具有稳定故事 ID；角色页展示的是形象档案 ID，暂不能与角色详情、收藏和聊天可靠关联。
+
+## 目标
+1. 新增白名单事件 `impression`，仅接受角色或故事资源以及 `scene/requestId/position`。
+2. 故事推荐卡片可见面积达到 50% 且连续 500ms 后上报，同一请求内同一故事只上报一次。
+3. 前端使用批量接口静默上报，不影响列表加载、滚动和业务操作。
+
+## 非目标
+- 本次不直接计算正负样本、不增加推荐排序接口。
+- 本次不采集停留时长，不接入缺少角色 ID 的形象档案卡片。
+- 不修改 ClickHouse 表结构、页面布局或匿名访客采集规则。
+
+## 任务分解
+- [x] T1：扩展后端事件白名单、属性校验和单元测试。
+- [x] T2：扩展前端批量埋点封装及曝光队列。
+- [x] T3：在故事发现列表接入可见性判断、请求级去重和位置字段。
+- [x] T4：同步 API、ADR、架构、计划和变更记录并执行定向验证。
+
+## 风险与回退
+- 风险：滚动事件节流可能带来少量边界曝光误差，通过 50% 可见阈值和 500ms 连续时间降低误报。
+- 风险：角色形象档案 ID 不能替代角色 ID，本次明确跳过，避免训练数据错误关联。
+- 回退：移除前端曝光回调和 `impression` 白名单；已有九类业务事实与 ClickHouse 表不受影响。
+
+## 验证记录
+- 后端 Reactor 8 个模块及目标模块 33 个测试源文件编译成功。
+- 行为埋点相关 14 条 JUnit 测试成功、0 失败，覆盖合法曝光、缺失属性和非法位置。
+- 前端 API、故事发现页和 StoryGrid 三个目标文件通过 Babel Web 转译。
+- 前后端目标文件编码、BOM 和换行符保持原格式。
+
+## 未完成项
+- 未启动真实 Kafka、ClickHouse 和前端页面执行端到端曝光消费冒烟。

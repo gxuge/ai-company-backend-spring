@@ -67,13 +67,16 @@
 | DELETE | `/ts-chat-message-attachments` | 删除附件 |
 | POST | `/ts-chat-sessions/ai-reply` | 会话内生成 AI 文本回复并产出语音 |
 | POST | `/ts-chat-sessions/ai-reply-template` | 基于角色卡/故事卡生成模板回复 |
-| POST | `/ts-chat-sessions/message-tts` | 按指定 AI 消息即时生成语音，返回前端本地缓存键 |
+| POST | `/ts-chat-sessions/message-tts` | 按角色消息音色快照生成语音，支持 JSON 或 MP3 流 |
 | POST | `/ts-chat-sessions/reply-suggestions` | 生成 3 条候选回复建议 |
 
 补充说明：
 - `ai-reply` 会在后端直接完成文本生成与语音生成编排。
-- `ai-reply` 与 `message-tts` 返回的 `audioUrl` 当前为临时 `data:audio/mpeg;base64,...` 播放地址，不写入 R2。
-- `message-tts` 只负责按消息重新获取语音，不做服务端语音缓存落库；临时音频也不会写入消息 `contentJson` 或附件表。
+- `message-tts` 默认 `stream=false`，继续返回统一 JSON；其中 `audioUrl` 当前为临时 `data:audio/mpeg;base64,...` 播放地址，不写入 R2。
+- `message-tts` 传 `stream=true` 时直接返回 `Content-Type: audio/mpeg` 的分块响应，不使用 `Result` 包装。
+- 模板角色回复会把活动角色写入消息 `senderId`，并在 `contentJson.voiceSnapshot` 固化 `roleId/voiceProfileId/voiceId/speed/pitch/volume`。
+- `message-tts` 只读取消息音色快照，不查询角色或用户默认音色；旧消息缺少快照时直接返回业务错误。
+- `message-tts` 不做服务端语音缓存落库；临时音频也不会写入消息 `contentJson` 或附件表。
 - `audioCacheKey` 仅作为 Web 本地缓存键使用。
 - `/ts-chat-sessions` 列表响应同时返回 `roleName`、`roleAvatarUrl` 和 `lastMessageText`，用于直接渲染会话列表摘要，前端无需逐条请求角色详情或消息分页。
 
@@ -375,7 +378,9 @@ Agent SSE 确认交互说明：
 
 ### 4.4 当前语音链路说明
 - `POST /ts-chat-sessions/ai-reply` 会在后端直接产出语音元信息。
-- `POST /ts-chat-sessions/message-tts` 只负责按消息即时生成语音，不依赖服务端缓存表；当前音频以临时 data URL 返回。
+- `POST /ts-chat-sessions/message-tts` 默认返回临时 data URL；`stream=true` 时返回 `audio/mpeg` 流。
+- 消息 TTS 的角色和音色以消息 `senderId + contentJson.voiceSnapshot` 为准，不在播放阶段查询角色表。
+- 旧消息没有音色快照时不兜底、不补写，直接返回“当前消息未保存音色快照”。
 - `audioCacheKey` 仅作为 Web 本地缓存键使用。
 
 ### 4.5 模板与修复约束
@@ -476,7 +481,7 @@ Agent SSE 确认交互说明：
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/sys/ts-activity/home` | 查询签到状态、连续天数、每日/每周任务和星钻余额 |
+| GET | `/sys/ts-activity/home` | 查询签到状态、连续天数、七天奖励日历、每日/每周任务和星钻余额 |
 | POST | `/sys/ts-activity/sign` | 幂等执行每日签到，并按配置发放每日及周期里程碑星钻 |
 | GET | `/sys/ts-activity/tasks` | 查询当前周期任务，可使用 `category` 查询参数 |
 | POST | `/sys/ts-activity/task/receive` | 领取任务奖励，`taskId` 通过 JSON Body 传递 |
@@ -510,6 +515,11 @@ Agent SSE 确认交互说明：
 同时包含周期起始日期，断签后重新连续签到不会与旧周期撞键。
 数据库迁移会为现有每日签到任务默认补充第 4 天 10 星钻、第 7 天 20 星钻，
 已有相同周期天规则时不覆盖。
+
+活动首页的 `signRewards` 固定返回七天周期奖励；每项包含 `day`、
+`baseRewardAmount`、`milestoneRewardAmount` 和 `rewardAmount`。当前没有
+启用中的每日签到任务时返回空数组。默认独立数据补丁配置每日基础奖励
+10 星钻，第 4 天额外 10 星钻，第 7 天额外 20 星钻。
 
 可信业务模块优先直接调用 `ITsActivityService`；HTTP 内部接口要求
 `ts:activity:internal` 权限：
@@ -662,7 +672,7 @@ Agent SSE 确认交互说明：
 用户ID和会员等级均由后端计算；匿名事件必须提供 `visitorId`。事件 Body
 包含 `eventId/contentId/slotCode/eventType/platform/occurredAt`，
 `eventType` 支持 `IMPRESSION/CLICK`，重复 `eventId` 返回 `false`。
-广告事件的 `occurredAt` 时间格式与推荐行为埋点一致，推荐使用带时区的
+广告事件的 `occurredAt` 时间格式与业务行为埋点一致，推荐使用带时区的
 ISO 8601 格式，同时兼容按 GMT+8 解释的 `yyyy-MM-dd HH:mm:ss` 和毫秒时间戳。
 
 ### 9.3 管理后台页面
@@ -676,23 +686,42 @@ ISO 8601 格式，同时兼容按 GMT+8 解释的 `yyyy-MM-dd HH:mm:ss` 和毫�
 - 字段迁移：`db/V3.9.1_51__expand_ts_ad_content_media.sql`，将既有图片和跳转字段
   回填到规范化媒体/动作字段。
 
-## 10. 推荐行为埋点接口
+## 10. 业务行为分析埋点接口
 
 接口要求登录，用户 ID 只从后端登录态读取。请求线程仅校验并异步提交
-Kafka，不直接写 MySQL 或 Redis：
+Kafka，由明细消费者写入 ClickHouse：
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/sys/ts-events/collect` | 上报单条访问、曝光、点击、停留或互动行为 |
+| POST | `/sys/ts-events/collect` | 上报单条白名单业务事实 |
 | POST | `/sys/ts-events/collect/batch` | 批量上报行为，单批最多100条 |
 
 当 `TS_BEHAVIOR_KAFKA_ENABLED=false` 时，接口正常返回成功结果且
-`acceptedCount=0`，不会发送 Kafka、写入 MySQL 明细或更新 Redis 特征。
+`acceptedCount=0`，不会发送 Kafka 或写入 ClickHouse。
 
 事件必填 `eventId/eventType/sessionId`；可选
-`resourceType/resourceId/impressionId/position/pagePath/platform/durationMs/properties/occurredAt`。
+`resourceType/resourceId/pagePath/platform/properties/occurredAt`。
 `occurredAt` 推荐使用带时区的 ISO 8601 格式，例如
 `2026-08-26T12:15:39.125Z` 或 `2026-08-26T20:15:39.125+08:00`；
 为兼容既有调用，也接受按 GMT+8 解释的 `yyyy-MM-dd HH:mm:ss` 和毫秒时间戳。
-扩展 JSON 最大8KB，事件时间允许最近7天至未来5分钟。MySQL 明细和 Redis
-实时特征使用独立消费者组，明细按 `eventId` 去重，Redis 特征默认保留30天。
+扩展 JSON 最大8KB，事件时间允许最近7天至未来5分钟。
+
+允许的事件类型如下，不接受标签、停留时长等旧推荐字段。推荐曝光仅允许
+`scene/requestId/position` 三个归因属性，`position` 必须为正整数：
+
+| 事件类型 | 资源 | 扩展属性 |
+|---|---|---|
+| `user_language` | 无 | 必填 `language` |
+| `detail_view` | `role` 或 `story` | 无 |
+| `impression` | `role` 或 `story` | 必填 `scene/requestId/position` |
+| `favorite` | `role` 或 `story` | 无 |
+| `connection` | `role` 或 `story` | 无 |
+| `chat_message` | `role` 或 `story` | 无 |
+| `role_create` | `role` | 可选 `gender` |
+| `story_create` | `story` | 无 |
+| `role_image_generate` | `role_image` | 可选 `gender/style` |
+| `story_background_generate` | `story_background` | 可选 `style` |
+
+前端负责 `user_language`、角色/故事 `detail_view` 和推荐卡片 `impression`；
+收藏、连接、聊天、创建和生成事件由后端业务成功点可信上报。旧的评论、点赞、
+发布、泛生成 AOP 埋点及 Redis 实时特征消费者已移除。

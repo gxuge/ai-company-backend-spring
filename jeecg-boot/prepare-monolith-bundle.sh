@@ -31,7 +31,12 @@ copy_latest_jar() {
 }
 
 rm -rf "${BUNDLE_DIR}"
-mkdir -p "${BUNDLE_DIR}/system" "${BUNDLE_DIR}/mysql"
+mkdir -p \
+  "${BUNDLE_DIR}/system" \
+  "${BUNDLE_DIR}/mysql" \
+  "${BUNDLE_DIR}/clickhouse/init" \
+  "${BUNDLE_DIR}/postgres/init" \
+  "${BUNDLE_DIR}/postiz"
 
 # docker-compose and env
 cp -f "${REPO_ROOT}/docker-deploy/monolith/docker-compose.yml" "${BUNDLE_DIR}/docker-compose.yml"
@@ -46,6 +51,13 @@ copy_latest_jar \
 
 # MySQL init/config
 cp -a "${REPO_ROOT}/docker-deploy/monolith/mysql/." "${BUNDLE_DIR}/mysql/"
+
+# ClickHouse analysis schema
+cp -a "${REPO_ROOT}/docker-deploy/monolith/clickhouse/init/." "${BUNDLE_DIR}/clickhouse/init/"
+
+# Shared PostgreSQL init and Postiz deployment assets
+cp -a "${REPO_ROOT}/docker-deploy/monolith/postgres/init/." "${BUNDLE_DIR}/postgres/init/"
+cp -a "${REPO_ROOT}/docker-deploy/postiz/." "${BUNDLE_DIR}/postiz/"
 
 # Optional exported image tar
 if [[ -f "${REPO_ROOT}/jeecg-monolith.tar" ]]; then

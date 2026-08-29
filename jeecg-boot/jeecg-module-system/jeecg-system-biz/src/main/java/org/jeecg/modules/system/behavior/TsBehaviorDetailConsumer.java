@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.Date;
 
-/** 推荐行为 MySQL 明细消费者。 */
+/** 业务行为 ClickHouse 明细消费者。 */
 @Component
 @ConditionalOnProperty(
         prefix = "jeecg.behavior.kafka", name = "enabled", havingValue = "true")
@@ -27,27 +27,23 @@ public class TsBehaviorDetailConsumer {
         this.eventMapper = eventMapper;
     }
 
-    /** 消费行为事件并按 eventId 幂等写入 MySQL。 */
+    /** 消费行为事件并写入 ClickHouse 分析明细。 */
     @KafkaListener(
             topics = "${jeecg.behavior.kafka.topic:ts.user-behavior.v1}",
             groupId = "${jeecg.behavior.kafka.detail-group:ts-behavior-detail-v1}")
     public void consume(String payload) throws JsonProcessingException {
         TsBehaviorEventMessage message =
                 objectMapper.readValue(payload, TsBehaviorEventMessage.class);
-        eventMapper.insertIgnore(new TsUserBehaviorEvent()
+        eventMapper.insertEvent(new TsUserBehaviorEvent()
                 .setEventId(message.getEventId())
                 .setEventType(message.getEventType())
                 .setEventVersion(message.getEventVersion())
                 .setUserId(message.getUserId())
-                .setAnonymousId(message.getAnonymousId())
                 .setSessionId(message.getSessionId())
                 .setResourceType(message.getResourceType())
                 .setResourceId(message.getResourceId())
-                .setImpressionId(message.getImpressionId())
-                .setPositionIndex(message.getPosition())
                 .setPagePath(message.getPagePath())
                 .setPlatform(message.getPlatform())
-                .setDurationMs(message.getDurationMs())
                 .setPropertiesJson(message.getPropertiesJson())
                 .setOccurredAt(message.getOccurredAt())
                 .setReceivedAt(message.getReceivedAt())

@@ -33,6 +33,9 @@ if (Test-Path $bundleDir) {
 New-Item -ItemType Directory -Path $bundleDir | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $bundleDir 'system') | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $bundleDir 'mysql') | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $bundleDir 'clickhouse/init') -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $bundleDir 'postgres/init') -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $bundleDir 'postiz') -Force | Out-Null
 
 # docker-compose.yml
 Copy-Item -LiteralPath (Join-Path $repoRoot 'docker-deploy/monolith/docker-compose.yml') -Destination $bundleDir -Force
@@ -47,6 +50,16 @@ Copy-Jar -SourcePattern (Join-Path $repoRoot 'jeecg-module-system/jeecg-system-s
 # DB 鍒濆鍖?SQL
 $mysqlDir = Join-Path $repoRoot 'docker-deploy/monolith/mysql'
 Copy-Item -Path (Join-Path $mysqlDir '*') -Destination (Join-Path $bundleDir 'mysql') -Recurse -Force
+
+# ClickHouse analysis schema
+$clickhouseInitDir = Join-Path $repoRoot 'docker-deploy/monolith/clickhouse/init'
+Copy-Item -Path (Join-Path $clickhouseInitDir '*') -Destination (Join-Path $bundleDir 'clickhouse/init') -Recurse -Force
+
+# Shared PostgreSQL init and Postiz deployment assets
+$postgresInitDir = Join-Path $repoRoot 'docker-deploy/monolith/postgres/init'
+Copy-Item -Path (Join-Path $postgresInitDir '*') -Destination (Join-Path $bundleDir 'postgres/init') -Recurse -Force
+$postizDir = Join-Path $repoRoot 'docker-deploy/postiz'
+Copy-Item -Path (Join-Path $postizDir '*') -Destination (Join-Path $bundleDir 'postiz') -Recurse -Force
 
 # 宸插鍑虹殑闀滃儚锛堝彲閫夛級
 $tarPath = Join-Path $repoRoot 'jeecg-monolith.tar'

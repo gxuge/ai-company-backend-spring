@@ -44,16 +44,31 @@ otel:
     exporter: ${OTEL_LOGS_EXPORTER:none}
 
 jeecg:
+  recommend-etl:
+    enabled: ${RECOMMEND_ETL_ENABLED:true}
+    dispatch-mode: ${RECOMMEND_ETL_DISPATCH_MODE:local}
+    python-executable: ${RECOMMEND_ETL_PYTHON_EXECUTABLE:python}
+    script-root: ${RECOMMEND_ETL_SCRIPT_ROOT:./etl/scripts}
+    output-root: ${RECOMMEND_ETL_OUTPUT_ROOT:./etl/output}
+    log-root: ${RECOMMEND_ETL_LOG_ROOT:./etl/logs}
+    default-timeout-seconds: ${RECOMMEND_ETL_DEFAULT_TIMEOUT_SECONDS:3600}
+    max-timeout-seconds: ${RECOMMEND_ETL_MAX_TIMEOUT_SECONDS:86400}
+    max-log-chars: ${RECOMMEND_ETL_MAX_LOG_CHARS:1000000}
+    worker-core-size: ${RECOMMEND_ETL_WORKER_CORE_SIZE:2}
+    worker-max-size: ${RECOMMEND_ETL_WORKER_MAX_SIZE:4}
+    worker-queue-capacity: ${RECOMMEND_ETL_WORKER_QUEUE_CAPACITY:100}
+    kafka-topic: ${RECOMMEND_ETL_KAFKA_TOPIC:ts.recommend-etl.execute.v1}
+    kafka-group: ${RECOMMEND_ETL_KAFKA_GROUP:ts-recommend-etl-worker-v1}
+    kafka-partitions: ${RECOMMEND_ETL_KAFKA_PARTITIONS:3}
+    kafka-replicas: ${RECOMMEND_ETL_KAFKA_REPLICAS:1}
+    recovery-delay-ms: ${RECOMMEND_ETL_RECOVERY_DELAY_MS:60000}
   behavior:
     max-batch-size: ${TS_BEHAVIOR_MAX_BATCH_SIZE:100}
     max-properties-bytes: ${TS_BEHAVIOR_MAX_PROPERTIES_BYTES:8192}
-    feature-ttl-days: ${TS_BEHAVIOR_FEATURE_TTL_DAYS:30}
-    dedup-ttl-days: ${TS_BEHAVIOR_DEDUP_TTL_DAYS:7}
     kafka:
       enabled: ${TS_BEHAVIOR_KAFKA_ENABLED:false}
       topic: ${TS_BEHAVIOR_KAFKA_TOPIC:ts.user-behavior.v1}
       dlq-topic: ${TS_BEHAVIOR_KAFKA_DLQ_TOPIC:ts.user-behavior.dlq.v1}
       detail-group: ${TS_BEHAVIOR_KAFKA_DETAIL_GROUP:ts-behavior-detail-v1}
-      feature-group: ${TS_BEHAVIOR_KAFKA_FEATURE_GROUP:ts-behavior-feature-v1}
       partitions: ${TS_BEHAVIOR_KAFKA_PARTITIONS:6}
       replicas: ${TS_BEHAVIOR_KAFKA_REPLICAS:1}

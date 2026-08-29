@@ -264,6 +264,19 @@ jeecg:
       upload-generated-media: ${AIRAG_MINIMAX_UPLOAD_GENERATED_MEDIA:true}
       image-upload-biz-path: ${AIRAG_MINIMAX_IMAGE_UPLOAD_BIZ_PATH:airag/minimax/image}
       audio-upload-biz-path: ${AIRAG_MINIMAX_AUDIO_UPLOAD_BIZ_PATH:airag/minimax/audio}
+  ai:
+    asr:
+      enabled: ${AI_ASR_ENABLED:false}
+      provider: ${AI_ASR_PROVIDER:dashscope}
+      api-key: ${DASHSCOPE_API_KEY:}
+      workspace-id: ${DASHSCOPE_WORKSPACE_ID:}
+      region: ${AI_ASR_REGION:cn-beijing}
+      model: ${AI_ASR_MODEL:qwen-audio-3.0-asr-flash-streaming}
+      format: pcm
+      sample-rate: 16000
+      language: ${AI_ASR_LANGUAGE:zh}
+      max-sentence-silence-ms: ${AI_ASR_MAX_SENTENCE_SILENCE_MS:800}
+      ticket-ttl-seconds: 60
   payment:
     default-currency: ${PAYMENT_DEFAULT_CURRENCY:USD}
     connect-timeout-ms: ${PAYMENT_CONNECT_TIMEOUT_MS:5000}

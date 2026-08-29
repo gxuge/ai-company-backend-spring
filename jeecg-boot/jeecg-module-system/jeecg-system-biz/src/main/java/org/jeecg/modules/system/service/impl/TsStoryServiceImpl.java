@@ -8,7 +8,7 @@ import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.aop.TsStoryOwnershipAspect;
 import org.jeecg.modules.aop.TsStoryOwnershipAspect.CheckTsStoryOwnership;
 import org.jeecg.modules.system.activity.TsActivityProgressReporter;
-import org.jeecg.modules.system.annotation.TsBehaviorTrack;
+import org.jeecg.modules.system.behavior.TsBehaviorEventReporter;
 import org.jeecg.modules.system.dto.tsstory.TsStoryFullGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickOutlineGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneImageGenerateDto;
@@ -23,6 +23,7 @@ import org.jeecg.modules.system.entity.TsStory;
 import org.jeecg.modules.system.entity.TsStoryRoleRel;
 import org.jeecg.modules.system.entity.TsStoryStat;
 import org.jeecg.modules.system.enums.tsactivity.TsActivityConditionType;
+import org.jeecg.modules.system.enums.tsbehavior.TsBehaviorEventType;
 import org.jeecg.modules.system.mapper.TsRoleMapper;
 import org.jeecg.modules.system.mapper.TsStoryChapterMapper;
 import org.jeecg.modules.system.mapper.TsStoryMapper;
@@ -73,6 +74,8 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
     private ITsWorkReviewService tsWorkReviewService;
     @Resource
     private TsActivityProgressReporter activityProgressReporter;
+    @Resource
+    private TsBehaviorEventReporter behaviorEventReporter;
     @Override
     public Result<Page<TsStoryVo>> pageStories(LoginUser user, TsStoryQueryDto request) {
         String userId = user.getId();
@@ -181,6 +184,12 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
                 userId,
                 TsActivityConditionType.STORY_CREATE,
                 "story-create:" + story.getId());
+        behaviorEventReporter.reportAfterCommit(
+                userId,
+                TsBehaviorEventType.STORY_CREATE,
+                "story",
+                story.getId(),
+                Map.of());
         return Result.OK("创建成功", TsStoryVoConverter.fromEntity(
                 this.getById(story.getId()), stat, roleRelList));
     }
@@ -254,13 +263,11 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
     }
 
     @Override
-    @TsBehaviorTrack(eventType = "generate", resourceType = "story")
     public Result<TsStoryOneClickSettingGenerateVo> generateStorySetting(LoginUser user, TsStoryOneClickSettingGenerateDto request) {
         return Result.OK(tsStoryGenerateService.generateStorySetting(user, request));
     }
 
     @Override
-    @TsBehaviorTrack(eventType = "generate", resourceType = "story")
     public Result<TsStoryOneClickSceneGenerateVo> generateStoryScene(LoginUser user, TsStoryOneClickSceneGenerateDto request) {
         return Result.OK(tsStoryGenerateService.generateStoryScene(user, request));
     }
@@ -269,7 +276,6 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
      * 生成临时故事场景背景图片，不保存素材或关联故事。
      */
     @Override
-    @TsBehaviorTrack(eventType = "generate", resourceType = "story")
     public Result<TsStoryOneClickSceneImageGenerateVo> generateStorySceneImage(
             LoginUser user, TsStoryOneClickSceneImageGenerateDto request) {
         return Result.OK(tsStoryGenerateService.generateStorySceneImage(user, request));
@@ -285,19 +291,16 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
     }
 
     @Override
-    @TsBehaviorTrack(eventType = "generate", resourceType = "story")
     public Result<TsStoryOneClickOutlineGenerateVo> generateStoryOutline(LoginUser user, TsStoryOneClickOutlineGenerateDto request) {
         return Result.OK(tsStoryGenerateService.generateStoryOutline(user, request));
     }
 
     @Override
-    @TsBehaviorTrack(eventType = "generate", resourceType = "story")
     public Result<TsStoryFullGenerateVo> generateStoryFull(LoginUser user, TsStoryFullGenerateDto request) {
         return Result.OK(tsStoryGenerateService.generateStoryFull(user, request));
     }
 
     @Override
-    @TsBehaviorTrack(eventType = "generate", resourceType = "story")
     public Result<TsStoryFullGenerateVo> generateStoryFullPreset(LoginUser user, TsStoryFullGenerateDto request) {
         return Result.OK(tsStoryGenerateService.generateStoryFullPreset(user, request));
     }

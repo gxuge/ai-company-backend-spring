@@ -3,6 +3,7 @@ FROM registry.cn-hangzhou.aliyuncs.com/dockerhub_mirror/java:17-anolis
 MAINTAINER jeecgos@163.com
 
 RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+RUN yum install -y python3 && yum clean all
 
 #RUN mkdir -p /jeecg-boot/config/jeecg/
 

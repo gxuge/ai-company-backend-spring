@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
-import org.jeecg.modules.system.annotation.TsBehaviorTrack;
 import org.jeecg.modules.system.entity.TsFeedback;
 import org.jeecg.modules.system.entity.TsFeedbackComment;
 import org.jeecg.modules.system.entity.TsFeedbackLike;
@@ -40,11 +39,6 @@ public class TsFeedbackLikeServiceImpl extends ServiceImpl<TsFeedbackLikeMapper,
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @TsBehaviorTrack(
-            eventType = "like",
-            resourceType = "feedback",
-            resourceIdExpression = "#feedbackId",
-            condition = "#result.message == '点赞成功'")
     public Result<TsFeedbackLikeResultVo> likeFeedback(LoginUser user, Long feedbackId) {
         TsFeedback feedback = tsFeedbackMapper.selectById(feedbackId);
         if (feedback == null) {
@@ -79,11 +73,6 @@ public class TsFeedbackLikeServiceImpl extends ServiceImpl<TsFeedbackLikeMapper,
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @TsBehaviorTrack(
-            eventType = "like",
-            resourceType = "feedback_comment",
-            resourceIdExpression = "#commentId",
-            condition = "#result.message == '点赞成功'")
     public Result<TsFeedbackLikeResultVo> likeComment(LoginUser user, Long commentId) {
         TsFeedbackComment comment = tsFeedbackCommentMapper.selectById(commentId);
         if (comment == null) {

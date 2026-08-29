@@ -7,7 +7,7 @@ import lombok.Data;
 
 import java.util.List;
 
-/** 推荐行为批量上报参数。 */
+/** 业务行为批量上报参数。 */
 @Data
 public class TsBehaviorBatchDto {
     /** 行为事件列表，单批最多100条。 */

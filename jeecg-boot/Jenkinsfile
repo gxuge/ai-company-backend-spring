@@ -3,6 +3,9 @@ pipeline {
 
   parameters {
     booleanParam(name: 'RESET_MYSQL_DATA', defaultValue: false, description: 'Reset mysql/data before deploy (destructive). Set false after first reset.')
+    booleanParam(name: 'DEPLOY_POSTIZ', defaultValue: false, description: 'Deploy Postiz with shared PostgreSQL and Redis.')
+    string(name: 'POSTIZ_MAIN_URL', defaultValue: '', description: 'Postiz public HTTPS URL without a trailing slash.')
+    string(name: 'POSTIZ_IMAGE', defaultValue: 'ghcr.io/gitroomhq/postiz-app:latest', description: 'Postiz image tag. Pin a version for production.')
   }
 
   tools {
@@ -134,10 +137,125 @@ pipeline {
       }
     }
 
+    stage('Deploy Postiz') {
+      when {
+        expression {
+          return params.DEPLOY_POSTIZ
+        }
+      }
+      steps {
+        dir('jeecg-boot') {
+          script {
+            def postizMainUrl = params.POSTIZ_MAIN_URL?.trim()
+            def postizImage = params.POSTIZ_IMAGE?.trim()
+            if (!postizMainUrl || !postizMainUrl.startsWith('https://') || postizMainUrl.endsWith('/')) {
+              error('POSTIZ_MAIN_URL must be a complete HTTPS URL without a trailing slash.')
+            }
+            if (!postizImage) {
+              error('POSTIZ_IMAGE must not be empty.')
+            }
+
+            withCredentials([
+              string(credentialsId: 'jeecg-postgres-admin-password', variable: 'POSTGRES_ADMIN_PASSWORD'),
+              string(credentialsId: 'postiz-database-password', variable: 'POSTIZ_DB_PASSWORD'),
+              string(credentialsId: 'postiz-jwt-secret', variable: 'POSTIZ_JWT_SECRET'),
+              string(credentialsId: 'postiz-temporal-database-password', variable: 'TEMPORAL_DB_PASSWORD')
+            ]) {
+              withEnv([
+                "POSTIZ_MAIN_URL=${postizMainUrl}",
+                "POSTIZ_IMAGE=${postizImage}"
+              ]) {
+                if (isUnix()) {
+                  sh '''
+                    docker compose --profile postiz \
+                      -f ${BUNDLE_NAME}/docker-compose.yml \
+                      --env-file ${BUNDLE_NAME}/.env \
+                      up -d jeecg-boot-pgvector
+
+                    for i in $(seq 1 60); do
+                      if docker compose --profile postiz \
+                        -f ${BUNDLE_NAME}/docker-compose.yml \
+                        --env-file ${BUNDLE_NAME}/.env \
+                        exec -T jeecg-boot-pgvector \
+                        sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null 2>&1; then
+                        echo "Shared PostgreSQL is ready"
+                        break
+                      fi
+                      if [ "$i" -eq 60 ]; then
+                        echo "Shared PostgreSQL did not become ready in time"
+                        docker compose --profile postiz \
+                          -f ${BUNDLE_NAME}/docker-compose.yml \
+                          --env-file ${BUNDLE_NAME}/.env \
+                          logs --tail 200 jeecg-boot-pgvector || true
+                        exit 1
+                      fi
+                      sleep 2
+                    done
+
+                    docker compose --profile postiz \
+                      -f ${BUNDLE_NAME}/docker-compose.yml \
+                      --env-file ${BUNDLE_NAME}/.env \
+                      exec -T jeecg-boot-pgvector \
+                      bash /docker-entrypoint-initdb.d/01-create-postiz-db.sh
+
+                    docker compose \
+                      -f ${BUNDLE_NAME}/postiz/docker-compose.yml \
+                      --env-file ${BUNDLE_NAME}/.env \
+                      up -d
+                  '''
+                } else {
+                  powershell '''
+                    docker compose --profile postiz `
+                      -f "$env:BUNDLE_NAME/docker-compose.yml" `
+                      --env-file "$env:BUNDLE_NAME/.env" `
+                      up -d jeecg-boot-pgvector
+
+                    $ready = $false
+                    for ($i = 1; $i -le 60; $i++) {
+                      docker compose --profile postiz `
+                        -f "$env:BUNDLE_NAME/docker-compose.yml" `
+                        --env-file "$env:BUNDLE_NAME/.env" `
+                        exec -T jeecg-boot-pgvector `
+                        sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' *> $null
+                      if ($LASTEXITCODE -eq 0) {
+                        Write-Host "Shared PostgreSQL is ready"
+                        $ready = $true
+                        break
+                      }
+                      Start-Sleep -Seconds 2
+                    }
+                    if (-not $ready) {
+                      Write-Host "Shared PostgreSQL did not become ready in time"
+                      docker compose --profile postiz `
+                        -f "$env:BUNDLE_NAME/docker-compose.yml" `
+                        --env-file "$env:BUNDLE_NAME/.env" `
+                        logs --tail 200 jeecg-boot-pgvector
+                      exit 1
+                    }
+
+                    docker compose --profile postiz `
+                      -f "$env:BUNDLE_NAME/docker-compose.yml" `
+                      --env-file "$env:BUNDLE_NAME/.env" `
+                      exec -T jeecg-boot-pgvector `
+                      bash /docker-entrypoint-initdb.d/01-create-postiz-db.sh
+
+                    docker compose `
+                      -f "$env:BUNDLE_NAME/postiz/docker-compose.yml" `
+                      --env-file "$env:BUNDLE_NAME/.env" `
+                      up -d
+                  '''
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
     stage('Archive') {
       steps {
         dir('jeecg-boot') {
-          archiveArtifacts artifacts: "${BUNDLE_NAME}/**", fingerprint: true
+          archiveArtifacts artifacts: "${BUNDLE_NAME}/**", excludes: "${BUNDLE_NAME}/.env,${BUNDLE_NAME}/**/*.env", fingerprint: true
         }
       }
     }

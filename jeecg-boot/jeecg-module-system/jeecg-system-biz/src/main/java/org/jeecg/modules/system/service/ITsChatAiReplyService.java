@@ -10,6 +10,7 @@ import org.jeecg.modules.system.vo.tschatsession.TsChatAiReplyVo;
 import org.jeecg.modules.system.vo.tschatsession.TsChatMessageTtsVo;
 import org.jeecg.modules.system.vo.tschatsession.TsChatReplySuggestionsVo;
 import org.jeecg.modules.system.vo.tschatsession.TsChatTemplateReplyVo;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 public interface ITsChatAiReplyService {
 
@@ -42,6 +43,16 @@ public interface ITsChatAiReplyService {
      * @return 语音播放结果
      */
     Result<TsChatMessageTtsVo> createMessageTts(LoginUser user, Long sessionId, TsChatMessageTtsDto request);
+
+    /**
+     * 为指定聊天消息流式生成 MP3 音频。
+     *
+     * @param user 当前登录用户
+     * @param sessionId 会话 ID
+     * @param request 语音生成请求参数
+     * @return MP3 流式响应体
+     */
+    StreamingResponseBody createMessageTtsStream(LoginUser user, Long sessionId, TsChatMessageTtsDto request);
 
     /**
      * 在指定会话中生成 3 条可直接发送的候选回复。

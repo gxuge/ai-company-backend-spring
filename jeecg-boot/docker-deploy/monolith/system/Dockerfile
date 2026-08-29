@@ -3,6 +3,9 @@ FROM eclipse-temurin:17-jre
 MAINTAINER jeecgos@163.com
 
 RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/*
 
 #RUN mkdir -p /jeecg-boot/config/jeecg/
 

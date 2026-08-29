@@ -14,6 +14,9 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientResponseException;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -109,6 +112,148 @@ public class MiniMaxMediaServiceImpl implements IMiniMaxMediaService {
             throw new JeecgBootBizTipException("MiniMax TTS response missing audio field");
         }
         return audio.toString();
+    }
+
+    /**
+     * 调用 MiniMax 流式 TTS，并把回包中的十六进制音频分片解码为 MP3 字节。
+     */
+    @Override
+    public void streamTextToSpeech(
+            String text,
+            String voiceId,
+            Double speed,
+            Double pitch,
+            Double volume,
+            OutputStream outputStream) {
+        if (!StringUtils.hasText(text)) {
+            throw new JeecgBootBizTipException("text must not be blank");
+        }
+        if (!StringUtils.hasText(voiceId)) {
+            throw new JeecgBootBizTipException("voiceId must not be blank");
+        }
+        if (outputStream == null) {
+            throw new JeecgBootBizTipException("outputStream must not be null");
+        }
+
+        Long normalizedSpeed = normalizeIntParam(speed, 0.8D, 1.2D, "speed");
+        Long normalizedPitch = normalizeIntParam(pitch, -6D, 6D, "pitch");
+        Long normalizedVolume = normalizeIntParam(volume, 0.8D, 1.2D, "vol");
+        Map<String, Object> voiceSetting = new LinkedHashMap<>();
+        voiceSetting.put("voice_id", voiceId);
+        if (normalizedSpeed != null) {
+            voiceSetting.put("speed", normalizedSpeed);
+        }
+        if (normalizedPitch != null) {
+            voiceSetting.put("pitch", normalizedPitch);
+        }
+        if (normalizedVolume != null) {
+            voiceSetting.put("vol", normalizedVolume);
+        }
+        Map<String, Object> request = Map.of(
+                "model", config.getTtsModel(),
+                "text", text,
+                "stream", true,
+                "output_format", "hex",
+                "voice_setting", voiceSetting,
+                "audio_setting", Map.of("format", "mp3")
+        );
+        String traceId = "tts-stream-" + System.currentTimeMillis();
+        log.info("[MINIMAX_REQ] traceId={} api=tts-stream uri=/v1/t2a_v2 payload={}",
+                traceId, clip(JSONObject.toJSONString(request)));
+
+        miniMaxRestClient.post()
+                .uri("/v1/t2a_v2")
+                .body(request)
+                .exchange((httpRequest, response) -> {
+                    if (!response.getStatusCode().is2xxSuccessful()) {
+                        throw new JeecgBootBizTipException(
+                                "MiniMax tts-stream request failed: " + response.getStatusCode().value());
+                    }
+                    boolean wroteAudio = false;
+                    try (BufferedReader reader = new BufferedReader(
+                            new InputStreamReader(response.getBody(), StandardCharsets.UTF_8))) {
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            String payload = normalizeStreamPayload(line);
+                            if (!StringUtils.hasText(payload) || "[DONE]".equals(payload)) {
+                                continue;
+                            }
+                            JSONObject chunk = JSONObject.parseObject(payload);
+                            validateTtsBusinessResponse(chunk);
+                            JSONObject data = chunk.getJSONObject("data");
+                            String audioHex = data == null ? null : data.getString("audio");
+                            if (!StringUtils.hasText(audioHex) && data != null) {
+                                audioHex = data.getString("audio_hex");
+                            }
+                            if (!StringUtils.hasText(audioHex)) {
+                                continue;
+                            }
+                            outputStream.write(decodeHexAudio(audioHex));
+                            outputStream.flush();
+                            wroteAudio = true;
+                        }
+                    }
+                    if (!wroteAudio) {
+                        throw new JeecgBootBizTipException("MiniMax TTS stream returned no audio data");
+                    }
+                    return null;
+                });
+    }
+
+    /**
+     * 去除 SSE data 前缀并返回 JSON 载荷。
+     */
+    private String normalizeStreamPayload(String line) {
+        if (!StringUtils.hasText(line)) {
+            return null;
+        }
+        String payload = line.trim();
+        if (payload.regionMatches(true, 0, "data:", 0, "data:".length())) {
+            payload = payload.substring("data:".length()).trim();
+        }
+        return payload;
+    }
+
+    /**
+     * 校验流式 TTS 分片中的业务状态。
+     */
+    private void validateTtsBusinessResponse(JSONObject chunk) {
+        JSONObject baseResponse = chunk == null ? null : chunk.getJSONObject("base_resp");
+        if (baseResponse == null) {
+            return;
+        }
+        int statusCode = baseResponse.getIntValue("status_code");
+        if (statusCode == 0) {
+            return;
+        }
+        String statusMessage = baseResponse.getString("status_msg");
+        throw new JeecgBootBizTipException(
+                "MiniMax TTS business error: " + statusCode + " - "
+                        + (StringUtils.hasText(statusMessage) ? statusMessage.trim() : "unknown error"));
+    }
+
+    /**
+     * 将 MiniMax 十六进制音频分片解码为字节。
+     */
+    private byte[] decodeHexAudio(String audioHex) {
+        String cleanHex = audioHex == null ? "" : audioHex.trim();
+        if (cleanHex.startsWith("0x") || cleanHex.startsWith("0X")) {
+            cleanHex = cleanHex.substring(2);
+        }
+        cleanHex = cleanHex.replaceAll("\\s+", "");
+        if (cleanHex.isEmpty() || (cleanHex.length() & 1) == 1) {
+            throw new JeecgBootBizTipException("MiniMax TTS stream returned invalid audio hex");
+        }
+        byte[] bytes = new byte[cleanHex.length() / 2];
+        for (int index = 0; index < cleanHex.length(); index += 2) {
+            int high = Character.digit(cleanHex.charAt(index), 16);
+            int low = Character.digit(cleanHex.charAt(index + 1), 16);
+            if (high < 0 || low < 0) {
+                throw new JeecgBootBizTipException("MiniMax TTS stream returned invalid audio hex");
+            }
+            bytes[index / 2] = (byte) ((high << 4) + low);
+        }
+        return bytes;
     }
 
     private Long normalizeIntParam(Double value, double min, double max, String fieldName) {

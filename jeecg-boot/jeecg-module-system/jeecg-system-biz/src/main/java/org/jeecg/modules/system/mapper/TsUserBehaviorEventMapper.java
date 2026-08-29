@@ -1,11 +1,13 @@
 package org.jeecg.modules.system.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.baomidou.dynamic.datasource.annotation.DS;
 import org.jeecg.modules.system.entity.TsUserBehaviorEvent;
 
-/** 推荐用户行为事件 Mapper。 */
+/** ClickHouse 行为事件 Mapper。 */
+@DS("clickhouse")
 public interface TsUserBehaviorEventMapper extends BaseMapper<TsUserBehaviorEvent> {
 
-    /** 按事件ID幂等写入行为明细。 */
-    int insertIgnore(TsUserBehaviorEvent event);
+    /** 写入单条业务行为事件。 */
+    int insertEvent(TsUserBehaviorEvent event);
 }

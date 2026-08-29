@@ -16,14 +16,21 @@ import org.jeecg.modules.system.dto.tschatsession.TsChatSessionSaveDto;
 import org.jeecg.modules.system.dto.tschatsession.TsChatTemplateReplyDto;
 import org.jeecg.modules.system.service.ITsChatAiReplyService;
 import org.jeecg.modules.system.service.ITsChatSessionService;
+import org.jeecg.modules.system.service.TsChatAsrTicketService;
 import org.jeecg.modules.system.vo.tschatsession.TsChatAiReplyVo;
+import org.jeecg.modules.system.vo.tschatsession.TsChatAsrTicketVo;
 import org.jeecg.modules.system.vo.tschatsession.TsChatMessageTtsVo;
 import org.jeecg.modules.system.vo.tschatsession.TsChatReplySuggestionsVo;
 import org.jeecg.modules.system.vo.tschatsession.TsChatSessionVo;
 import org.jeecg.modules.system.vo.tschatsession.TsChatTemplateReplyVo;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 @Slf4j
 @Tag(name = "TsChatSession 会话")
 @RestController
@@ -36,6 +43,8 @@ public class TsChatSessionController {
     private ITsChatSessionService tsChatSessionService;
     @Autowired
     private ITsChatAiReplyService tsChatAiReplyService;
+    @Autowired
+    private TsChatAsrTicketService tsChatAsrTicketService;
 
     /**
      * 分页查询当前用户会话列表。
@@ -122,9 +131,31 @@ public class TsChatSessionController {
 
     @Operation(summary = "按消息生成聊天语音")
     @PostMapping("/ts-chat-sessions/message-tts")
-    public Result<TsChatMessageTtsVo> createMessageTts(@Validated @RequestBody TsChatMessageTtsDto request) {
-        return tsChatAiReplyService.createMessageTts(
-                ((LoginUser) SecurityUtils.getSubject().getPrincipal()), request.getSessionId(), request);
+    public ResponseEntity<?> createMessageTts(@Validated @RequestBody TsChatMessageTtsDto request) {
+        LoginUser user = (LoginUser) SecurityUtils.getSubject().getPrincipal();
+        request.applyDefaults();
+        if (Boolean.TRUE.equals(request.getStream())) {
+            StreamingResponseBody responseBody = tsChatAiReplyService.createMessageTtsStream(
+                    user, request.getSessionId(), request);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType("audio/mpeg"))
+                    .cacheControl(CacheControl.noStore())
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
+                    .header("X-Accel-Buffering", "no")
+                    .body(responseBody);
+        }
+        return ResponseEntity.ok(tsChatAiReplyService.createMessageTts(
+                user, request.getSessionId(), request));
+    }
+
+    @Operation(summary = "创建语音识别 WebSocket 连接票据")
+    @PostMapping("/ts-chat-sessions/asr-ticket")
+    public Result<TsChatAsrTicketVo> createAsrTicket() {
+        LoginUser user = (LoginUser) SecurityUtils.getSubject().getPrincipal();
+        return Result.OK(new TsChatAsrTicketVo(
+                tsChatAsrTicketService.issue(user.getUsername()),
+                tsChatAsrTicketService.getTicketTtlSeconds()
+        ));
     }
 
     /**

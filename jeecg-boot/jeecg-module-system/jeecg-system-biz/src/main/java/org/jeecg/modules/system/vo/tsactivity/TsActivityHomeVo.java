@@ -14,6 +14,8 @@ public class TsActivityHomeVo {
     private Integer continuousDays;
     /** 当前星钻余额。 */
     private Long starDiamondBalance;
+    /** 七天签到周期奖励。 */
+    private List<TsActivitySignRewardVo> signRewards = new ArrayList<>();
     /** 每日任务。 */
     private List<TsActivityTaskVo> dailyTasks = new ArrayList<>();
     /** 每周任务。 */

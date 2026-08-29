@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsRecommendEtlExecutionMapper">
+    <update id="markRunning">
+        UPDATE ts_recommend_etl_execution
+        SET status = 'RUNNING',
+            started_at = #{startedAt},
+            update_time = NOW()
+        WHERE id = #{id}
+          AND status = 'WAITING'
+    </update>
+</mapper>

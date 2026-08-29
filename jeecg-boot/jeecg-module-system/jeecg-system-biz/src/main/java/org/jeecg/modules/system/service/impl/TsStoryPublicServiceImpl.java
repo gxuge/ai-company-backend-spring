@@ -7,7 +7,6 @@ import jakarta.annotation.Resource;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
-import org.jeecg.modules.system.annotation.TsBehaviorTrack;
 import org.jeecg.modules.system.dto.tsstorypublic.TsStoryPublicActionDto;
 import org.jeecg.modules.system.dto.tsstorypublic.TsStoryPublicQueryDto;
 import org.jeecg.modules.system.dto.tsstorypublic.TsStoryPublicSaveDto;
@@ -110,11 +109,6 @@ public class TsStoryPublicServiceImpl extends ServiceImpl<TsStoryPublicMapper, T
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @TsBehaviorTrack(
-            eventType = "publish",
-            resourceType = "story",
-            userIdExpression = "#result.result.ownerUserId",
-            resourceIdExpression = "#result.result.storyId")
     public Result<TsStoryPublicVo> approvePublic(LoginUser user, TsStoryPublicActionDto request) {
         return changeStatus(user, request, "online", "approve");
     }
@@ -127,11 +121,6 @@ public class TsStoryPublicServiceImpl extends ServiceImpl<TsStoryPublicMapper, T
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @TsBehaviorTrack(
-            eventType = "publish",
-            resourceType = "story",
-            userIdExpression = "#result.result.ownerUserId",
-            resourceIdExpression = "#result.result.storyId")
     public Result<TsStoryPublicVo> onlinePublic(LoginUser user, TsStoryPublicActionDto request) {
         return changeStatus(user, request, "online", "online");
     }

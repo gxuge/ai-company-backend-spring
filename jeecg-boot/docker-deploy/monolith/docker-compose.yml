@@ -76,8 +76,34 @@ services:
     volumes:
       - ./clickhouse/data:/var/lib/clickhouse
       - ./clickhouse/log:/var/log/clickhouse-server
+      - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "clickhouse-client --user \"$$CLICKHOUSE_USER\" --password \"$$CLICKHOUSE_PASSWORD\" --query \"SELECT 1\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - share-net
+
+  jeecg-boot-pgvector:
+    image: registry.cn-hangzhou.aliyuncs.com/jeecgdocker/pgvector
+    restart: always
+    container_name: jeecg-boot-pgvector
+    hostname: jeecg-boot-pgvector
+    profiles:
+      - postiz
+    environment:
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-demo}
+      POSTGRES_DB: ${POSTGRES_VECTOR_DB:-vector_db}
+      POSTIZ_DB_NAME: ${POSTIZ_DB_NAME:-postiz}
+      POSTIZ_DB_USER: ${POSTIZ_DB_USER:-postiz}
+      POSTIZ_DB_PASSWORD: ${POSTIZ_DB_PASSWORD:-demo}
+    volumes:
+      - jeecg-postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -95,6 +121,13 @@ services:
       - 8080:8080
     env_file:
       - ./.env
+    environment:
+      RECOMMEND_ETL_ENABLED: "true"
+      RECOMMEND_ETL_DISPATCH_MODE: kafka
+      RECOMMEND_ETL_PYTHON_EXECUTABLE: python3
+      RECOMMEND_ETL_SCRIPT_ROOT: /opt/etl/scripts
+      RECOMMEND_ETL_OUTPUT_ROOT: /opt/etl/output
+      RECOMMEND_ETL_LOG_ROOT: /opt/etl/logs
     depends_on:
       - jeecg-boot-mysql
       - jeecg-boot-redis
@@ -102,7 +135,15 @@ services:
       - jeecg-boot-clickhouse
     networks:
       - share-net
+    volumes:
+      - ./etl/scripts:/opt/etl/scripts:ro
+      - ./etl/output:/opt/etl/output
+      - ./etl/logs:/opt/etl/logs
 
 networks:
   share-net:
     name: share-net
+
+volumes:
+  jeecg-postgres-data:
+    name: jeecg-postgres-data

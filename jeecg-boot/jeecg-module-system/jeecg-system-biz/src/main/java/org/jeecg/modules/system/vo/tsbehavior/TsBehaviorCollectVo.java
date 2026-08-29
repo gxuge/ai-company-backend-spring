@@ -3,7 +3,7 @@ package org.jeecg.modules.system.vo.tsbehavior;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 
-/** 推荐行为采集接收结果。 */
+/** 业务行为采集接收结果。 */
 @Data
 @AllArgsConstructor
 public class TsBehaviorCollectVo {

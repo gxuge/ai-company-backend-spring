@@ -164,6 +164,16 @@
         LIMIT 1
     </select>
 
+    <select id="selectActiveSignMilestoneRules"
+            resultType="org.jeecg.modules.system.entity.TsActivitySignMilestoneRule">
+        SELECT id, task_id, milestone_day, reward_type, reward_value,
+               status, created_at, updated_at
+        FROM activity_sign_milestone_rule
+        WHERE task_id = #{taskId}
+          AND status = 1
+        ORDER BY milestone_day ASC, id ASC
+    </select>
+
     <select id="selectRewardByIdempotency"
             resultType="org.jeecg.modules.system.entity.TsActivityRewardRecord">
         SELECT id, user_id, task_id, reward_type, base_reward_value,

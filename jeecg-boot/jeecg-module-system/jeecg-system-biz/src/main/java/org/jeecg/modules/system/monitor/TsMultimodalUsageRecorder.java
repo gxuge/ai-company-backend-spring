@@ -101,6 +101,46 @@ public class TsMultimodalUsageRecorder {
         }
     }
 
+    /**
+     * 记录流式聊天语音调用；流结束后写入请求次数和输入字符数。
+     *
+     * @param userId 用户 ID
+     * @param sessionId 会话 ID
+     * @param messageId 消息 ID
+     * @param text 合成文本
+     * @param invocation 流式调用
+     */
+    public void recordTtsStream(String userId,
+                                Long sessionId,
+                                Long messageId,
+                                String text,
+                                Runnable invocation) {
+        String invocationId = UUIDGenerator.generate();
+        Date startedAt = new Date();
+        start(invocationId, userId, "chat", "chat_tts_stream", "audio", "tts",
+                null, null, sessionId, messageId, startedAt);
+        try {
+            invocation.run();
+            List<AiUsageMetricValue> metrics = new ArrayList<>();
+            metrics.add(AiUsageMetricValue.of("request_count", 1, "count", "total"));
+            metrics.add(AiUsageMetricValue.of(
+                    "text_characters",
+                    text == null ? 0 : text.codePointCount(0, text.length()),
+                    "character",
+                    "input"
+            ));
+            JSONObject raw = new JSONObject();
+            raw.put("text_characters", text == null ? 0 : text.codePointCount(0, text.length()));
+            finish(invocationId, "success", startedAt, null, raw.toJSONString(), metrics,
+                    null, null, null);
+        } catch (RuntimeException ex) {
+            finish(invocationId, "failed", startedAt, ex, null,
+                    List.of(AiUsageMetricValue.of("request_count", 1, "count", "total")),
+                    null, null, null);
+            throw ex;
+        }
+    }
+
     private void start(String invocationId,
                        String userId,
                        String sourceType,

@@ -22,7 +22,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
-/** 推荐行为采集服务测试。 */
+/** 业务行为采集服务测试。 */
 class TsBehaviorEventServiceImplTest {
     private TsBehaviorEventPublisher publisher;
     private TsBehaviorConfigBean config;
@@ -57,7 +57,7 @@ class TsBehaviorEventServiceImplTest {
         LoginUser user = new LoginUser();
         user.setId("u1");
         TsBehaviorEventDto request = validRequest();
-        request.setProperties(Map.of("tag", "fantasy"));
+        request.setProperties(Map.of());
 
         assertEquals(1, service.collect(user, List.of(request)).getAcceptedCount());
 
@@ -66,7 +66,8 @@ class TsBehaviorEventServiceImplTest {
         verify(publisher).publish(captor.capture());
         assertEquals("u1", captor.getValue().getUserId());
         assertEquals("WEB", captor.getValue().getPlatform());
-        assertEquals("{\"tag\":\"fantasy\"}", captor.getValue().getPropertiesJson());
+        assertEquals("detail_view", captor.getValue().getEventType());
+        assertEquals(2, captor.getValue().getEventVersion());
     }
 
     /** 超出允许时间窗口的事件必须拒绝。 */
@@ -109,14 +110,112 @@ class TsBehaviorEventServiceImplTest {
         verify(publisher, never()).publish(any());
     }
 
+    /** 旧事件类型必须被拒绝。 */
+    @Test
+    void collectShouldRejectLegacyEventType() {
+        LoginUser user = new LoginUser();
+        user.setId("u1");
+        TsBehaviorEventDto request = validRequest();
+        request.setEventType("click");
+
+        assertThrows(
+                JeecgBootException.class,
+                () -> service.collect(user, List.of(request)));
+    }
+
+    /** 当前阶段不允许上传角色或故事标签。 */
+    @Test
+    void collectShouldRejectTagProperty() {
+        LoginUser user = new LoginUser();
+        user.setId("u1");
+        TsBehaviorEventDto request = validRequest();
+        request.setProperties(Map.of("tag", "fantasy"));
+
+        assertThrows(
+                JeecgBootException.class,
+                () -> service.collect(user, List.of(request)));
+    }
+
+    /** 合法推荐曝光必须携带场景、请求标识和正整数位置。 */
+    @Test
+    void collectShouldPublishRecommendationImpression() throws Exception {
+        LoginUser user = new LoginUser();
+        user.setId("u1");
+        TsBehaviorEventDto request = validImpressionRequest();
+
+        assertEquals(1, service.collect(user, List.of(request)).getAcceptedCount());
+
+        ArgumentCaptor<TsBehaviorEventMessage> captor =
+                ArgumentCaptor.forClass(TsBehaviorEventMessage.class);
+        verify(publisher).publish(captor.capture());
+        TsBehaviorEventMessage message = captor.getValue();
+        assertEquals("impression", message.getEventType());
+        assertEquals(
+                "browse_story",
+                new ObjectMapper().readTree(message.getPropertiesJson())
+                        .get("scene").asText());
+        assertEquals(
+                "request-1",
+                new ObjectMapper().readTree(message.getPropertiesJson())
+                        .get("requestId").asText());
+        assertEquals(
+                "3",
+                new ObjectMapper().readTree(message.getPropertiesJson())
+                        .get("position").asText());
+    }
+
+    /** 推荐曝光缺少归因字段时必须拒绝。 */
+    @Test
+    void collectShouldRejectIncompleteRecommendationImpression() {
+        LoginUser user = new LoginUser();
+        user.setId("u1");
+        TsBehaviorEventDto request = validImpressionRequest();
+        request.setProperties(Map.of(
+                "scene", "browse_story",
+                "requestId", "request-1"));
+
+        assertThrows(
+                JeecgBootException.class,
+                () -> service.collect(user, List.of(request)));
+        verify(publisher, never()).publish(any());
+    }
+
+    /** 推荐曝光位置不是正整数时必须拒绝。 */
+    @Test
+    void collectShouldRejectInvalidRecommendationPosition() {
+        LoginUser user = new LoginUser();
+        user.setId("u1");
+        TsBehaviorEventDto request = validImpressionRequest();
+        request.setProperties(Map.of(
+                "scene", "browse_story",
+                "requestId", "request-1",
+                "position", "0"));
+
+        assertThrows(
+                JeecgBootException.class,
+                () -> service.collect(user, List.of(request)));
+        verify(publisher, never()).publish(any());
+    }
+
     /** 构建合法行为请求。 */
     private TsBehaviorEventDto validRequest() {
         TsBehaviorEventDto request = new TsBehaviorEventDto();
         request.setEventId("event-1");
-        request.setEventType("click");
+        request.setEventType("detail_view");
         request.setSessionId("session-1");
         request.setResourceType("story");
         request.setResourceId("1");
+        return request;
+    }
+
+    /** 构建合法推荐曝光请求。 */
+    private TsBehaviorEventDto validImpressionRequest() {
+        TsBehaviorEventDto request = validRequest();
+        request.setEventType("impression");
+        request.setProperties(Map.of(
+                "scene", "browse_story",
+                "requestId", "request-1",
+                "position", "3"));
         return request;
     }
 }

@@ -12,6 +12,7 @@ import org.jeecg.modules.airag.llm.mapper.AiragModelMapper;
 import org.jeecg.modules.openapi.config.PromptChatConfigBean;
 import org.jeecg.modules.openapi.dto.MiniMaxTtsRequestDto;
 import org.jeecg.modules.openapi.service.IMiniMaxDemoService;
+import org.jeecg.modules.openapi.service.IMiniMaxMediaService;
 import org.jeecg.modules.openapi.vo.MiniMaxTtsResponseVo;
 import org.jeecg.modules.system.dto.tschatsession.TsChatTtsSynthesizeDto;
 import org.jeecg.modules.system.service.ITsChatTtsGatewayService;
@@ -21,6 +22,7 @@ import org.springframework.util.DigestUtils;
 import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
+import java.io.OutputStream;
 import java.util.Locale;
 
 @Service
@@ -37,6 +39,8 @@ public class TsChatTtsGatewayServiceImpl implements ITsChatTtsGatewayService {
     private AiragModelMapper airagModelMapper;
     @Resource
     private IMiniMaxDemoService miniMaxDemoService;
+    @Resource
+    private IMiniMaxMediaService miniMaxMediaService;
 
     @Override
     public TsChatTtsResultVo synthesizeForChat(TsChatTtsSynthesizeDto request) {
@@ -54,6 +58,36 @@ public class TsChatTtsGatewayServiceImpl implements ITsChatTtsGatewayService {
 
         String provider = trimToNull(voiceModel.getProvider());
         return switchProviderGenerate(provider, voiceModel, request, voiceId, textHash, cacheKey, app.getId());
+    }
+
+    /**
+     * 解析当前语音模型并将 provider MP3 分片直接写入下游。
+     */
+    @Override
+    public void streamForChat(TsChatTtsSynthesizeDto request, OutputStream outputStream) {
+        if (request == null || !StringUtils.hasText(request.getText())) {
+            throw new JeecgBootBizTipException("语音文本不能为空");
+        }
+        if (outputStream == null) {
+            throw new JeecgBootBizTipException("语音输出流不能为空");
+        }
+        AiragApp app = resolveApp();
+        AiragModel voiceModel = resolveVoiceModel(app);
+        String provider = trimToNull(voiceModel.getProvider());
+        String normalizedProvider = StringUtils.hasText(provider)
+                ? provider.trim().toUpperCase(Locale.ROOT)
+                : "";
+        if (!"MINIMAX".equals(normalizedProvider)) {
+            throw new JeecgBootBizTipException("当前语音模型暂不支持流式 provider=" + provider);
+        }
+        String voiceId = resolveVoiceId(request.getVoiceId(), voiceModel);
+        miniMaxMediaService.streamTextToSpeech(
+                request.getText().trim(),
+                voiceId,
+                request.getSpeed(),
+                request.getPitch(),
+                request.getVolume(),
+                outputStream);
     }
 
     private AiragApp resolveApp() {

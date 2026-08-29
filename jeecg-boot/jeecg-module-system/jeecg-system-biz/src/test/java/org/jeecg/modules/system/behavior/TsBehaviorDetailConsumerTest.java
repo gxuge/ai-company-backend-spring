@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
-/** 推荐行为 MySQL 明细消费者测试。 */
+/** 业务行为 ClickHouse 明细消费者测试。 */
 class TsBehaviorDetailConsumerTest {
 
     /** 消费消息必须完整映射事件幂等ID与可信用户ID。 */
@@ -37,7 +37,7 @@ class TsBehaviorDetailConsumerTest {
 
         ArgumentCaptor<TsUserBehaviorEvent> captor =
                 ArgumentCaptor.forClass(TsUserBehaviorEvent.class);
-        verify(mapper).insertIgnore(captor.capture());
+        verify(mapper).insertEvent(captor.capture());
         assertEquals("event-1", captor.getValue().getEventId());
         assertEquals("u1", captor.getValue().getUserId());
     }

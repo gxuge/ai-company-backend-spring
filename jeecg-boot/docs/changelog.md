@@ -6,6 +6,12 @@
 `type` 推荐值：`feat`、`fix`、`refactor`、`breaking`、`security`、`docs`
 
 ## 记录
+- [2026-08-30] [feat] [recommend-etl] 新增角色/故事推荐训练数据 ETL 任务管理、Quartz 调度、local/Kafka 异步分发、Python ProcessBuilder 执行、执行审计和 Vue3 管理页面
+- [2026-08-29] [feat] [ts-behavior] 新增受约束的推荐曝光 `impression` 事件，要求角色/故事资源及 `scene/requestId/position`，供后续行为关联形成候选正负样本
+- [2026-08-29] [refactor] [ts-behavior] 推荐型泛事件埋点收敛为语言、详情浏览、收藏、连接、聊天、创建和生图业务事实；移除标签、停留时长、AOP 泛事件及 Redis 特征消费者，明细改写 ClickHouse
+- [2026-08-29] [feat] [ts-activity] 活动首页新增七天签到奖励日历，本地默认补丁注入每日 10 星钻签到任务及第 4/7 天额外奖励，Web 活动页改为展示真实星钻配置
+- [2026-08-29] [feat] [ts-chat] 模板角色消息固化发送角色与音色快照，`message-tts` 同接口新增 `stream=true` MP3 分块响应；旧消息缺少快照时不查询角色兜底
+- [2026-08-29] [feat] [infra] 新增 Postiz 可选部署：复用 Jeecg PostgreSQL 独立库与 Redis DB 1，Temporal 使用独立 PostgreSQL 并移除 Elasticsearch
 - [2026-08-28] [fix] [ts-activity] 七个默认活动任务从完整数据库基线和版本迁移中移出，改为项目外独立幂等补丁，供现有数据库按需执行
 - [2026-08-27] [feat] [ts-activity] 拆分角色图片、故事背景和故事互动活动条件，接入聊天、创建及生图成功入口，并新增七个自动发奖默认任务
 - [2026-08-27] [feat] [ts-activity] 新增签到七天周期里程碑奖励规则，默认第 4 天奖励 10 星钻、第 7 天奖励 20 星钻，可后台调整并循环触发，奖励使用独立幂等事件和积分流水且不重复叠加会员奖励

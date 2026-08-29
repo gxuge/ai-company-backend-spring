@@ -3,6 +3,8 @@ package org.jeecg.modules.system.service;
 import org.jeecg.modules.system.dto.tschatsession.TsChatTtsSynthesizeDto;
 import org.jeecg.modules.system.vo.tschatsession.TsChatTtsResultVo;
 
+import java.io.OutputStream;
+
 public interface ITsChatTtsGatewayService {
 
     /**
@@ -13,4 +15,12 @@ public interface ITsChatTtsGatewayService {
      * @return 语音结果
      */
     TsChatTtsResultVo synthesizeForChat(TsChatTtsSynthesizeDto request);
+
+    /**
+     * 按当前 AIRAG 应用的语音模型配置流式生成 MP3。
+     *
+     * @param request 语音合成参数
+     * @param outputStream 下游响应输出流
+     */
+    void streamForChat(TsChatTtsSynthesizeDto request, OutputStream outputStream);
 }

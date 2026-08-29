@@ -13,7 +13,7 @@ import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.util.backoff.FixedBackOff;
 
-/** 推荐行为 Kafka Topic 与消费失败策略。 */
+/** 业务行为 Kafka Topic 与消费失败策略。 */
 @Configuration
 @ConditionalOnProperty(
         prefix = "jeecg.behavior.kafka", name = "enabled", havingValue = "true")

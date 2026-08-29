@@ -5,10 +5,11 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
-import org.jeecg.modules.system.annotation.TsBehaviorTrack;
+import org.jeecg.modules.system.behavior.TsBehaviorEventReporter;
 import org.jeecg.modules.system.dto.tsuserfavorite.TsUserFavoriteActionDto;
 import org.jeecg.modules.system.dto.tsuserfavorite.TsUserFavoriteQueryDto;
 import org.jeecg.modules.system.entity.TsUserFavorite;
+import org.jeecg.modules.system.enums.tsbehavior.TsBehaviorEventType;
 import org.jeecg.modules.system.mapper.TsUserFavoriteMapper;
 import org.jeecg.modules.system.po.tsuserfavorite.TsUserFavoriteQueryPo;
 import org.jeecg.modules.system.service.ITsUserFavoriteService;
@@ -18,8 +19,10 @@ import org.jeecg.modules.system.vo.tsuserfavorite.TsUserFavoriteVo;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.annotation.Resource;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 用户收藏业务服务实现。
@@ -27,6 +30,9 @@ import java.util.List;
 @Service
 public class TsUserFavoriteServiceImpl extends ServiceImpl<TsUserFavoriteMapper, TsUserFavorite>
         implements ITsUserFavoriteService {
+
+    @Resource
+    private TsBehaviorEventReporter behaviorEventReporter;
 
     /**
      * 分页查询当前用户收藏，仅返回仍在线可访问的角色和故事。
@@ -68,16 +74,18 @@ public class TsUserFavoriteServiceImpl extends ServiceImpl<TsUserFavoriteMapper,
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @TsBehaviorTrack(
-            eventType = "favorite",
-            resourceTypeExpression = "#request.resourceType",
-            resourceIdExpression = "#request.resourceId")
     public Result<TsUserFavoriteStatusVo> addFavorite(LoginUser user, TsUserFavoriteActionDto request) {
         if (baseMapper.countAvailableResource(request.getResourceType(), request.getResourceId()) <= 0) {
             throw new JeecgBootException("资源不存在、已下架或不可收藏");
         }
         baseMapper.upsertFavorite(
                 user.getId(), request.getResourceType(), request.getResourceId(), new Date());
+        behaviorEventReporter.reportAfterCommit(
+                user.getId(),
+                TsBehaviorEventType.FAVORITE,
+                request.getResourceType(),
+                request.getResourceId(),
+                Map.of());
         return Result.OK("收藏成功", TsUserFavoriteStatusVo.of(
                 request.getResourceType(), request.getResourceId(), true));
     }

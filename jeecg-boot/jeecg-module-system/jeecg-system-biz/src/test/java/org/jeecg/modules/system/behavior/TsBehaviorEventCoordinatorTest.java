@@ -78,7 +78,7 @@ class TsBehaviorEventCoordinatorTest {
     private TsBehaviorEventMessage event() {
         return new TsBehaviorEventMessage()
                 .setEventId("event-1")
-                .setEventType("like")
+                .setEventType("favorite")
                 .setUserId("user-1");
     }
 }

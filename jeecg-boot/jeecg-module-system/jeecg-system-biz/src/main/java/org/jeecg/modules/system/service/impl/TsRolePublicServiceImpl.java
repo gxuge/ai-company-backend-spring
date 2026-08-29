@@ -7,7 +7,6 @@ import jakarta.annotation.Resource;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
-import org.jeecg.modules.system.annotation.TsBehaviorTrack;
 import org.jeecg.modules.system.dto.tsrolepublic.TsRolePublicActionDto;
 import org.jeecg.modules.system.dto.tsrolepublic.TsRolePublicQueryDto;
 import org.jeecg.modules.system.dto.tsrolepublic.TsRolePublicSaveDto;
@@ -110,11 +109,6 @@ public class TsRolePublicServiceImpl extends ServiceImpl<TsRolePublicMapper, TsR
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @TsBehaviorTrack(
-            eventType = "publish",
-            resourceType = "role",
-            userIdExpression = "#result.result.ownerUserId",
-            resourceIdExpression = "#result.result.roleId")
     public Result<TsRolePublicVo> approvePublic(LoginUser user, TsRolePublicActionDto request) {
         return changeStatus(user, request, "online", "approve");
     }
@@ -127,11 +121,6 @@ public class TsRolePublicServiceImpl extends ServiceImpl<TsRolePublicMapper, TsR
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @TsBehaviorTrack(
-            eventType = "publish",
-            resourceType = "role",
-            userIdExpression = "#result.result.ownerUserId",
-            resourceIdExpression = "#result.result.roleId")
     public Result<TsRolePublicVo> onlinePublic(LoginUser user, TsRolePublicActionDto request) {
         return changeStatus(user, request, "online", "online");
     }

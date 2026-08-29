@@ -16,4 +16,6 @@ derby.log
 
 ## deploy artifacts
 docker-deploy/monolith/system/*.jar
+docker-data/postgres/data/
+upload-monolith/
 

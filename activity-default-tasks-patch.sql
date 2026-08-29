@@ -10,7 +10,7 @@ INSERT INTO activity_task (
     created_at, updated_at
 )
 SELECT
-    '每日与AI角色聊天10次', 'TASK', 'DAILY', '每天与AI角色完成10次有效对话',
+    '每日与角色聊天', 'TASK', 'DAILY', '完成任务 +5 星钻',
     'CHAT_COUNT', 10, 'STAR_DIAMOND', 5,
     'AUTO', NULL, NULL, 'ENABLED', 10, NOW(), NOW()
 WHERE NOT EXISTS (
@@ -28,7 +28,7 @@ INSERT INTO activity_task (
     created_at, updated_at
 )
 SELECT
-    '每日生成角色图片', 'TASK', 'DAILY', '每天成功生成一张角色图片',
+    '每日生成角色图片', 'TASK', 'DAILY', '完成任务 +10 星钻',
     'ROLE_IMAGE_GENERATE', 1, 'STAR_DIAMOND', 10,
     'AUTO', NULL, NULL, 'ENABLED', 20, NOW(), NOW()
 WHERE NOT EXISTS (
@@ -46,7 +46,7 @@ INSERT INTO activity_task (
     created_at, updated_at
 )
 SELECT
-    '每日生成故事背景', 'TASK', 'DAILY', '每天成功生成一张故事场景背景图片',
+    '每日生成故事背景', 'TASK', 'DAILY', '完成任务 +10 星钻',
     'STORY_BACKGROUND_GENERATE', 1, 'STAR_DIAMOND', 10,
     'AUTO', NULL, NULL, 'ENABLED', 30, NOW(), NOW()
 WHERE NOT EXISTS (
@@ -64,7 +64,7 @@ INSERT INTO activity_task (
     created_at, updated_at
 )
 SELECT
-    '每日创建一个角色', 'TASK', 'DAILY', '每天成功创建一个角色',
+    '每日创建角色', 'TASK', 'DAILY', '完成任务 +20 星钻',
     'ROLE_CREATE', 1, 'STAR_DIAMOND', 20,
     'AUTO', NULL, NULL, 'ENABLED', 40, NOW(), NOW()
 WHERE NOT EXISTS (
@@ -82,7 +82,7 @@ INSERT INTO activity_task (
     created_at, updated_at
 )
 SELECT
-    '每日创建一个故事', 'TASK', 'DAILY', '每天成功创建一个故事',
+    '每日创建故事', 'TASK', 'DAILY', '完成任务 +20 星钻',
     'STORY_CREATE', 1, 'STAR_DIAMOND', 20,
     'AUTO', NULL, NULL, 'ENABLED', 50, NOW(), NOW()
 WHERE NOT EXISTS (
@@ -100,7 +100,7 @@ INSERT INTO activity_task (
     created_at, updated_at
 )
 SELECT
-    '每日故事互动5次', 'TASK', 'DAILY', '每天在故事会话中完成5次有效互动',
+    '每日故事互动', 'TASK', 'DAILY', '完成任务 +10 星钻',
     'STORY_INTERACTION_COUNT', 5, 'STAR_DIAMOND', 10,
     'AUTO', NULL, NULL, 'ENABLED', 60, NOW(), NOW()
 WHERE NOT EXISTS (
@@ -118,7 +118,7 @@ INSERT INTO activity_task (
     created_at, updated_at
 )
 SELECT
-    '每周累计聊天100次', 'TASK', 'WEEKLY', '每周与AI角色累计完成100次有效对话',
+    '每周与角色聊天', 'TASK', 'WEEKLY', '完成任务 +20 星钻',
     'CHAT_COUNT', 100, 'STAR_DIAMOND', 20,
     'AUTO', NULL, NULL, 'ENABLED', 70, NOW(), NOW()
 WHERE NOT EXISTS (

@@ -9,10 +9,12 @@ import org.jeecg.common.exception.JeecgBootBizTipException;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.aop.TsChatSessionOwnershipAspect;
 import org.jeecg.modules.aop.TsChatSessionOwnershipAspect.CheckTsChatSessionOwnership;
+import org.jeecg.modules.system.behavior.TsBehaviorEventReporter;
 import org.jeecg.modules.system.dto.tschatsession.TsChatSessionQueryDto;
 import org.jeecg.modules.system.dto.tschatsession.TsChatSessionSaveDto;
 import org.jeecg.modules.system.entity.TsChatSession;
 import org.jeecg.modules.system.entity.TsRole;
+import org.jeecg.modules.system.enums.tsbehavior.TsBehaviorEventType;
 import org.jeecg.modules.system.mapper.TsChatSessionMapper;
 import org.jeecg.modules.system.mapper.TsRoleMapper;
 import org.jeecg.modules.system.po.tschatsession.TsChatSessionQueryPo;
@@ -47,6 +49,8 @@ public class TsChatSessionServiceImpl extends ServiceImpl<TsChatSessionMapper, T
 
     @Resource
     private TsRoleMapper tsRoleMapper;
+    @Resource
+    private TsBehaviorEventReporter behaviorEventReporter;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -119,6 +123,15 @@ public class TsChatSessionServiceImpl extends ServiceImpl<TsChatSessionMapper, T
         entity.setCreatedAt(new Date());
         entity.setUpdatedAt(new Date());
         this.save(entity);
+        String resourceType = "story".equals(entity.getSessionType()) ? "story" : "role";
+        Long resourceId = "story".equals(entity.getSessionType())
+                ? entity.getStoryId() : entity.getTargetRoleId();
+        behaviorEventReporter.reportAfterCommit(
+                user.getId(),
+                TsBehaviorEventType.CONNECTION,
+                resourceType,
+                resourceId,
+                Map.of());
 
         return Result.OK("创建成功", TsChatSessionVoConverter.fromEntity(entity, loadRoleAvatarUrl(entity.getTargetRoleId())));
     }

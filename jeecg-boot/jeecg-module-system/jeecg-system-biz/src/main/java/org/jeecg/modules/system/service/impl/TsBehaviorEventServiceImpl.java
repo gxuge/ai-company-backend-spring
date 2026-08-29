@@ -7,6 +7,7 @@ import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.system.behavior.TsBehaviorEventPublisher;
 import org.jeecg.modules.system.config.TsBehaviorConfigBean;
 import org.jeecg.modules.system.dto.tsbehavior.TsBehaviorEventDto;
+import org.jeecg.modules.system.enums.tsbehavior.TsBehaviorEventType;
 import org.jeecg.modules.system.event.TsBehaviorEventMessage;
 import org.jeecg.modules.system.service.ITsBehaviorEventService;
 import org.jeecg.modules.system.vo.tsbehavior.TsBehaviorCollectVo;
@@ -15,11 +16,15 @@ import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
-/** 推荐行为采集服务实现。 */
+/** 业务行为采集服务实现。 */
 @Service
 public class TsBehaviorEventServiceImpl implements ITsBehaviorEventService {
     private static final long MAX_EVENT_AGE_MILLIS = 7L * 24 * 60 * 60 * 1000;
@@ -70,6 +75,10 @@ public class TsBehaviorEventServiceImpl implements ITsBehaviorEventService {
     /** 校验并转换单条行为事件。 */
     private TsBehaviorEventMessage toMessage(
             String userId, TsBehaviorEventDto request, Date receivedAt) {
+        String eventCode = request.getEventType().trim();
+        TsBehaviorEventType eventType = TsBehaviorEventType.fromCode(eventCode)
+                .orElseThrow(() -> new JeecgBootException("不支持的业务行为事件: " + eventCode));
+        validateEvent(eventType, request);
         Date occurredAt = request.getOccurredAt() == null
                 ? receivedAt : request.getOccurredAt();
         long delta = occurredAt.getTime() - receivedAt.getTime();
@@ -84,22 +93,151 @@ public class TsBehaviorEventServiceImpl implements ITsBehaviorEventService {
         }
         return new TsBehaviorEventMessage()
                 .setEventId(request.getEventId().trim())
-                .setEventType(request.getEventType().trim())
+                .setEventType(eventType.getCode())
                 .setEventVersion(request.getEventVersion() == null
-                        ? 1 : request.getEventVersion())
+                        ? 2 : request.getEventVersion())
                 .setUserId(userId)
-                .setAnonymousId(text(request.getAnonymousId()))
                 .setSessionId(request.getSessionId().trim())
                 .setResourceType(text(request.getResourceType()))
                 .setResourceId(text(request.getResourceId()))
-                .setImpressionId(text(request.getImpressionId()))
-                .setPosition(request.getPosition())
                 .setPagePath(text(request.getPagePath()))
                 .setPlatform(platform)
-                .setDurationMs(request.getDurationMs())
                 .setPropertiesJson(propertiesJson)
                 .setOccurredAt(occurredAt)
                 .setReceivedAt(receivedAt);
+    }
+
+    /**
+     * 按事件类型校验资源和允许的扩展属性。
+     */
+    private void validateEvent(
+            TsBehaviorEventType eventType,
+            TsBehaviorEventDto request) {
+        switch (eventType) {
+            case USER_LANGUAGE -> {
+                requireNoResource(request);
+                requireProperties(request, Set.of("language"), Set.of("language"));
+            }
+            case DETAIL_VIEW, FAVORITE, CONNECTION, CHAT_MESSAGE -> {
+                requireRoleOrStoryResource(request);
+                requireProperties(request, Collections.emptySet(), Collections.emptySet());
+            }
+            case IMPRESSION -> {
+                requireRoleOrStoryResource(request);
+                requireProperties(
+                        request,
+                        Set.of("scene", "requestId", "position"),
+                        Set.of("scene", "requestId", "position"));
+                requirePositiveIntegerProperty(request, "position");
+            }
+            case ROLE_CREATE -> {
+                requireResource(request, "role");
+                requireProperties(request, Set.of("gender"), Collections.emptySet());
+            }
+            case STORY_CREATE -> {
+                requireResource(request, "story");
+                requireProperties(request, Collections.emptySet(), Collections.emptySet());
+            }
+            case ROLE_IMAGE_GENERATE -> {
+                requireResourceType(request, "role_image");
+                requireProperties(
+                        request, Set.of("gender", "style"), Collections.emptySet());
+            }
+            case STORY_BACKGROUND_GENERATE -> {
+                requireResourceType(request, "story_background");
+                requireProperties(request, Set.of("style"), Collections.emptySet());
+            }
+            default -> throw new JeecgBootException("不支持的业务行为事件");
+        }
+    }
+
+    /**
+     * 校验角色或故事资源。
+     */
+    private void requireRoleOrStoryResource(TsBehaviorEventDto request) {
+        String resourceType = text(request.getResourceType());
+        if (!List.of("role", "story").contains(resourceType)) {
+            throw new JeecgBootException("资源类型仅支持role或story");
+        }
+        requireResourceId(request);
+    }
+
+    /**
+     * 校验固定资源类型和资源 ID。
+     */
+    private void requireResource(TsBehaviorEventDto request, String resourceType) {
+        requireResourceType(request, resourceType);
+        requireResourceId(request);
+    }
+
+    /**
+     * 校验固定资源类型。
+     */
+    private void requireResourceType(
+            TsBehaviorEventDto request, String resourceType) {
+        if (!resourceType.equals(text(request.getResourceType()))) {
+            throw new JeecgBootException("事件资源类型必须为" + resourceType);
+        }
+    }
+
+    /**
+     * 校验资源 ID。
+     */
+    private void requireResourceId(TsBehaviorEventDto request) {
+        if (!StringUtils.hasText(request.getResourceId())) {
+            throw new JeecgBootException("事件资源ID不能为空");
+        }
+    }
+
+    /**
+     * 校验事件不携带资源。
+     */
+    private void requireNoResource(TsBehaviorEventDto request) {
+        if (StringUtils.hasText(request.getResourceType())
+                || StringUtils.hasText(request.getResourceId())) {
+            throw new JeecgBootException("当前事件不能携带资源信息");
+        }
+    }
+
+    /**
+     * 校验扩展属性白名单和必填键。
+     */
+    private void requireProperties(
+            TsBehaviorEventDto request,
+            Set<String> allowedKeys,
+            Set<String> requiredKeys) {
+        Map<String, Object> properties = request.getProperties();
+        Set<String> actualKeys = properties == null
+                ? Collections.emptySet() : new HashSet<>(properties.keySet());
+        if (!allowedKeys.containsAll(actualKeys)) {
+            throw new JeecgBootException("事件包含未允许的扩展属性");
+        }
+        if (!actualKeys.containsAll(requiredKeys)) {
+            throw new JeecgBootException("事件缺少必需的扩展属性");
+        }
+        for (String key : actualKeys) {
+            Object value = properties.get(key);
+            if (!(value instanceof String textValue)
+                    || !StringUtils.hasText(textValue)
+                    || textValue.trim().length() > 64) {
+                throw new JeecgBootException("事件扩展属性必须为64字以内的非空文本");
+            }
+        }
+    }
+
+    /**
+     * 校验扩展属性中的正整数字段。
+     */
+    private void requirePositiveIntegerProperty(
+            TsBehaviorEventDto request, String key) {
+        String value = String.valueOf(request.getProperties().get(key)).trim();
+        try {
+            if (Integer.parseInt(value) <= 0) {
+                throw new NumberFormatException();
+            }
+        } catch (NumberFormatException exception) {
+            throw new JeecgBootException("事件扩展属性" + key + "必须为正整数");
+        }
     }
 
     /** 序列化并限制扩展属性大小。 */

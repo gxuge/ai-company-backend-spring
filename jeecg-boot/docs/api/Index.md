@@ -8,6 +8,7 @@
 - `sys-auth-api.md`：系统登录鉴权接口
 - `airag-api.md`：AIRAG 业务接口
 - `ts-api.md`：TS 业务接口
+- `recommend-etl-api.md`：推荐训练数据 ETL 任务与执行管理接口
 
 ## 跨模块链路索引（由 inventory 文档拆分）
 - AI 伴侣对话编排入口：见 `ts-api.md` 中 `POST /sys/ts-chat-sessions/ai-reply`

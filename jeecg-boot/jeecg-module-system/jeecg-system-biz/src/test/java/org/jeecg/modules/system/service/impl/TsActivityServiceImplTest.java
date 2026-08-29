@@ -273,6 +273,46 @@ class TsActivityServiceImplTest {
         assertEquals(100L, result.getStarDiamondBalance());
     }
 
+    /** 首页必须返回七天签到基础奖励与里程碑奖励合计。 */
+    @Test
+    void homeShouldReturnSevenDaySignRewards() {
+        TsActivityTask signTask = new TsActivityTask()
+                .setId(8L)
+                .setTaskType("SIGN")
+                .setTaskCategory("DAILY")
+                .setRewardType("STAR_DIAMOND")
+                .setRewardValue(10L);
+        TsActivitySignMilestoneRule dayFour =
+                new TsActivitySignMilestoneRule()
+                        .setTaskId(8L)
+                        .setMilestoneDay(4)
+                        .setRewardValue(10L)
+                        .setStatus(1);
+        TsActivitySignMilestoneRule daySeven =
+                new TsActivitySignMilestoneRule()
+                        .setTaskId(8L)
+                        .setMilestoneDay(7)
+                        .setRewardValue(20L)
+                        .setStatus(1);
+        TsPointsAccountVo account = new TsPointsAccountVo();
+        account.setBalance(100L);
+        when(queryMapper.selectSignByDate(any(), any())).thenReturn(null);
+        when(queryMapper.selectPreviousSign(any(), any())).thenReturn(null);
+        when(queryMapper.selectActiveSignTask(any())).thenReturn(signTask);
+        when(queryMapper.selectActiveSignMilestoneRules(8L))
+                .thenReturn(List.of(dayFour, daySeven));
+        when(queryMapper.selectActiveTasks(any(), any(), any(), any()))
+                .thenReturn(List.of());
+        when(pointsService.getAccount("u1")).thenReturn(account);
+
+        TsActivityHomeVo result = service.getHome("u1");
+
+        assertEquals(7, result.getSignRewards().size());
+        assertEquals(10L, result.getSignRewards().get(0).getRewardAmount());
+        assertEquals(20L, result.getSignRewards().get(3).getRewardAmount());
+        assertEquals(30L, result.getSignRewards().get(6).getRewardAmount());
+    }
+
     /** 已领取任务必须幂等返回原奖励记录。 */
     @Test
     void receiveShouldReturnExistingRewardWhenProgressIsClaimed() {

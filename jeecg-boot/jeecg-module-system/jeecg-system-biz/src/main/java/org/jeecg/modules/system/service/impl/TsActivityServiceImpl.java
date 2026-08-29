@@ -37,6 +37,7 @@ import org.jeecg.modules.system.vo.tsactivity.TsActivityHomeVo;
 import org.jeecg.modules.system.vo.tsactivity.TsActivityProgressResultVo;
 import org.jeecg.modules.system.vo.tsactivity.TsActivityRewardGrantVo;
 import org.jeecg.modules.system.vo.tsactivity.TsActivityRewardRecordVo;
+import org.jeecg.modules.system.vo.tsactivity.TsActivitySignRewardVo;
 import org.jeecg.modules.system.vo.tsactivity.TsActivitySignVo;
 import org.jeecg.modules.system.vo.tsactivity.TsActivityTaskVo;
 import org.jeecg.modules.system.vo.tsreward.TsRewardEventResultVo;
@@ -47,8 +48,10 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /** 活动中心用户与内部行为服务实现。 */
 @Service
@@ -102,9 +105,37 @@ public class TsActivityServiceImpl implements ITsActivityService {
         vo.setSignedToday(signRecord != null);
         vo.setContinuousDays(continuousDays);
         vo.setStarDiamondBalance(pointsService.getAccount(userId).getBalance());
+        vo.setSignRewards(buildSignRewards(
+                queryMapper.selectActiveSignTask(now)));
         vo.setDailyTasks(loadTasks(userId, TsActivityTaskCategory.DAILY.name(), now));
         vo.setWeeklyTasks(loadTasks(userId, TsActivityTaskCategory.WEEKLY.name(), now));
         return vo;
+    }
+
+    /** 根据当前签到任务与启用中的里程碑规则构建七天奖励日历。 */
+    private List<TsActivitySignRewardVo> buildSignRewards(
+            TsActivityTask signTask) {
+        if (signTask == null) {
+            return List.of();
+        }
+        long baseReward = signTask.getRewardValue();
+        Map<Integer, Long> milestoneRewards = new HashMap<>();
+        for (TsActivitySignMilestoneRule rule
+                : queryMapper.selectActiveSignMilestoneRules(signTask.getId())) {
+            milestoneRewards.put(rule.getMilestoneDay(), rule.getRewardValue());
+        }
+
+        List<TsActivitySignRewardVo> rewards = new ArrayList<>(7);
+        for (int day = 1; day <= 7; day++) {
+            long milestoneReward = milestoneRewards.getOrDefault(day, 0L);
+            TsActivitySignRewardVo reward = new TsActivitySignRewardVo();
+            reward.setDay(day);
+            reward.setBaseRewardAmount(baseReward);
+            reward.setMilestoneRewardAmount(milestoneReward);
+            reward.setRewardAmount(Math.addExact(baseReward, milestoneReward));
+            rewards.add(reward);
+        }
+        return rewards;
     }
 
     /** {@inheritDoc} */

@@ -29,12 +29,18 @@ public class TsChatMessageTtsDto {
     /** 音量 */
     private Double volume;
 
+    /** 是否以 audio/mpeg 流式返回：true=流式，false=JSON */
+    private Boolean stream;
+
     public void applyDefaults() {
         if (this.voiceId != null) {
             this.voiceId = this.voiceId.trim();
             if (this.voiceId.isEmpty()) {
                 this.voiceId = null;
             }
+        }
+        if (this.stream == null) {
+            this.stream = Boolean.FALSE;
         }
     }
 }

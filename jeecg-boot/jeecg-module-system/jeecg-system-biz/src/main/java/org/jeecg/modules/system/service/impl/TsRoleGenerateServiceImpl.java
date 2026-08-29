@@ -15,6 +15,7 @@ import org.jeecg.modules.openapi.service.PromptRenderService;
 import org.jeecg.modules.openapi.vo.MiniMaxImageResponseVo;
 import org.jeecg.modules.openapi.vo.PromptRenderedSectionsVo;
 import org.jeecg.modules.system.activity.TsActivityProgressReporter;
+import org.jeecg.modules.system.behavior.TsBehaviorEventReporter;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateImageByPromptDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleConfirmedGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleGenerateRoleDto;
@@ -35,6 +36,7 @@ import org.jeecg.modules.system.entity.TsVoiceProfile;
 import org.jeecg.modules.system.entity.TsVoiceProfileTag;
 import org.jeecg.modules.system.entity.TsVoiceTag;
 import org.jeecg.modules.system.enums.tsactivity.TsActivityConditionType;
+import org.jeecg.modules.system.enums.tsbehavior.TsBehaviorEventType;
 import org.jeecg.modules.system.mapper.TsPresetMapper;
 import org.jeecg.modules.system.mapper.TsPresetTagMapper;
 import org.jeecg.modules.system.mapper.TsRoleMapper;
@@ -168,6 +170,8 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
     private RedisTemplate<String, Object> redisTemplate;
     @Resource
     private TsActivityProgressReporter activityProgressReporter;
+    @Resource
+    private TsBehaviorEventReporter behaviorEventReporter;
 
     /**
      * 一键补全角色设定。
@@ -301,6 +305,12 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
                 user == null ? null : user.getId(),
                 TsActivityConditionType.ROLE_IMAGE_GENERATE,
                 "role-image:" + snapshotKey);
+        behaviorEventReporter.reportAfterCommit(
+                user == null ? null : user.getId(),
+                TsBehaviorEventType.ROLE_IMAGE_GENERATE,
+                "role_image",
+                snapshotKey,
+                imageProperties(dto.getGender(), dto.getStyleName()));
         return vo;
     }
 
@@ -502,7 +512,24 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
 
         // 若绑定角色，则回写角色音色名。
         if (role != null) {
+            JSONObject roleExt = new JSONObject();
+            if (StringUtils.hasText(role.getExtJson())) {
+                try {
+                    JSONObject parsed = JSONObject.parseObject(role.getExtJson());
+                    if (parsed != null) {
+                        roleExt = parsed;
+                    }
+                } catch (Exception ignored) {
+                    roleExt.put("rawExtJson", role.getExtJson());
+                }
+            }
+            roleExt.put("voiceProfileId", selected.getId());
+            roleExt.put("providerVoiceId", selected.getProviderVoiceId());
+            roleExt.put("speed", speed);
+            roleExt.put("pitch", pitch);
+            roleExt.put("volume", volume);
             role.setVoiceName(selected.getName());
+            role.setExtJson(roleExt.toJSONString());
             role.setUpdatedAt(new Date());
             tsRoleMapper.updateById(role);
         }
@@ -870,8 +897,28 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
                     user == null ? null : user.getId(),
                     TsActivityConditionType.ROLE_IMAGE_GENERATE,
                     "role-image:" + snapshotKey);
+            behaviorEventReporter.reportAfterCommit(
+                    user == null ? null : user.getId(),
+                    TsBehaviorEventType.ROLE_IMAGE_GENERATE,
+                    "role_image",
+                    snapshotKey,
+                    imageProperties(null, styleUsed));
         }
         return vo;
+    }
+
+    /**
+     * 构建角色形象分析维度，不包含角色标签。
+     */
+    private Map<String, Object> imageProperties(String gender, String style) {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        if (StringUtils.hasText(gender)) {
+            properties.put("gender", gender.trim());
+        }
+        if (StringUtils.hasText(style)) {
+            properties.put("style", style.trim());
+        }
+        return properties;
     }
 
     /**

@@ -8,7 +8,7 @@ import lombok.experimental.Accessors;
 
 import java.util.Date;
 
-/** 推荐用户行为事件明细。 */
+/** ClickHouse 用户业务行为事件明细。 */
 @Data
 @Accessors(chain = true)
 @TableName("ts_user_behavior_event")
@@ -24,24 +24,16 @@ public class TsUserBehaviorEvent {
     private Integer eventVersion;
     /** 登录用户ID。 */
     private String userId;
-    /** 匿名访客ID。 */
-    private String anonymousId;
     /** 访问会话ID。 */
     private String sessionId;
     /** 资源类型。 */
     private String resourceType;
     /** 资源ID。 */
     private String resourceId;
-    /** 推荐曝光链路ID。 */
-    private String impressionId;
-    /** 内容位置。 */
-    private Integer positionIndex;
     /** 页面路径。 */
     private String pagePath;
     /** 平台。 */
     private String platform;
-    /** 停留时长毫秒。 */
-    private Long durationMs;
     /** 扩展属性JSON。 */
     private String propertiesJson;
     /** 客户端发生时间。 */

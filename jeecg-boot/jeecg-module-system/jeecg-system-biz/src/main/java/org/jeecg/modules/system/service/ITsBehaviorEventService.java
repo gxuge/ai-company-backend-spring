@@ -6,7 +6,7 @@ import org.jeecg.modules.system.vo.tsbehavior.TsBehaviorCollectVo;
 
 import java.util.List;
 
-/** 推荐行为采集服务。 */
+/** 业务行为采集服务。 */
 public interface ITsBehaviorEventService {
 
     /** 校验并异步提交一批登录用户行为。 */

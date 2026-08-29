@@ -9,7 +9,7 @@ import org.jeecg.modules.system.event.TsBehaviorEventMessage;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
-/** 基于 Kafka 的推荐行为消息发布器。 */
+/** 基于 Kafka 的业务行为消息发布器。 */
 @Slf4j
 @Component
 public class KafkaTsBehaviorEventPublisher implements TsBehaviorEventPublisher {
@@ -31,7 +31,7 @@ public class KafkaTsBehaviorEventPublisher implements TsBehaviorEventPublisher {
     @Override
     public void publish(TsBehaviorEventMessage event) {
         if (!config.getKafka().isEnabled()) {
-            throw new JeecgBootException("推荐行为采集未启用");
+            throw new JeecgBootException("业务行为采集未启用");
         }
         try {
             String payload = objectMapper.writeValueAsString(event);
@@ -39,15 +39,15 @@ public class KafkaTsBehaviorEventPublisher implements TsBehaviorEventPublisher {
                     .whenComplete((result, error) -> {
                         if (error != null) {
                             log.error(
-                                    "推荐行为事件异步发送失败，eventId={}",
+                                    "业务行为事件异步发送失败，eventId={}",
                                     event.getEventId(),
                                     error);
                         }
                     });
         } catch (JsonProcessingException exception) {
-            throw new JeecgBootException("推荐行为事件序列化失败", exception);
+            throw new JeecgBootException("业务行为事件序列化失败", exception);
         } catch (RuntimeException exception) {
-            throw new JeecgBootException("推荐行为事件提交失败", exception);
+            throw new JeecgBootException("业务行为事件提交失败", exception);
         }
     }
 }

@@ -87,6 +87,10 @@ public interface TsActivityQueryMapper {
             @Param("taskId") Long taskId,
             @Param("milestoneDay") Integer milestoneDay);
 
+    /** 查询签到任务全部启用中的周期里程碑规则。 */
+    List<TsActivitySignMilestoneRule> selectActiveSignMilestoneRules(
+            @Param("taskId") Long taskId);
+
     /** 按幂等Key查询奖励记录。 */
     TsActivityRewardRecord selectRewardByIdempotency(
             @Param("userId") String userId,

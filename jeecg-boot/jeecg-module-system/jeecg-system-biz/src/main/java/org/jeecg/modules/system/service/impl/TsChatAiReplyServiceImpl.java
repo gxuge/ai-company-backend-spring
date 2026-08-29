@@ -20,6 +20,7 @@ import org.jeecg.modules.openapi.service.PromptRenderService;
 import org.jeecg.modules.openapi.vo.PromptRenderedSectionsVo;
 import org.jeecg.modules.openapi.vo.MiniMaxChatResponseVo;
 import org.jeecg.modules.system.activity.TsActivityProgressReporter;
+import org.jeecg.modules.system.behavior.TsBehaviorEventReporter;
 import org.jeecg.modules.system.dto.tschatsession.TsChatAiReplyDto;
 import org.jeecg.modules.system.dto.tschatsession.TsChatMessageTtsDto;
 import org.jeecg.modules.system.dto.tschatsession.TsChatReplySuggestionsDto;
@@ -34,6 +35,7 @@ import org.jeecg.modules.system.entity.TsStoryRoleRel;
 import org.jeecg.modules.system.entity.TsUserVoiceConfig;
 import org.jeecg.modules.system.entity.TsVoiceProfile;
 import org.jeecg.modules.system.enums.tsactivity.TsActivityConditionType;
+import org.jeecg.modules.system.enums.tsbehavior.TsBehaviorEventType;
 import org.jeecg.modules.system.mapper.TsChatMessageAttachmentMapper;
 import org.jeecg.modules.system.mapper.TsChatMessageMapper;
 import org.jeecg.modules.system.mapper.TsChatSessionMapper;
@@ -58,6 +60,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -184,6 +187,8 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
     private TsMultimodalUsageRecorder multimodalUsageRecorder;
     @Resource
     private TsActivityProgressReporter activityProgressReporter;
+    @Resource
+    private TsBehaviorEventReporter behaviorEventReporter;
 
     /**
      * 在会话内完成“用户消息入库 + AI 文本生成 + 语音合成 + 附件落库”的编排流程。
@@ -457,9 +462,16 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         TsChatMessage assistantMessage = new TsChatMessage();
         assistantMessage.setSessionId(sessionId);
         assistantMessage.setSenderType(SENDER_TYPE_ROLE);
+        assistantMessage.setSenderId(resolvedActiveRoleId);
         assistantMessage.setSenderName(PromptRuntimeUtil.firstNonBlank(activeRole.getRoleName(), SENDER_NAME_ASSISTANT));
         assistantMessage.setMessageType(MESSAGE_TYPE_TEXT);
         assistantMessage.setContentText(assistantContent);
+        JSONObject assistantContentJson = new JSONObject();
+        JSONObject voiceSnapshot = buildRoleVoiceSnapshot(activeRole);
+        if (voiceSnapshot != null) {
+            assistantContentJson.put("voiceSnapshot", voiceSnapshot);
+        }
+        assistantMessage.setContentJson(assistantContentJson.isEmpty() ? null : assistantContentJson.toJSONString());
         assistantMessage.setReplyToMessageId(userMessage.getId());
         assistantMessage.setGenerateStatus(GENERATE_STATUS_SUCCESS);
         assistantMessage.setSeqNo(tsChatMessageMapper.selectNextSeqNoForUpdate(sessionId));
@@ -518,6 +530,17 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
                 user.getId(),
                 TsActivityConditionType.CHAT_COUNT,
                 "chat-reply:" + assistantMessageId);
+        String resourceType = session != null && session.getStoryId() != null
+                ? "story" : "role";
+        Long resourceId = session != null && session.getStoryId() != null
+                ? session.getStoryId()
+                : (session == null ? null : session.getTargetRoleId());
+        behaviorEventReporter.reportAfterCommit(
+                user.getId(),
+                TsBehaviorEventType.CHAT_MESSAGE,
+                resourceType,
+                resourceId,
+                Map.of());
         if (session != null && session.getStoryId() != null) {
             activityProgressReporter.reportAfterCommit(
                     user.getId(),
@@ -532,32 +555,11 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
     public Result<TsChatMessageTtsVo> createMessageTts(LoginUser user, Long sessionId, TsChatMessageTtsDto request) {
         TsChatMessageTtsDto dto = request == null ? new TsChatMessageTtsDto() : request;
         dto.applyDefaults();
-        TsChatSession session = TsChatSessionOwnershipAspect.SESSION_CONTEXT.get();
-        if (session == null) {
-            throw new JeecgBootException("会话不存在或无权限访问");
-        }
-
-        TsChatMessage message = tsChatMessageMapper.selectOwnedById(dto.getMessageId(), user.getId());
-        if (message == null || !sessionId.equals(message.getSessionId())) {
-            throw new JeecgBootException("messageId不属于当前会话");
-        }
-        if (!SENDER_TYPE_ROLE.equalsIgnoreCase(PromptRuntimeUtil.trimToNull(message.getSenderType()))) {
-            throw new JeecgBootException("当前消息不是角色回复，无法生成语音");
-        }
-
-        String ttsText = sanitizeTtsText(message.getContentText());
-        if (!StringUtils.hasText(ttsText)) {
-            throw new JeecgBootException("当前消息没有可用于播报的文本");
-        }
-
-        VoiceSelection voiceSelection = resolveVoiceSelection(user.getId(), dto.getVoiceProfileId(), dto.getVoiceId());
-        TsChatTtsSynthesizeDto ttsRequest = new TsChatTtsSynthesizeDto();
-        ttsRequest.setText(ttsText);
-        ttsRequest.setVoiceId(voiceSelection.getVoiceId());
-        ttsRequest.setVoiceProfileId(voiceSelection.getVoiceProfileId());
-        ttsRequest.setSpeed(dto.getSpeed());
-        ttsRequest.setPitch(dto.getPitch());
-        ttsRequest.setVolume(dto.getVolume());
+        MessageTtsContext context = resolveMessageTtsContext(user, sessionId, dto);
+        TsChatMessage message = context.getMessage();
+        VoiceSelection voiceSelection = context.getVoiceSelection();
+        TsChatTtsSynthesizeDto ttsRequest = context.getTtsRequest();
+        String ttsText = ttsRequest.getText();
 
         TsChatTtsResultVo ttsResult = multimodalUsageRecorder.recordTts(
                 user.getId(),
@@ -589,9 +591,9 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         contentJson.put("voiceProfileId", voiceSelection.getVoiceProfileId());
         contentJson.put("matchSource", voiceSelection.getMatchSource());
         contentJson.put("ttsText", ttsText);
-        contentJson.put("speed", dto.getSpeed());
-        contentJson.put("pitch", dto.getPitch());
-        contentJson.put("volume", dto.getVolume());
+        contentJson.put("speed", ttsRequest.getSpeed());
+        contentJson.put("pitch", ttsRequest.getPitch());
+        contentJson.put("volume", ttsRequest.getVolume());
         contentJson.put("mimeType", ttsResult == null ? MIME_TYPE_AUDIO_MPEG : ttsResult.getMimeType());
         contentJson.put("audioFileSize", ttsResult == null ? null : ttsResult.getFileSize());
         contentJson.put("durationSec", ttsResult == null ? null : ttsResult.getDurationSec());
@@ -611,6 +613,116 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
         response.setMimeType(ttsResult == null ? MIME_TYPE_AUDIO_MPEG : ttsResult.getMimeType());
         response.setCreatedAt(message.getCreatedAt());
         return Result.OK("生成成功", response);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    @CheckTsChatSessionOwnership(message = "会话不存在或无权限访问")
+    public StreamingResponseBody createMessageTtsStream(
+            LoginUser user,
+            Long sessionId,
+            TsChatMessageTtsDto request) {
+        TsChatMessageTtsDto dto = request == null ? new TsChatMessageTtsDto() : request;
+        dto.applyDefaults();
+        MessageTtsContext context = resolveMessageTtsContext(user, sessionId, dto);
+        String userId = user.getId();
+        Long messageId = context.getMessage().getId();
+        TsChatTtsSynthesizeDto ttsRequest = context.getTtsRequest();
+        return outputStream -> multimodalUsageRecorder.recordTtsStream(
+                userId,
+                sessionId,
+                messageId,
+                ttsRequest.getText(),
+                () -> tsChatTtsGatewayService.streamForChat(ttsRequest, outputStream)
+        );
+    }
+
+    /**
+     * 校验消息归属并仅从消息音色快照构造 TTS 请求。
+     */
+    private MessageTtsContext resolveMessageTtsContext(
+            LoginUser user,
+            Long sessionId,
+            TsChatMessageTtsDto request) {
+        TsChatSession session = TsChatSessionOwnershipAspect.SESSION_CONTEXT.get();
+        if (session == null) {
+            throw new JeecgBootException("会话不存在或无权限访问");
+        }
+        TsChatMessage message = tsChatMessageMapper.selectOwnedById(request.getMessageId(), user.getId());
+        if (message == null || !sessionId.equals(message.getSessionId())) {
+            throw new JeecgBootException("messageId不属于当前会话");
+        }
+        if (!SENDER_TYPE_ROLE.equalsIgnoreCase(PromptRuntimeUtil.trimToNull(message.getSenderType()))) {
+            throw new JeecgBootException("当前消息不是角色回复，无法生成语音");
+        }
+
+        String ttsText = sanitizeTtsText(message.getContentText());
+        if (!StringUtils.hasText(ttsText)) {
+            throw new JeecgBootException("当前消息没有可用于播报的文本");
+        }
+        JSONObject contentJson = parseMessageContentJson(message.getContentJson());
+        JSONObject voiceSnapshot = contentJson.getJSONObject("voiceSnapshot");
+        if (voiceSnapshot == null) {
+            throw new JeecgBootException("当前消息未保存音色快照，无法生成语音");
+        }
+        Long snapshotRoleId = voiceSnapshot.getLong("roleId");
+        if (message.getSenderId() == null
+                || snapshotRoleId == null
+                || !message.getSenderId().equals(snapshotRoleId)) {
+            throw new JeecgBootException("当前消息角色快照无效，无法生成语音");
+        }
+        String voiceId = PromptRuntimeUtil.firstNonBlank(
+                voiceSnapshot.getString("voiceId"),
+                voiceSnapshot.getString("providerVoiceId"));
+        if (!StringUtils.hasText(voiceId)) {
+            throw new JeecgBootException("当前消息音色快照缺少 voiceId，无法生成语音");
+        }
+        Long voiceProfileId = voiceSnapshot.getLong("voiceProfileId");
+        VoiceSelection voiceSelection = new VoiceSelection(
+                voiceId.trim(), voiceProfileId, "ROLE_MESSAGE_SNAPSHOT");
+        TsChatTtsSynthesizeDto ttsRequest = new TsChatTtsSynthesizeDto();
+        ttsRequest.setText(ttsText);
+        ttsRequest.setVoiceId(voiceSelection.getVoiceId());
+        ttsRequest.setVoiceProfileId(voiceSelection.getVoiceProfileId());
+        ttsRequest.setSpeed(voiceSnapshot.getDouble("speed"));
+        ttsRequest.setPitch(voiceSnapshot.getDouble("pitch"));
+        ttsRequest.setVolume(voiceSnapshot.getDouble("volume"));
+        return new MessageTtsContext(message, voiceSelection, ttsRequest);
+    }
+
+    /**
+     * 从角色扩展信息固化 provider 音色；仅在生成新消息时允许查询音色档案。
+     */
+    private JSONObject buildRoleVoiceSnapshot(TsRole role) {
+        if (role == null) {
+            return null;
+        }
+        JSONObject roleExt = parseMessageContentJson(role.getExtJson());
+        JSONObject voiceConfig = roleExt.getJSONObject("voice");
+        if (voiceConfig == null) {
+            voiceConfig = roleExt;
+        }
+        Long voiceProfileId = voiceConfig.getLong("voiceProfileId");
+        String voiceId = PromptRuntimeUtil.firstNonBlank(
+                voiceConfig.getString("providerVoiceId"),
+                voiceConfig.getString("voiceId"));
+        if (!StringUtils.hasText(voiceId) && voiceProfileId != null) {
+            TsVoiceProfile voiceProfile = tsVoiceProfileMapper.selectActiveById(voiceProfileId);
+            voiceId = voiceProfile == null ? null : PromptRuntimeUtil.trimToNull(voiceProfile.getProviderVoiceId());
+        }
+        if (!StringUtils.hasText(voiceId)) {
+            return null;
+        }
+        JSONObject snapshot = new JSONObject();
+        snapshot.put("roleId", role.getId());
+        snapshot.put("voiceProfileId", voiceProfileId);
+        snapshot.put("voiceId", voiceId.trim());
+        snapshot.put("voiceName", role.getVoiceName());
+        snapshot.put("speed", voiceConfig.getDouble("speed"));
+        snapshot.put("pitch", voiceConfig.getDouble("pitch"));
+        snapshot.put("volume", voiceConfig.getDouble("volume"));
+        snapshot.put("capturedAt", new Date().getTime());
+        return snapshot;
     }
 
     private String resolveLastAssistantMessage(String userId, Long sessionId, Long lastAssistantMessageId) {
@@ -1130,6 +1242,36 @@ public class TsChatAiReplyServiceImpl implements ITsChatAiReplyService {
 
         private String getMatchSource() {
             return matchSource;
+        }
+    }
+
+    /**
+     * 已完成归属校验且可直接执行的消息 TTS 上下文。
+     */
+    private static final class MessageTtsContext {
+        private final TsChatMessage message;
+        private final VoiceSelection voiceSelection;
+        private final TsChatTtsSynthesizeDto ttsRequest;
+
+        private MessageTtsContext(
+                TsChatMessage message,
+                VoiceSelection voiceSelection,
+                TsChatTtsSynthesizeDto ttsRequest) {
+            this.message = message;
+            this.voiceSelection = voiceSelection;
+            this.ttsRequest = ttsRequest;
+        }
+
+        private TsChatMessage getMessage() {
+            return message;
+        }
+
+        private VoiceSelection getVoiceSelection() {
+            return voiceSelection;
+        }
+
+        private TsChatTtsSynthesizeDto getTtsRequest() {
+            return ttsRequest;
         }
     }
 

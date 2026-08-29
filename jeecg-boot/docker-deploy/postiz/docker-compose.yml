@@ -1,0 +1,98 @@
+services:
+  postiz:
+    image: ${POSTIZ_IMAGE:-ghcr.io/gitroomhq/postiz-app:latest}
+    container_name: postiz
+    restart: always
+    environment:
+      MAIN_URL: ${POSTIZ_MAIN_URL:?POSTIZ_MAIN_URL is required}
+      FRONTEND_URL: ${POSTIZ_MAIN_URL:?POSTIZ_MAIN_URL is required}
+      NEXT_PUBLIC_BACKEND_URL: ${POSTIZ_MAIN_URL:?POSTIZ_MAIN_URL is required}/api
+      BACKEND_INTERNAL_URL: http://localhost:3000
+      JWT_SECRET: ${POSTIZ_JWT_SECRET:?POSTIZ_JWT_SECRET is required}
+      DATABASE_URL: postgresql://${POSTIZ_DB_USER:-postiz}:${POSTIZ_DB_PASSWORD:?POSTIZ_DB_PASSWORD is required}@jeecg-boot-pgvector:5432/${POSTIZ_DB_NAME:-postiz}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@jeecg-boot-redis:6379/${POSTIZ_REDIS_DB:-1}
+      TEMPORAL_ADDRESS: temporal:7233
+      IS_GENERAL: "true"
+      DISABLE_REGISTRATION: ${POSTIZ_DISABLE_REGISTRATION:-false}
+      STORAGE_PROVIDER: local
+      UPLOAD_DIRECTORY: /uploads
+      NEXT_PUBLIC_UPLOAD_DIRECTORY: /uploads
+      API_LIMIT: ${POSTIZ_API_LIMIT:-30}
+      NX_ADD_PLUGINS: "false"
+    volumes:
+      - postiz-config:/config
+      - postiz-uploads:/uploads
+    ports:
+      - "${POSTIZ_PORT:-4007}:5000"
+    networks:
+      - share-net
+      - postiz-temporal-net
+    depends_on:
+      temporal:
+        condition: service_started
+
+  temporal-postgresql:
+    image: postgres:16-alpine
+    container_name: postiz-temporal-postgresql
+    restart: always
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: ${TEMPORAL_DB_PASSWORD:?TEMPORAL_DB_PASSWORD is required}
+      POSTGRES_DB: temporal
+    volumes:
+      - temporal-postgres-data:/var/lib/postgresql/data
+    networks:
+      - postiz-temporal-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal -d temporal"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  temporal:
+    image: temporalio/auto-setup:1.28.1
+    container_name: postiz-temporal
+    restart: always
+    depends_on:
+      temporal-postgresql:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: ${TEMPORAL_DB_PASSWORD:?TEMPORAL_DB_PASSWORD is required}
+      POSTGRES_SEEDS: temporal-postgresql
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
+      TEMPORAL_NAMESPACE: default
+    volumes:
+      - ./dynamicconfig:/etc/temporal/config/dynamicconfig:ro
+    networks:
+      - postiz-temporal-net
+
+  temporal-ui:
+    image: temporalio/ui:2.34.0
+    container_name: postiz-temporal-ui
+    restart: always
+    profiles:
+      - tools
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: ${POSTIZ_MAIN_URL:?POSTIZ_MAIN_URL is required}
+    ports:
+      - "${TEMPORAL_UI_PORT:-8088}:8080"
+    networks:
+      - postiz-temporal-net
+    depends_on:
+      - temporal
+
+volumes:
+  postiz-config:
+  postiz-uploads:
+  temporal-postgres-data:
+
+networks:
+  share-net:
+    external: true
+    name: share-net
+  postiz-temporal-net:
+    name: postiz-temporal-net

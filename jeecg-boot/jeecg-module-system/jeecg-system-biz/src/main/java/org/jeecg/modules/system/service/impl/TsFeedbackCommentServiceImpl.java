@@ -5,7 +5,6 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.jeecg.common.api.vo.Result;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
-import org.jeecg.modules.system.annotation.TsBehaviorTrack;
 import org.jeecg.modules.system.dto.tsfeedback.TsFeedbackCommentCreateDto;
 import org.jeecg.modules.system.dto.tsfeedback.TsFeedbackCommentQueryDto;
 import org.jeecg.modules.system.dto.tsfeedback.TsFeedbackCommentReplyDto;
@@ -76,10 +75,6 @@ public class TsFeedbackCommentServiceImpl
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @TsBehaviorTrack(
-            eventType = "comment",
-            resourceType = "feedback",
-            resourceIdExpression = "#feedbackId")
     public Result<Long> createComment(LoginUser user,
                                       Long feedbackId,
                                       TsFeedbackCommentCreateDto request) {
@@ -125,10 +120,6 @@ public class TsFeedbackCommentServiceImpl
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @TsBehaviorTrack(
-            eventType = "comment",
-            resourceType = "feedback_comment",
-            resourceIdExpression = "#commentId")
     public Result<Long> replyComment(LoginUser user,
                                      Long commentId,
                                      TsFeedbackCommentReplyDto request) {

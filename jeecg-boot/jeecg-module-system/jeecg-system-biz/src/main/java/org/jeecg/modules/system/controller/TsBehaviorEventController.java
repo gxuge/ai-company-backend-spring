@@ -19,8 +19,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-/** 推荐行为埋点采集接口。 */
-@Tag(name = "TsBehaviorEvents 推荐行为埋点")
+/** 业务行为分析事件采集接口。 */
+@Tag(name = "TsBehaviorEvents 业务行为分析")
 @RestController
 @Validated
 @RequiresAuthentication
@@ -28,13 +28,13 @@ import java.util.List;
 public class TsBehaviorEventController {
     private final ITsBehaviorEventService behaviorEventService;
 
-    /** 注入推荐行为采集服务。 */
+    /** 注入业务行为采集服务。 */
     public TsBehaviorEventController(ITsBehaviorEventService behaviorEventService) {
         this.behaviorEventService = behaviorEventService;
     }
 
     /** 接收单条登录用户行为并异步投递 Kafka。 */
-    @Operation(summary = "单条上报推荐行为")
+    @Operation(summary = "单条上报业务行为")
     @PostMapping("/collect")
     public Result<TsBehaviorCollectVo> collect(
             @Valid @RequestBody TsBehaviorEventDto request) {
@@ -42,7 +42,7 @@ public class TsBehaviorEventController {
     }
 
     /** 接收批量登录用户行为并异步投递 Kafka。 */
-    @Operation(summary = "批量上报推荐行为")
+    @Operation(summary = "批量上报业务行为")
     @PostMapping("/collect/batch")
     public Result<TsBehaviorCollectVo> collectBatch(
             @Valid @RequestBody TsBehaviorBatchDto request) {
