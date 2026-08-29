@@ -1,6 +1,10 @@
 pipeline {
   agent any
 
+  tools {
+    nodejs 'node-22.19.0'
+  }
+
   parameters {
     choice(
       name: 'BUILD_MODE',
@@ -35,12 +39,14 @@ pipeline {
             if (isUnix()) {
               sh '''
                 corepack enable
+                corepack prepare pnpm@10.12.3 --activate
                 pnpm config set store-dir "${PNPM_CACHE_DIR}"
                 pnpm install --frozen-lockfile
               '''
             } else {
               powershell '''
                 corepack enable
+                corepack prepare pnpm@10.12.3 --activate
                 pnpm config set store-dir "$env:PNPM_CACHE_DIR"
                 pnpm install --frozen-lockfile
               '''
