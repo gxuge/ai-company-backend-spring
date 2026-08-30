@@ -2309,3 +2309,20 @@
 
 ## 未完成项
 - 未启动真实 Kafka、ClickHouse 和前端页面执行端到端曝光消费冒烟。
+
+# 20260830-drop-legacy-mysql-behavior-table
+
+## 目标
+1. 删除 MySQL 主数据源中不再使用的 `ts_user_behavior_event` 空旧表。
+2. 保留 ClickHouse 同名行为明细表及现有 Kafka 消费链路。
+3. 通过新版本迁移保证已有环境和新环境最终结构一致。
+
+## 执行步骤
+- [x] 确认 MySQL 旧表记录数为 0，且无其他表外键引用。
+- [x] 确认当前 `TsUserBehaviorEventMapper` 固定使用 `@DS("clickhouse")`。
+- [x] 新增 `V3.9.1_56__drop_legacy_mysql_user_behavior_event.sql`。
+- [x] 在本地 MySQL 执行删除并验证表不存在。
+
+## 影响与回滚
+- 影响范围：仅 MySQL `jeecg-boot.ts_user_behavior_event`，不涉及角色、故事及 ClickHouse。
+- 回滚方式：执行 `V3.9.1_44__create_ts_user_behavior_event.sql` 中的建表语句。
