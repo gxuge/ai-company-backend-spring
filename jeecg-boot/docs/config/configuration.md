@@ -70,7 +70,7 @@
 - `prompts` 资源目录已迁移到 `jeecg-system-biz/src/main/resources/prompts`，由系统模块统一提供 classpath 资源。
 
 ## 7. 2026-08-29 业务行为 Kafka 配置
-- `KAFKA_BOOTSTRAP_SERVERS`：Broker 地址，默认 `localhost:9092`；Docker Compose 中使用 `jeecg-boot-kafka:9092`。
+- `KAFKA_BOOTSTRAP_SERVERS`：Broker 地址；`application-dev.properties` 默认 `localhost:9092`，`application-prod.properties` 和单体 Docker Compose 默认 `jeecg-boot-kafka:9092`，外部环境变量可覆盖。
 - `TS_BEHAVIOR_KAFKA_ENABLED`：行为生产和消费开关，默认 `false`。
 - `TS_BEHAVIOR_KAFKA_TOPIC`：主 Topic，默认 `ts.user-behavior.v1`。
 - `TS_BEHAVIOR_KAFKA_DLQ_TOPIC`：死信 Topic，默认 `ts.user-behavior.dlq.v1`。
@@ -111,6 +111,7 @@ Producer 开启幂等、`acks=all` 和 LZ4 压缩；消费者失败重试两次�
 - 本地开发：启用现有 `dev` Profile，自动加载 `application-dev.properties` 中的 ClickHouse 连接值。
 - 生产环境：启用现有 `prod` Profile，自动加载 `application-prod.properties` 中的 ClickHouse 连接值。
 - Docker 环境：启用现有 `docker` Profile，自动读取 Compose 注入的 ClickHouse 环境变量。
+- `application-prod.properties` 已默认使用 `jeecg-boot-clickhouse:8123`，即使部署 `.env` 未提供 `CLICKHOUSE_URL`，生产容器仍不会回退到 `localhost`。
 - 不再需要额外的 `clickhouse` Profile 或 `SPRING_PROFILES_INCLUDE`。
 
 ### 9.2 环境变量

@@ -6,6 +6,7 @@
 `type` 推荐值：`feat`、`fix`、`refactor`、`breaking`、`security`、`docs`
 
 ## 记录
+- [2026-09-01] [fix] [infra] 补齐 Kafka dev/prod 默认 Broker 地址，并在单体 Compose 显式兜底 `jeecg-boot-kafka:9092`；确认 ClickHouse 已具备 dev/prod 环境默认连接配置
 - [2026-08-30] [refactor] [ts-behavior] 新增迁移删除已停用且为空的 MySQL `ts_user_behavior_event` 旧表，ClickHouse 同名行为明细表保持不变
 - [2026-08-30] [feat] [recommend-etl] 新增角色/故事推荐训练数据 ETL 任务管理、Quartz 调度、local/Kafka 异步分发、Python ProcessBuilder 执行、执行审计和 Vue3 管理页面
 - [2026-08-29] [feat] [ts-behavior] 新增受约束的推荐曝光 `impression` 事件，要求角色/故事资源及 `scene/requestId/position`，供后续行为关联形成候选正负样本
