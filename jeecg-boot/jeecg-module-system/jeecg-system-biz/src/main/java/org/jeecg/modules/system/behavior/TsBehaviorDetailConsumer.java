@@ -42,6 +42,10 @@ public class TsBehaviorDetailConsumer {
                 .setSessionId(message.getSessionId())
                 .setResourceType(message.getResourceType())
                 .setResourceId(message.getResourceId())
+                .setContentVersion(message.getContentVersion())
+                .setTagIds(message.getTagIds() == null ? java.util.List.of() : message.getTagIds())
+                .setTagScores(message.getTagScores() == null
+                        ? java.util.List.of() : message.getTagScores())
                 .setPagePath(message.getPagePath())
                 .setPlatform(message.getPlatform())
                 .setPropertiesJson(message.getPropertiesJson())

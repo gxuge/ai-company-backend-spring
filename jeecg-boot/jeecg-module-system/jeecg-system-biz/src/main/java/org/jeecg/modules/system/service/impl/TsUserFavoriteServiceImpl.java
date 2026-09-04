@@ -100,8 +100,16 @@ public class TsUserFavoriteServiceImpl extends ServiceImpl<TsUserFavoriteMapper,
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Result<TsUserFavoriteStatusVo> cancelFavorite(LoginUser user, TsUserFavoriteActionDto request) {
-        baseMapper.cancelFavorite(
+        int affectedRows = baseMapper.cancelFavorite(
                 user.getId(), request.getResourceType(), request.getResourceId(), new Date());
+        if (affectedRows > 0) {
+            behaviorEventReporter.reportAfterCommit(
+                    user.getId(),
+                    TsBehaviorEventType.UNFAVORITE,
+                    request.getResourceType(),
+                    request.getResourceId(),
+                    Map.of());
+        }
         return Result.OK("取消收藏成功", TsUserFavoriteStatusVo.of(
                 request.getResourceType(), request.getResourceId(), false));
     }

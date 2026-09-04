@@ -11,6 +11,7 @@ public enum TsBehaviorEventType {
     DETAIL_VIEW("detail_view"),
     IMPRESSION("impression"),
     FAVORITE("favorite"),
+    UNFAVORITE("unfavorite"),
     CONNECTION("connection"),
     CHAT_MESSAGE("chat_message"),
     ROLE_CREATE("role_create"),

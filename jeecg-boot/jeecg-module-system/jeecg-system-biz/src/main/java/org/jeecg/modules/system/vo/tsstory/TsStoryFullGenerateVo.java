@@ -1,6 +1,9 @@
 package org.jeecg.modules.system.vo.tsstory;
 
 import lombok.Data;
+import org.jeecg.modules.system.dto.tscontenttag.TsContentTagCandidateDto;
+
+import java.util.List;
 
 @Data
 public class TsStoryFullGenerateVo {
@@ -16,4 +19,8 @@ public class TsStoryFullGenerateVo {
     private String siteSetting;
     /** 核心字段：剧情大纲（plot_outline）。 */
     private String plotOutline;
+    /** 可随故事保存请求回传的候选内容标签。 */
+    private List<TsContentTagCandidateDto> tags;
+    /** 候选标签所使用的模型或提示词版本。 */
+    private String tagModelVersion;
 }

@@ -12,7 +12,7 @@ import lombok.experimental.Accessors;
 import org.springframework.format.annotation.DateTimeFormat;
 
 /**
- * @Description: 生成素材标签主表
+ * @Description: 角色与故事固定标签词典
  * @Author: jeecg-boot
  * @Date: 2026-05-28
  * @Version: V1.0
@@ -21,16 +21,16 @@ import org.springframework.format.annotation.DateTimeFormat;
 @TableName("ts_tag")
 @EqualsAndHashCode(callSuper = false)
 @Accessors(chain = true)
-@Schema(description = "生成素材标签主表")
+@Schema(description = "角色与故事固定标签词典")
 public class TsTag {
 
     /** 主键ID */
-    @TableId(type = IdType.ASSIGN_ID)
+    @TableId(type = IdType.AUTO)
     @Schema(description = "主键ID")
-    private String id;
+    private Long id;
 
-    /** 作用域：character|story|shared */
-    @Schema(description = "作用域：character|story|shared")
+    /** 内容类型：role|story */
+    @Schema(description = "内容类型：role|story")
     private String scope;
 
     /** 标签类型ID */
@@ -46,18 +46,13 @@ public class TsTag {
     @Schema(description = "标签描述")
     private String description;
 
-    /** 提示词素材正文 */
-    @TableField("prompt_text")
-    @Schema(description = "提示词素材正文")
-    private String promptText;
-
-    /** 默认权重 */
-    @Schema(description = "默认权重")
-    private Integer weight;
-
     /** 是否启用：1启用，0禁用 */
     @Schema(description = "是否启用：1启用，0禁用")
     private Integer enabled;
+
+    /** 词典版本 */
+    @Schema(description = "词典版本")
+    private Integer version;
 
     /** 排序值 */
     @TableField("sort_order")

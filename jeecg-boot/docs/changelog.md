@@ -6,7 +6,12 @@
 `type` 推荐值：`feat`、`fix`、`refactor`、`breaking`、`security`、`docs`
 
 ## 记录
+- [2026-09-03] [feat] [ts-social] 新增用户关注、粉丝列表以及角色/故事独立点赞接口，写操作幂等并返回实时关系计数
+- [2026-09-02] [fix] [ts-preset-tag] 保持角色/故事旧预设模板不变，按当前启用固定标签补齐旧模板变量，正式标签仍由审核快照异步 AI 打标
 - [2026-09-01] [fix] [infra] 补齐 Kafka dev/prod 默认 Broker 地址，并在单体 Compose 显式兜底 `jeecg-boot-kafka:9092`；确认 ClickHouse 已具备 dev/prod 环境默认连接配置
+- [2026-08-31] [feat] [ts-behavior] 行为事件升级为 v3，由服务端补充角色/故事内容版本与标签快照写入 ClickHouse，并在有效取消收藏后新增 `unfavorite` 事件
+- [2026-08-31] [feat] [ts-content-tag] 将旧生成素材标签替换为角色/故事固定标签词典，新增版本化内容标签、生成候选标签校验落库及审核快照异步补标任务
+- [2026-08-30] [breaking] [ts-preset-tag] 删除角色标签、预设标签关联、标签关系和两张空用户标签表；preset 生成接口保持不变并改为仅使用预设名称、描述和用户输入
 - [2026-08-30] [refactor] [ts-behavior] 新增迁移删除已停用且为空的 MySQL `ts_user_behavior_event` 旧表，ClickHouse 同名行为明细表保持不变
 - [2026-08-30] [feat] [recommend-etl] 新增角色/故事推荐训练数据 ETL 任务管理、Quartz 调度、local/Kafka 异步分发、Python ProcessBuilder 执行、执行审计和 Vue3 管理页面
 - [2026-08-29] [feat] [ts-behavior] 新增受约束的推荐曝光 `impression` 事件，要求角色/故事资源及 `scene/requestId/position`，供后续行为关联形成候选正负样本

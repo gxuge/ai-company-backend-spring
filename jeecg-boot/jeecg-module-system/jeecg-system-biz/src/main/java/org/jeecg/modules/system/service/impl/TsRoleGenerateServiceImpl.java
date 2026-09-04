@@ -26,11 +26,10 @@ import org.jeecg.modules.system.dto.tsrole.ImageGenerateRuntimeResult;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickImageGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickSettingGenerateDto;
 import org.jeecg.modules.system.dto.tsrole.TsRoleOneClickVoiceGenerateDto;
+import org.jeecg.modules.system.dto.tscontenttag.TsContentTagCandidateDto;
 import org.jeecg.modules.system.dto.tsuserimageasset.TsUserImageAssetImportDto;
 import org.jeecg.modules.system.entity.TsPreset;
-import org.jeecg.modules.system.entity.TsPresetTag;
 import org.jeecg.modules.system.entity.TsRole;
-import org.jeecg.modules.system.entity.TsTag;
 import org.jeecg.modules.system.entity.TsUserVoiceConfig;
 import org.jeecg.modules.system.entity.TsVoiceProfile;
 import org.jeecg.modules.system.entity.TsVoiceProfileTag;
@@ -38,9 +37,7 @@ import org.jeecg.modules.system.entity.TsVoiceTag;
 import org.jeecg.modules.system.enums.tsactivity.TsActivityConditionType;
 import org.jeecg.modules.system.enums.tsbehavior.TsBehaviorEventType;
 import org.jeecg.modules.system.mapper.TsPresetMapper;
-import org.jeecg.modules.system.mapper.TsPresetTagMapper;
 import org.jeecg.modules.system.mapper.TsRoleMapper;
-import org.jeecg.modules.system.mapper.TsTagMapper;
 import org.jeecg.modules.system.mapper.TsUserVoiceConfigMapper;
 import org.jeecg.modules.system.mapper.TsUserVoiceProfileMapper;
 import org.jeecg.modules.system.mapper.TsVoiceProfileMapper;
@@ -48,8 +45,10 @@ import org.jeecg.modules.system.mapper.TsVoiceProfileTagMapper;
 import org.jeecg.modules.system.mapper.TsVoiceTagMapper;
 import org.jeecg.modules.system.monitor.TsMultimodalUsageRecorder;
 import org.jeecg.modules.system.service.ITsRoleGenerateService;
+import org.jeecg.modules.system.service.ITsContentTagService;
 import org.jeecg.modules.system.service.ITsUserImageAssetService;
 import org.jeecg.modules.system.util.PromptRuntimeUtil;
+import org.jeecg.modules.system.util.TsPresetPromptVariableAdapter;
 import org.jeecg.modules.system.util.TsPromptLanguageInjector;
 import org.jeecg.modules.system.util.TsResponseLanguageSupport;
 import org.jeecg.modules.system.util.RoleGenerateSnapshotUtil;
@@ -79,7 +78,6 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -123,18 +121,6 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
     private static final String PLACEHOLDER_BACKGROUND_STORY = "\u8fd9\u662f\u4e00\u4e2a\u7b49\u5f85\u4f60\u7ee7\u7eed\u5b8c\u5584\u80cc\u666f\u8bbe\u5b9a\u7684\u89d2\u8272\u3002";
     private static final Pattern PLACEHOLDER_ROLE_NAME_PATTERN = Pattern.compile("^\u89d2\u8272\\d{10,}$");
     private static final String PRESET_TARGET_TYPE_CHARACTER = "character";
-    private static final String TAG_TYPE_IDENTITY = "identity";
-    private static final String TAG_TYPE_GENDER = "gender";
-    private static final String TAG_TYPE_USER_BACKGROUND = "user_background";
-    private static final String TAG_TYPE_APPEARANCE = "appearance";
-    private static final String TAG_TYPE_DRESS = "dress";
-    private static final String TAG_TYPE_PERSONALITY = "personality";
-    private static final String TAG_TYPE_BEHAVIOR = "behavior";
-    private static final String TAG_TYPE_SPEECH_STYLE = "speech_style";
-    private static final String TAG_TYPE_GOAL = "goal";
-    private static final String TAG_TYPE_SECRET = "secret";
-    private static final String TAG_TYPE_ABILITY = "ability";
-    private static final String TAG_TYPE_LIMITATION = "limitation";
 
     @Resource
     private IMiniMaxDemoService miniMaxDemoService;
@@ -145,9 +131,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
     @Resource
     private TsPresetMapper tsPresetMapper;
     @Resource
-    private TsPresetTagMapper tsPresetTagMapper;
-    @Resource
-    private TsTagMapper tsTagMapper;
+    private TsPresetPromptVariableAdapter tsPresetPromptVariableAdapter;
     @Resource
     private ToolcallJsonRepairService toolcallJsonRepairService;
     @Resource
@@ -164,6 +148,8 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
     private TsUserVoiceConfigMapper tsUserVoiceConfigMapper;
     @Resource
     private TsRoleMapper tsRoleMapper;
+    @Resource
+    private ITsContentTagService tsContentTagService;
     @Resource
     private org.jeecg.modules.system.service.ITsWorkReviewService tsWorkReviewService;
     @Resource
@@ -963,6 +949,8 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         String preferredVoiceName = PromptRuntimeUtil.trimToNull(modelJson.getString("preferred_voice_name"));
         String targetTone = PromptRuntimeUtil.trimToNull(modelJson.getString("target_tone"));
         String previewText = PromptRuntimeUtil.trimToNull(modelJson.getString("preview_text"));
+        List<TsContentTagCandidateDto> contentTags =
+                tsContentTagService.parseCandidates(modelJson.get("tags"));
 
         // 先落库角色主记录，再复用已有形象/声音一键能力继续完善资源与头像/音色。
         TsRole role = new TsRole();
@@ -1004,6 +992,10 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         voiceRequest.setTargetTone(targetTone);
         voiceRequest.setPreviewText(previewText);
         TsRoleOneClickVoiceGenerateVo voiceResult = generateRoleVoice(user, voiceRequest);
+        tsContentTagService.replaceTags(
+                "role", role.getId(), role.getContentVersion() + 1, null,
+                "generation", PROMPT_CODE_GENERATE_ROLE + ":" + PROMPT_VERSION,
+                contentTags, true);
         tsWorkReviewService.submitRole(role.getId(), 0);
 
         // 组装设定结果与总快照，方便前端一次拿到完整链路结果并可追溯。
@@ -1031,6 +1023,7 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         snapshot.put("settingResult", settingResult);
         snapshot.put("imageSnapshotKey", imageResult.getSnapshotKey());
         snapshot.put("voiceSnapshotKey", voiceResult.getSnapshotKey());
+        snapshot.put("tags", contentTags);
         String snapshotKey = RoleGenerateSnapshotUtil.saveSnapshot(redisTemplate, REDIS_SNAPSHOT_PREFIX, REDIS_SNAPSHOT_TTL_HOURS,
                 "generate-role", user.getId(), snapshot);
 
@@ -1044,6 +1037,8 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         vo.setPromptVersion(PROMPT_VERSION);
         vo.setRenderedPrompt(renderedPrompt);
         vo.setSnapshotKey(snapshotKey);
+        vo.setTags(contentTags);
+        vo.setTagModelVersion(PROMPT_CODE_GENERATE_ROLE + ":" + PROMPT_VERSION);
         activityProgressReporter.reportAfterCommit(
                 user == null ? null : user.getId(),
                 TsActivityConditionType.ROLE_CREATE,
@@ -1199,13 +1194,9 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         dto.normalize();
 
         TsPreset preset = pickRandomCharacterPreset();
-        List<RolePresetTagMaterial> presetTags = loadPresetTags(preset.getId());
-        Map<String, String> tagNamesByType = mergePresetTagValuesByType(presetTags, false);
-        Map<String, String> tagPromptsByType = mergePresetTagValuesByType(presetTags, true);
-
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
                 PROMPT_CODE_SETTING_PRESET, PROMPT_VERSION,
-                buildRoleSettingPresetVars(dto, preset, tagNamesByType, tagPromptsByType)
+                buildRoleSettingPresetVars(dto, preset)
         );
         TsPromptLanguageInjector.inject(promptSections);
         String renderedPrompt = promptSections.getRenderedPrompt();
@@ -1244,9 +1235,6 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         snapshot.put("presetId", preset == null ? null : preset.getId());
         snapshot.put("presetName", preset == null ? null : preset.getName());
         snapshot.put("presetDescription", preset == null ? null : preset.getDescription());
-        snapshot.put("presetTags", presetTags);
-        snapshot.put("tagNamesByType", tagNamesByType);
-        snapshot.put("tagPromptsByType", tagPromptsByType);
         snapshot.put("promptCode", PROMPT_CODE_SETTING_PRESET);
         snapshot.put("promptVersion", PROMPT_VERSION);
         snapshot.put("promptRendered", renderedPrompt);
@@ -1301,251 +1289,21 @@ public class TsRoleGenerateServiceImpl implements ITsRoleGenerateService {
         return presets.get(index);
     }
 
-    private List<RolePresetTagMaterial> loadPresetTags(String presetId) {
-        if (!StringUtils.hasText(presetId)) {
-            return new ArrayList<>();
-        }
-        QueryWrapper<TsPresetTag> relationWrapper = new QueryWrapper<>();
-        relationWrapper.eq("preset_id", presetId)
-                .orderByAsc("sort_order")
-                .orderByAsc("id");
-        List<TsPresetTag> relations = tsPresetTagMapper.selectList(relationWrapper);
-        if (relations == null || relations.isEmpty()) {
-            return new ArrayList<>();
-        }
-
-        List<String> tagIds = new ArrayList<>();
-        for (TsPresetTag relation : relations) {
-            if (relation == null || !StringUtils.hasText(relation.getTagId())) {
-                continue;
-            }
-            if (!tagIds.contains(relation.getTagId())) {
-                tagIds.add(relation.getTagId());
-            }
-        }
-        if (tagIds.isEmpty()) {
-            return new ArrayList<>();
-        }
-
-        List<TsTag> tags = tsTagMapper.selectBatchIds(tagIds);
-        Map<String, TsTag> tagMap = new HashMap<>();
-        if (tags != null) {
-            for (TsTag tag : tags) {
-                if (tag != null && StringUtils.hasText(tag.getId())) {
-                    tagMap.put(tag.getId(), tag);
-                }
-            }
-        }
-
-        List<RolePresetTagMaterial> result = new ArrayList<>();
-        for (TsPresetTag relation : relations) {
-            if (relation == null || !StringUtils.hasText(relation.getTagId())) {
-                continue;
-            }
-            TsTag tag = tagMap.get(relation.getTagId());
-            if (tag == null) {
-                continue;
-            }
-            if (tag.getEnabled() != null && tag.getEnabled() == 0) {
-                continue;
-            }
-            String scope = PromptRuntimeUtil.trimToNull(tag.getScope());
-            if (StringUtils.hasText(scope) && !PRESET_TARGET_TYPE_CHARACTER.equals(scope) && !"shared".equals(scope)) {
-                continue;
-            }
-            result.add(new RolePresetTagMaterial(
-                    relation.getId(),
-                    tag.getId(),
-                    PromptRuntimeUtil.trimToNull(tag.getTypeId()),
-                    PromptRuntimeUtil.trimToNull(tag.getName()),
-                    PromptRuntimeUtil.trimToNull(tag.getPromptText()),
-                    relation.getRequired(),
-                    relation.getWeightOverride(),
-                    relation.getSortOrder()
-            ));
-        }
-        return result;
-    }
-
-    private Map<String, String> mergePresetTagValuesByType(List<RolePresetTagMaterial> presetTags, boolean usePromptText) {
-        Map<String, LinkedHashSet<String>> grouped = new LinkedHashMap<>();
-        if (presetTags != null) {
-            for (RolePresetTagMaterial item : presetTags) {
-                if (item == null || !StringUtils.hasText(item.typeId())) {
-                    continue;
-                }
-                String value = usePromptText ? item.promptText() : item.tagName();
-                value = PromptRuntimeUtil.trimToNull(value);
-                if (!StringUtils.hasText(value)) {
-                    continue;
-                }
-                grouped.computeIfAbsent(item.typeId(), key -> new LinkedHashSet<>()).add(value);
-            }
-        }
-        Map<String, String> merged = new LinkedHashMap<>();
-        for (Map.Entry<String, LinkedHashSet<String>> entry : grouped.entrySet()) {
-            merged.put(entry.getKey(), String.join("；", entry.getValue()));
-        }
-        return merged;
-    }
-
     private Map<String, String> buildRoleSettingPresetVars(TsRoleOneClickSettingGenerateDto dto,
-                                                           TsPreset preset,
-                                                           Map<String, String> tagNamesByType,
-                                                           Map<String, String> tagPromptsByType) {
-        String presetGenderTag = PromptRuntimeUtil.firstNonBlank(
-                tagNamesByType.get(TAG_TYPE_GENDER),
-                tagPromptsByType.get(TAG_TYPE_GENDER)
-        );
-        String presetIdentity = PromptRuntimeUtil.firstNonBlank(
-                tagNamesByType.get(TAG_TYPE_IDENTITY),
-                tagPromptsByType.get(TAG_TYPE_IDENTITY)
-        );
-        String presetUserBackground = PromptRuntimeUtil.firstNonBlank(
-                tagNamesByType.get(TAG_TYPE_USER_BACKGROUND),
-                tagPromptsByType.get(TAG_TYPE_USER_BACKGROUND)
-        );
-        String presetAppearance = PromptRuntimeUtil.firstNonBlank(
-                tagNamesByType.get(TAG_TYPE_APPEARANCE),
-                tagPromptsByType.get(TAG_TYPE_APPEARANCE)
-        );
-        String presetDress = PromptRuntimeUtil.firstNonBlank(
-                tagNamesByType.get(TAG_TYPE_DRESS),
-                tagPromptsByType.get(TAG_TYPE_DRESS)
-        );
-        String presetPersonality = PromptRuntimeUtil.firstNonBlank(
-                tagNamesByType.get(TAG_TYPE_PERSONALITY),
-                tagPromptsByType.get(TAG_TYPE_PERSONALITY)
-        );
-        String presetBehavior = PromptRuntimeUtil.firstNonBlank(
-                tagNamesByType.get(TAG_TYPE_BEHAVIOR),
-                tagPromptsByType.get(TAG_TYPE_BEHAVIOR)
-        );
-        String presetSpeechStyle = PromptRuntimeUtil.firstNonBlank(
-                tagNamesByType.get(TAG_TYPE_SPEECH_STYLE),
-                tagPromptsByType.get(TAG_TYPE_SPEECH_STYLE)
-        );
-        String presetGoal = PromptRuntimeUtil.firstNonBlank(
-                tagNamesByType.get(TAG_TYPE_GOAL),
-                tagPromptsByType.get(TAG_TYPE_GOAL)
-        );
-        String presetSecret = PromptRuntimeUtil.firstNonBlank(
-                tagNamesByType.get(TAG_TYPE_SECRET),
-                tagPromptsByType.get(TAG_TYPE_SECRET)
-        );
-        String presetAbility = PromptRuntimeUtil.firstNonBlank(
-                tagNamesByType.get(TAG_TYPE_ABILITY),
-                tagPromptsByType.get(TAG_TYPE_ABILITY)
-        );
-        String presetLimitation = PromptRuntimeUtil.firstNonBlank(
-                tagNamesByType.get(TAG_TYPE_LIMITATION),
-                tagPromptsByType.get(TAG_TYPE_LIMITATION)
-        );
-        String presetGender = normalizePresetGender(PromptRuntimeUtil.firstNonBlank(
-                tagPromptsByType.get(TAG_TYPE_GENDER),
-                tagNamesByType.get(TAG_TYPE_GENDER)
-        ));
-        String presetOccupation = PromptRuntimeUtil.firstNonBlank(
-                presetIdentity
-        );
-        String presetBackgroundStory = PromptRuntimeUtil.firstNonBlank(
-                presetUserBackground
-        );
-        String presetStyleHint = joinNonBlank("；",
-                presetAppearance,
-                presetDress
-        );
-        String presetKeywords = joinNonBlank("；",
-                presetPersonality,
-                presetBehavior,
-                presetSpeechStyle,
-                presetGoal,
-                presetSecret,
-                presetAbility,
-                presetLimitation
-        );
-
+                                                           TsPreset preset) {
         Map<String, String> vars = new HashMap<>();
         vars.put("role_name", PromptRuntimeUtil.nullableToken(dto.getRoleName()));
-        vars.put("gender", PromptRuntimeUtil.nullableToken(PromptRuntimeUtil.firstNonBlank(dto.getGender(), presetGender)));
-        vars.put("gender_tag", PromptRuntimeUtil.nullableToken(presetGenderTag));
-        vars.put("identity", PromptRuntimeUtil.nullableToken(presetIdentity));
-        vars.put("occupation", PromptRuntimeUtil.nullableToken(PromptRuntimeUtil.firstNonBlank(dto.getOccupation(), presetOccupation)));
-        vars.put("user_background", PromptRuntimeUtil.nullableToken(presetUserBackground));
-        vars.put("appearance", PromptRuntimeUtil.nullableToken(presetAppearance));
-        vars.put("dress", PromptRuntimeUtil.nullableToken(presetDress));
-        vars.put("personality", PromptRuntimeUtil.nullableToken(presetPersonality));
-        vars.put("behavior", PromptRuntimeUtil.nullableToken(presetBehavior));
-        vars.put("speech_style", PromptRuntimeUtil.nullableToken(presetSpeechStyle));
-        vars.put("goal", PromptRuntimeUtil.nullableToken(presetGoal));
-        vars.put("secret", PromptRuntimeUtil.nullableToken(presetSecret));
-        vars.put("ability", PromptRuntimeUtil.nullableToken(presetAbility));
-        vars.put("limitation", PromptRuntimeUtil.nullableToken(presetLimitation));
-        vars.put("background_story", PromptRuntimeUtil.nullableToken(PromptRuntimeUtil.firstNonBlank(dto.getBackgroundStory(), presetBackgroundStory)));
+        vars.put("gender", PromptRuntimeUtil.nullableToken(dto.getGender()));
+        vars.put("occupation", PromptRuntimeUtil.nullableToken(dto.getOccupation()));
+        vars.put("background_story", PromptRuntimeUtil.nullableToken(dto.getBackgroundStory()));
         vars.put("greeting", PromptRuntimeUtil.nullableToken(dto.getGreeting()));
-        vars.put("style_hint", PromptRuntimeUtil.nullableToken(PromptRuntimeUtil.firstNonBlank(dto.getStyleHint(), presetStyleHint)));
-        vars.put("keywords", PromptRuntimeUtil.nullableToken(PromptRuntimeUtil.firstNonBlank(dto.getKeywords(), presetKeywords)));
+        vars.put("style_hint", PromptRuntimeUtil.nullableToken(dto.getStyleHint()));
+        vars.put("keywords", PromptRuntimeUtil.nullableToken(dto.getKeywords()));
+        vars.put("extra_info", PromptRuntimeUtil.nullableToken(dto.getExtraInfo()));
         vars.put("preset_name", PromptRuntimeUtil.nullableToken(preset == null ? null : preset.getName()));
         vars.put("preset_description", PromptRuntimeUtil.nullableToken(preset == null ? null : preset.getDescription()));
-        vars.put("preset_tags_by_type", PromptRuntimeUtil.nullableToken(mapToJson(tagNamesByType)));
-        vars.put("preset_prompt_by_type", PromptRuntimeUtil.nullableToken(mapToJson(tagPromptsByType)));
+        vars.putAll(tsPresetPromptVariableAdapter.buildRoleVariables(preset, dto));
         return vars;
-    }
-
-    private String normalizePresetGender(String raw) {
-        String normalized = PromptRuntimeUtil.normalizeGender(raw);
-        if (StringUtils.hasText(normalized)) {
-            return normalized;
-        }
-        String value = PromptRuntimeUtil.trimToNull(raw);
-        if (!StringUtils.hasText(value)) {
-            return null;
-        }
-        String text = value.toLowerCase();
-        if (text.contains("male") || text.contains("男")) {
-            return "male";
-        }
-        if (text.contains("female") || text.contains("女")) {
-            return "female";
-        }
-        if (text.contains("unknown") || text.contains("未知")) {
-            return "unknown";
-        }
-        return null;
-    }
-
-    private String joinNonBlank(String delimiter, String... values) {
-        if (values == null || values.length == 0) {
-            return null;
-        }
-        List<String> parts = new ArrayList<>();
-        for (String value : values) {
-            String item = PromptRuntimeUtil.trimToNull(value);
-            if (StringUtils.hasText(item) && !parts.contains(item)) {
-                parts.add(item);
-            }
-        }
-        if (parts.isEmpty()) {
-            return null;
-        }
-        return String.join(delimiter, parts);
-    }
-
-    private String mapToJson(Map<String, String> map) {
-        if (map == null || map.isEmpty()) {
-            return null;
-        }
-        return JSONObject.toJSONString(map);
-    }
-
-    private record RolePresetTagMaterial(String presetTagId,
-                                         String tagId,
-                                         String typeId,
-                                         String tagName,
-                                         String promptText,
-                                         Integer required,
-                                         Integer weightOverride,
-                                         Integer sortOrder) {
     }
 
 }

@@ -82,7 +82,10 @@
 Producer 开启幂等、`acks=all` 和 LZ4 压缩；消费者失败重试两次后进入死信 Topic。
 正式启用前必须创建 ClickHouse `ts_user_behavior_event` 表，初始化脚本为
 `docker-deploy/monolith/clickhouse/init/01_user_behavior_event.sql`。
-已有 ClickHouse 数据卷不会重复执行容器初始化脚本，需要手动执行该 SQL。
+事件 v3 会额外写入内容版本、标签 ID 和标签分数快照。已有 ClickHouse 数据卷
+不会重复执行容器初始化脚本，需要手动执行
+`docker-deploy/monolith/clickhouse/init/02_user_behavior_tag_snapshot.sql`；
+全新数据卷由 `01_user_behavior_event.sql` 直接创建完整字段。
 
 ### 7.1 Docker 部署
 - 两套 Compose 均提供 `jeecg-boot-kafka` 单节点 KRaft Broker，并与后台服务加入同一 Docker 网络。
@@ -127,6 +130,8 @@ Producer 开启幂等、`acks=all` 和 LZ4 压缩；消费者失败重试两次�
 - ClickHouse 不参与当前 Flyway、Quartz、MySQL 本地事务和主数据源健康判断。
 - 各环境都会注册 ClickHouse 数据源；服务不可达时，首次执行 `@DS("clickhouse")` 查询会失败。
 - 业务行为明细表由 `docker-deploy/monolith/clickhouse/init/01_user_behavior_event.sql` 初始化；
+  已有行为表通过 `docker-deploy/monolith/clickhouse/init/02_user_behavior_tag_snapshot.sql`
+  增加 `content_version/tag_ids/tag_scores`；
   其他分析表、冷热分层和集群高可用仍需按具体场景另行设计。
 
 ## 10. 2026-08-29 Postiz 共享基础设施

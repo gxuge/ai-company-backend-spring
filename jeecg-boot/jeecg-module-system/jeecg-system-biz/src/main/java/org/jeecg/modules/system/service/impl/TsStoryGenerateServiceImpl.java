@@ -23,22 +23,20 @@ import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneImageGenerateDto
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSceneGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStoryOneClickSettingGenerateDto;
 import org.jeecg.modules.system.dto.tsstory.TsStorySceneImagePromptOptimizeDto;
+import org.jeecg.modules.system.dto.tscontenttag.TsContentTagCandidateDto;
 import org.jeecg.modules.system.entity.TsPreset;
-import org.jeecg.modules.system.entity.TsPresetTag;
-import org.jeecg.modules.system.entity.TsTag;
 import org.jeecg.modules.system.enums.tsactivity.TsActivityConditionType;
 import org.jeecg.modules.system.enums.tsbehavior.TsBehaviorEventType;
 import org.jeecg.modules.system.mapper.TsPresetMapper;
-import org.jeecg.modules.system.mapper.TsPresetTagMapper;
-import org.jeecg.modules.system.mapper.TsTagMapper;
 import org.jeecg.modules.system.monitor.TsMultimodalUsageRecorder;
 import org.jeecg.modules.system.service.ITsStoryGenerateService;
+import org.jeecg.modules.system.service.ITsContentTagService;
 import org.jeecg.modules.system.util.PromptRuntimeUtil;
+import org.jeecg.modules.system.util.TsPresetPromptVariableAdapter;
 import org.jeecg.modules.system.util.TsPromptLanguageInjector;
 import org.jeecg.modules.system.util.TsResponseLanguageSupport;
 import org.jeecg.modules.system.util.StoryGenerateSnapshotUtil;
 import org.jeecg.modules.system.util.StoryPromptGenerateUtil;
-import org.jeecg.modules.system.vo.tsstory.TsStoryFullGeneratePresetTagVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryFullGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineChapterVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineGenerateVo;
@@ -51,13 +49,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.util.HashMap;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
  * 故事生成服务实现。
@@ -91,18 +86,6 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     private static final String PROMPT_CODE_STORY_PLOT_OUTLINE_OPTIMIZE = "story_plot_outline_optimize";
     private static final String PROMPT_CODE_STORY_FULL_PRESET = "story_core_fill_preset";
     private static final String PROMPT_VERSION_STORY_FULL_PRESET = "v2";
-    private static final String TAG_TYPE_TITLE = "title";
-    private static final String TAG_TYPE_NARRATIVE_STYLE = "narrative_style";
-    private static final String TAG_TYPE_STORY_BACKGROUND = "story_background";
-    private static final String TAG_TYPE_USER_ROLE = "user_role";
-    private static final String TAG_TYPE_STORY_RULE = "story_rule";
-    private static final String TAG_TYPE_BOUNDARY_RULE = "boundary_rule";
-    private static final String TAG_TYPE_LOCATION = "location";
-    private static final String TAG_TYPE_TIME_PERIOD = "time_period";
-    private static final String TAG_TYPE_PLOT_HOOK = "plot_hook";
-    private static final String TAG_TYPE_CONFLICT = "conflict";
-    private static final String TAG_TYPE_PROGRESSION_MODE = "progression_mode";
-
     @Resource
     private IPromptChatService promptChatService;
     @Resource
@@ -118,15 +101,15 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
     @Resource
     private TsPresetMapper tsPresetMapper;
     @Resource
-    private TsPresetTagMapper tsPresetTagMapper;
-    @Resource
-    private TsTagMapper tsTagMapper;
+    private TsPresetPromptVariableAdapter tsPresetPromptVariableAdapter;
     @Resource
     private ToolcallJsonRepairService toolcallJsonRepairService;
     @Resource
     private TsActivityProgressReporter activityProgressReporter;
     @Resource
     private TsBehaviorEventReporter behaviorEventReporter;
+    @Resource
+    private ITsContentTagService tsContentTagService;
 
     /**
      * 生成故事设定（标题/简介/模式/设定/背景）。
@@ -603,6 +586,8 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         String plotOutlineText = PromptRuntimeUtil.firstNonBlank(
                 PromptRuntimeUtil.trimToNull(modelJson.getString("plot_outline")),
                 dto.getPlotOutline());
+        List<TsContentTagCandidateDto> contentTags =
+                tsContentTagService.parseCandidates(modelJson.get("tags"));
 
         saveStoryFullSnapshot(user, renderedPrompt, modelJson, title, storyMode, storyIntro, storySettingText, siteSettingText, plotOutlineText);
 
@@ -613,6 +598,8 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         vo.setStorySetting(storySettingText);
         vo.setSiteSetting(siteSettingText);
         vo.setPlotOutline(plotOutlineText);
+        vo.setTags(contentTags);
+        vo.setTagModelVersion(PROMPT_CODE_STORY_FULL + ":" + PROMPT_VERSION_V2);
         return vo;
     }
 
@@ -625,12 +612,10 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         dto.normalize();
 
         TsPreset preset = pickRandomStoryPreset();
-        List<TsStoryFullGeneratePresetTagVo> presetTags = loadPresetTags(preset.getId());
-        Map<String, String> tagsByType = mergeTagsByType(presetTags);
 
         PromptRenderedSectionsVo promptSections = promptRenderService.renderPromptSections(
                 PROMPT_CODE_STORY_FULL_PRESET, PROMPT_VERSION_STORY_FULL_PRESET,
-                buildStoryFullPresetVars(dto, preset, tagsByType)
+                buildStoryFullPresetVars(dto, preset)
         );
         TsPromptLanguageInjector.inject(promptSections);
         String renderedPrompt = promptSections.getRenderedPrompt();
@@ -655,8 +640,10 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         String plotOutlineText = PromptRuntimeUtil.firstNonBlank(
                 PromptRuntimeUtil.trimToNull(modelJson.getString("plot_outline")),
                 dto.getPlotOutline());
+        List<TsContentTagCandidateDto> contentTags =
+                tsContentTagService.parseCandidates(modelJson.get("tags"));
 
-        String snapshotKey = saveStoryFullPresetSnapshot(user, preset, presetTags, tagsByType, renderedPrompt, modelJson,
+        String snapshotKey = saveStoryFullPresetSnapshot(user, preset, renderedPrompt, modelJson,
                 title, storyMode, storyIntro, storySettingText, siteSettingText, plotOutlineText);
 
         TsStoryFullGenerateVo vo = new TsStoryFullGenerateVo();
@@ -666,13 +653,13 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         vo.setStorySetting(storySettingText);
         vo.setSiteSetting(siteSettingText);
         vo.setPlotOutline(plotOutlineText);
+        vo.setTags(contentTags);
+        vo.setTagModelVersion(PROMPT_CODE_STORY_FULL_PRESET + ":" + PROMPT_VERSION_STORY_FULL_PRESET);
         return vo;
     }
 
     private String saveStoryFullPresetSnapshot(LoginUser user,
                                                TsPreset preset,
-                                               List<TsStoryFullGeneratePresetTagVo> presetTags,
-                                               Map<String, String> tagsByType,
                                                String renderedPrompt,
                                                JSONObject modelJson,
                                                String title,
@@ -686,8 +673,6 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         snapshot.put("presetId", preset == null ? null : preset.getId());
         snapshot.put("presetName", preset == null ? null : preset.getName());
         snapshot.put("presetDescription", preset == null ? null : preset.getDescription());
-        snapshot.put("tagsByType", tagsByType);
-        snapshot.put("presetTags", presetTags);
         snapshot.put("promptRendered", renderedPrompt);
         snapshot.put("rawResponse", modelJson == null ? null : modelJson.toJSONString());
         snapshot.put("title", title);
@@ -739,97 +724,19 @@ public class TsStoryGenerateServiceImpl implements ITsStoryGenerateService {
         return presets.get(index);
     }
 
-    private List<TsStoryFullGeneratePresetTagVo> loadPresetTags(String presetId) {
-        if (!StringUtils.hasText(presetId)) {
-            return new ArrayList<>();
-        }
-        QueryWrapper<TsPresetTag> relationWrapper = new QueryWrapper<>();
-        relationWrapper.eq("preset_id", presetId)
-                .orderByAsc("sort_order")
-                .orderByAsc("id");
-        List<TsPresetTag> relations = tsPresetTagMapper.selectList(relationWrapper);
-        if (relations == null || relations.isEmpty()) {
-            return new ArrayList<>();
-        }
-        List<String> tagIds = relations.stream()
-                .map(TsPresetTag::getTagId)
-                .filter(StringUtils::hasText)
-                .distinct()
-                .collect(Collectors.toList());
-        if (tagIds.isEmpty()) {
-            return new ArrayList<>();
-        }
-        List<TsTag> tags = tsTagMapper.selectBatchIds(tagIds);
-        Map<String, TsTag> tagMap = new HashMap<>();
-        if (tags != null) {
-            for (TsTag tag : tags) {
-                if (tag != null && StringUtils.hasText(tag.getId())) {
-                    tagMap.put(tag.getId(), tag);
-                }
-            }
-        }
-        List<TsStoryFullGeneratePresetTagVo> result = new ArrayList<>();
-        for (TsPresetTag relation : relations) {
-            if (relation == null || !StringUtils.hasText(relation.getTagId())) {
-                continue;
-            }
-            TsTag tag = tagMap.get(relation.getTagId());
-            if (tag == null) {
-                continue;
-            }
-            TsStoryFullGeneratePresetTagVo vo = new TsStoryFullGeneratePresetTagVo();
-            vo.setPresetTagId(relation.getId());
-            vo.setTagId(tag.getId());
-            vo.setTypeId(tag.getTypeId());
-            vo.setTagName(tag.getName());
-            vo.setPromptText(tag.getPromptText());
-            vo.setRequired(relation.getRequired());
-            vo.setWeightOverride(relation.getWeightOverride());
-            vo.setSortOrder(relation.getSortOrder());
-            result.add(vo);
-        }
-        return result;
-    }
-
-    private Map<String, String> mergeTagsByType(List<TsStoryFullGeneratePresetTagVo> presetTags) {
-        Map<String, LinkedHashSet<String>> grouped = new HashMap<>();
-        if (presetTags != null) {
-            for (TsStoryFullGeneratePresetTagVo item : presetTags) {
-                if (item == null) {
-                    continue;
-                }
-                String typeId = PromptRuntimeUtil.trimToNull(item.getTypeId());
-                String tagName = PromptRuntimeUtil.trimToNull(item.getTagName());
-                if (!StringUtils.hasText(typeId) || !StringUtils.hasText(tagName)) {
-                    continue;
-                }
-                grouped.computeIfAbsent(typeId, key -> new LinkedHashSet<>()).add(tagName);
-            }
-        }
-        Map<String, String> merged = new HashMap<>();
-        for (Map.Entry<String, LinkedHashSet<String>> entry : grouped.entrySet()) {
-            merged.put(entry.getKey(), String.join(", ", entry.getValue()));
-        }
-        return merged;
-    }
-
     private Map<String, String> buildStoryFullPresetVars(TsStoryFullGenerateDto dto,
-                                                         TsPreset preset,
-                                                         Map<String, String> tagsByType) {
+                                                         TsPreset preset) {
         Map<String, String> vars = new HashMap<>();
         vars.put("preset_name", PromptRuntimeUtil.nullableToken(preset == null ? null : preset.getName()));
         vars.put("preset_description", PromptRuntimeUtil.nullableToken(preset == null ? null : preset.getDescription()));
-        vars.put("title", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_TITLE)));
-        vars.put("narrative_style", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_NARRATIVE_STYLE)));
-        vars.put("story_background", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_STORY_BACKGROUND)));
-        vars.put("user_role", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_USER_ROLE)));
-        vars.put("story_rule", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_STORY_RULE)));
-        vars.put("boundary_rule", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_BOUNDARY_RULE)));
-        vars.put("location", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_LOCATION)));
-        vars.put("time_period", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_TIME_PERIOD)));
-        vars.put("plot_hook", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_PLOT_HOOK)));
-        vars.put("conflict", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_CONFLICT)));
-        vars.put("progression_mode", PromptRuntimeUtil.nullableToken(tagsByType.get(TAG_TYPE_PROGRESSION_MODE)));
+        vars.put("title", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getTitle()));
+        vars.put("story_mode", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getStoryMode()));
+        vars.put("story_intro", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getStoryIntro()));
+        vars.put("story_setting", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getStorySetting()));
+        vars.put("site_setting", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getSiteSetting()));
+        vars.put("plot_outline", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getPlotOutline()));
+        vars.put("extra_info", PromptRuntimeUtil.nullableToken(dto == null ? null : dto.getExtraInfo()));
+        vars.putAll(tsPresetPromptVariableAdapter.buildStoryVariables(preset, dto));
         return vars;
     }
 

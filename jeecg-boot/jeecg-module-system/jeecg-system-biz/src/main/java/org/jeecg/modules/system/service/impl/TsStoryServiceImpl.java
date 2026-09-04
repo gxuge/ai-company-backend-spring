@@ -33,6 +33,7 @@ import org.jeecg.modules.system.po.tsstory.TsStoryQueryPo;
 import org.jeecg.modules.system.po.tsstory.TsStorySavePo;
 import org.jeecg.modules.system.service.ITsStoryGenerateService;
 import org.jeecg.modules.system.service.ITsStoryService;
+import org.jeecg.modules.system.service.ITsContentTagService;
 import org.jeecg.modules.system.service.ITsWorkReviewService;
 import org.jeecg.modules.system.vo.tsstory.TsStoryFullGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickOutlineGenerateVo;
@@ -42,6 +43,7 @@ import org.jeecg.modules.system.vo.tsstory.TsStoryOneClickSettingGenerateVo;
 import org.jeecg.modules.system.vo.tsstory.TsStorySceneImagePromptOptimizeVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryVo;
 import org.jeecg.modules.system.vo.tsstory.TsStoryVoConverter;
+import org.jeecg.modules.system.vo.tscontenttag.TsContentTagDisplayVo;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,6 +52,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
@@ -72,6 +75,8 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
     private ITsStoryGenerateService tsStoryGenerateService;
     @Resource
     private ITsWorkReviewService tsWorkReviewService;
+    @Resource
+    private ITsContentTagService tsContentTagService;
     @Resource
     private TsActivityProgressReporter activityProgressReporter;
     @Resource
@@ -116,7 +121,9 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
             }
         }
 
-        return Result.OK(TsStoryVoConverter.fromPage(pageData, statMap, roleRelMap));
+        Page<TsStoryVo> voPage = TsStoryVoConverter.fromPage(pageData, statMap, roleRelMap);
+        enrichStoryTags(voPage.getRecords());
+        return Result.OK(voPage);
     }
     @Override
     @CheckTsStoryOwnership(message = "故事不存在或无权限访问")
@@ -124,7 +131,7 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
         TsStory story = TsStoryOwnershipAspect.STORY_CONTEXT.get();
         TsStoryStat stat = tsStoryStatMapper.selectById(story.getId());
         List<TsStoryRoleRel> roleRelList = tsStoryRoleRelMapper.selectByStoryId(story.getId());
-        return Result.OK(TsStoryVoConverter.fromEntity(story, stat, roleRelList));
+        return Result.OK(enrichStoryTags(TsStoryVoConverter.fromEntity(story, stat, roleRelList)));
     }
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -178,6 +185,9 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
             }
         }
 
+        tsContentTagService.replaceTags(
+                "story", story.getId(), story.getContentVersion() + 1, null,
+                "generation", request.getTagModelVersion(), request.getTags(), true);
         List<TsStoryRoleRel> roleRelList = tsStoryRoleRelMapper.selectByStoryId(story.getId());
         tsWorkReviewService.submitStory(story.getId(), request.getIsPublic());
         activityProgressReporter.reportAfterCommit(
@@ -190,8 +200,8 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
                 "story",
                 story.getId(),
                 Map.of());
-        return Result.OK("创建成功", TsStoryVoConverter.fromEntity(
-                this.getById(story.getId()), stat, roleRelList));
+        return Result.OK("创建成功", enrichStoryTags(TsStoryVoConverter.fromEntity(
+                this.getById(story.getId()), stat, roleRelList)));
     }
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -236,11 +246,14 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
             }
         }
 
+        tsContentTagService.replaceTags(
+                "story", story.getId(), story.getContentVersion() + 1, null,
+                "generation", request.getTagModelVersion(), request.getTags(), true);
         TsStoryStat stat = tsStoryStatMapper.selectById(story.getId());
         List<TsStoryRoleRel> roleRelList = tsStoryRoleRelMapper.selectByStoryId(story.getId());
         tsWorkReviewService.submitStory(story.getId(), requestedPublic);
-        return Result.OK("更新成功", TsStoryVoConverter.fromEntity(
-                this.getById(story.getId()), stat, roleRelList));
+        return Result.OK("更新成功", enrichStoryTags(TsStoryVoConverter.fromEntity(
+                this.getById(story.getId()), stat, roleRelList)));
     }
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -260,6 +273,34 @@ public class TsStoryServiceImpl extends ServiceImpl<TsStoryMapper, TsStory> impl
         tsStoryChapterMapper.logicDeleteByStoryId(story.getId());
         tsStoryRoleRelMapper.deleteByStoryId(story.getId());
         return Result.OK("删除成功");
+    }
+
+    /** 为故事响应批量补充当前内容版本标签。 */
+    private void enrichStoryTags(List<TsStoryVo> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        Map<Long, Integer> versions = new LinkedHashMap<>();
+        for (TsStoryVo item : records) {
+            if (item != null && item.getId() != null && item.getContentVersion() != null) {
+                versions.put(item.getId(), item.getContentVersion());
+            }
+        }
+        Map<Long, List<TsContentTagDisplayVo>> tags =
+                tsContentTagService.findCurrentDisplayTags("story", versions);
+        for (TsStoryVo item : records) {
+            if (item != null) {
+                item.setTags(tags.getOrDefault(item.getId(), List.of()));
+            }
+        }
+    }
+
+    /** 为单个故事响应补充当前内容版本标签。 */
+    private TsStoryVo enrichStoryTags(TsStoryVo item) {
+        if (item != null) {
+            enrichStoryTags(List.of(item));
+        }
+        return item;
     }
 
     @Override

@@ -4,6 +4,7 @@ import lombok.Data;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import org.jeecg.modules.system.dto.tscontenttag.TsContentTagCandidateDto;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,6 +32,11 @@ public class TsStorySaveDto {
     private Integer isAiOutline;
     private String plotOutline;
     private List<TsStoryRoleBindingDto> roleBindings;
+    /** AI 生成阶段返回的候选内容标签。 */
+    private List<TsContentTagCandidateDto> tags;
+    /** 生成候选标签所使用的模型或提示词版本。 */
+    private String tagModelVersion;
+
     public void applyCreateDefaults() {
         if (this.storyMode == null || this.storyMode.trim().isEmpty()) {
             this.storyMode = "chapter";

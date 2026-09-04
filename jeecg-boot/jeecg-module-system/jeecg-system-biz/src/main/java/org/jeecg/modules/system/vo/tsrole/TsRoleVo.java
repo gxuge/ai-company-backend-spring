@@ -1,9 +1,11 @@
 package org.jeecg.modules.system.vo.tsrole;
 
 import lombok.Data;
+import org.jeecg.modules.system.vo.tscontenttag.TsContentTagDisplayVo;
 import org.jeecg.modules.system.vo.tsimage.TsImageResourceVo;
 
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 @Data
 public class TsRoleVo {
@@ -35,5 +37,6 @@ public class TsRoleVo {
     private Integer desiredPublic;
     private Date createdAt;
     private Date updatedAt;
+    private List<TsContentTagDisplayVo> tags;
     private Map<String, TsImageResourceVo> imageResources;
 }

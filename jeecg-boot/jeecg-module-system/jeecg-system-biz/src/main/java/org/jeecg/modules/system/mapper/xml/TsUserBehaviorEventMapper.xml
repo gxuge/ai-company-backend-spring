@@ -6,11 +6,15 @@
     <insert id="insertEvent">
         INSERT INTO ts_user_behavior_event (
             event_id, event_type, event_version, user_id,
-            session_id, resource_type, resource_id, page_path, platform, properties_json,
+            session_id, resource_type, resource_id, content_version, tag_ids, tag_scores,
+            page_path, platform, properties_json,
             occurred_at, received_at, created_at
         ) VALUES (
             #{eventId}, #{eventType}, #{eventVersion}, #{userId},
-            #{sessionId}, #{resourceType}, #{resourceId}, #{pagePath}, #{platform}, #{propertiesJson},
+            #{sessionId}, #{resourceType}, #{resourceId}, #{contentVersion},
+            [<foreach collection="tagIds" item="tagId" separator=",">#{tagId}</foreach>],
+            [<foreach collection="tagScores" item="tagScore" separator=",">#{tagScore}</foreach>],
+            #{pagePath}, #{platform}, #{propertiesJson},
             #{occurredAt}, #{receivedAt}, #{createdAt}
         )
     </insert>

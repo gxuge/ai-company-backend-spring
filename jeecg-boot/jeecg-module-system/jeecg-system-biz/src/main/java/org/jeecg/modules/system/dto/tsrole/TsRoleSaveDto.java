@@ -4,6 +4,9 @@ import lombok.Data;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import org.jeecg.modules.system.dto.tscontenttag.TsContentTagCandidateDto;
+
+import java.util.List;
 @Data
 public class TsRoleSaveDto {
     public interface Create {}
@@ -31,6 +34,11 @@ public class TsRoleSaveDto {
     private Integer basicAiGenerated;
     private Integer advancedAiGenerated;
     private Integer status;
+    /** AI 生成阶段返回的候选内容标签。 */
+    private List<TsContentTagCandidateDto> tags;
+    /** 生成候选标签所使用的模型或提示词版本。 */
+    private String tagModelVersion;
+
     public void applyCreateDefaults() {
         if (this.status == null) {
             this.status = 1;

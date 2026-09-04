@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.system.behavior.TsBehaviorEventPublisher;
+import org.jeecg.modules.system.behavior.TsBehaviorTagSnapshotEnricher;
 import org.jeecg.modules.system.config.TsBehaviorConfigBean;
 import org.jeecg.modules.system.dto.tsbehavior.TsBehaviorEventDto;
 import org.jeecg.modules.system.enums.tsbehavior.TsBehaviorEventType;
@@ -31,15 +32,18 @@ public class TsBehaviorEventServiceImpl implements ITsBehaviorEventService {
     private static final long MAX_EVENT_FUTURE_MILLIS = 5L * 60 * 1000;
 
     private final TsBehaviorEventPublisher publisher;
+    private final TsBehaviorTagSnapshotEnricher tagSnapshotEnricher;
     private final TsBehaviorConfigBean config;
     private final ObjectMapper objectMapper;
 
     /** 注入消息发布器、配置和JSON组件。 */
     public TsBehaviorEventServiceImpl(
             TsBehaviorEventPublisher publisher,
+            TsBehaviorTagSnapshotEnricher tagSnapshotEnricher,
             TsBehaviorConfigBean config,
             ObjectMapper objectMapper) {
         this.publisher = publisher;
+        this.tagSnapshotEnricher = tagSnapshotEnricher;
         this.config = config;
         this.objectMapper = objectMapper;
     }
@@ -66,6 +70,7 @@ public class TsBehaviorEventServiceImpl implements ITsBehaviorEventService {
         for (TsBehaviorEventDto request : events) {
             messages.add(toMessage(loginUser.getId(), request, receivedAt));
         }
+        tagSnapshotEnricher.enrich(messages);
         for (TsBehaviorEventMessage message : messages) {
             publisher.publish(message);
         }
@@ -94,8 +99,7 @@ public class TsBehaviorEventServiceImpl implements ITsBehaviorEventService {
         return new TsBehaviorEventMessage()
                 .setEventId(request.getEventId().trim())
                 .setEventType(eventType.getCode())
-                .setEventVersion(request.getEventVersion() == null
-                        ? 2 : request.getEventVersion())
+                .setEventVersion(3)
                 .setUserId(userId)
                 .setSessionId(request.getSessionId().trim())
                 .setResourceType(text(request.getResourceType()))
@@ -122,6 +126,8 @@ public class TsBehaviorEventServiceImpl implements ITsBehaviorEventService {
                 requireRoleOrStoryResource(request);
                 requireProperties(request, Collections.emptySet(), Collections.emptySet());
             }
+            case UNFAVORITE ->
+                    throw new JeecgBootException("取消收藏事件只能由后端业务成功点上报");
             case IMPRESSION -> {
                 requireRoleOrStoryResource(request);
                 requireProperties(

@@ -22,7 +22,6 @@
     </template>
   </BasicTable>
 
-  <AiTagsDrawer @register="tagsDrawerRegister" />
   <AiPresetsModal @register="registerModal" @success="reload" />
 </template>
 
@@ -30,14 +29,11 @@
   import { BasicTable, TableAction } from '/@/components/Table';
   import { useListPage } from '/@/hooks/system/useListPage';
   import { useModal } from '/@/components/Modal';
-  import { useDrawer } from '/@/components/Drawer';
   import { presetColumns, presetSearchFormSchema } from './AiPresets.data';
   import { listPresets, deletePreset, batchDeletePreset } from './AiPresets.api';
   import AiPresetsModal from './components/AiPresetsModal.vue';
-  import AiTagsDrawer from './components/AiTagsDrawer.vue';
 
   const [registerModal, { openModal }] = useModal();
-  const [tagsDrawerRegister, { openDrawer: openTagsDrawer }] = useDrawer();
 
   const { tableContext } = useListPage({
     tableProps: {
@@ -94,25 +90,17 @@
     await batchDeletePreset({ ids: selectedRowKeys.value }, reload);
   }
 
-  function handleTags(record: Recordable) {
-    openTagsDrawer(true, record);
-  }
-
   function getTableAction(record) {
     return [
       {
-        label: '标签',
-        onClick: handleTags.bind(null, record),
+        label: '编辑',
+        onClick: handleEdit.bind(null, record),
       },
     ];
   }
 
   function getDropDownAction(record) {
     return [
-      {
-        label: '编辑',
-        onClick: handleEdit.bind(null, record),
-      },
       {
         label: '详情',
         onClick: handleDetail.bind(null, record),
@@ -127,4 +115,3 @@
     ];
   }
 </script>
-

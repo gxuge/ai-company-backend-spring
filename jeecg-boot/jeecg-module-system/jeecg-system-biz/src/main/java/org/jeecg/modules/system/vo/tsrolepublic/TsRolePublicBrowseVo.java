@@ -1,9 +1,11 @@
 package org.jeecg.modules.system.vo.tsrolepublic;
 
 import lombok.Data;
+import org.jeecg.modules.system.vo.tscontenttag.TsContentTagDisplayVo;
 import org.jeecg.modules.system.vo.tsimage.TsImageResourceVo;
 
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -55,6 +57,10 @@ public class TsRolePublicBrowseVo {
     private Long followerCount;
     /** 对话数量。 */
     private Long dialogueCount;
+    /** 内容版本。 */
+    private Integer contentVersion;
+    /** 当前版本展示标签。 */
+    private List<TsContentTagDisplayVo> tags;
     /** 更新时间。 */
     private Date updatedAt;
     /** 统一图片语义资源。 */

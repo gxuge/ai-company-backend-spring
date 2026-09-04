@@ -12,12 +12,6 @@ enum PresetApi {
   deleteBatch = '/sys/tsPreset/deleteBatch',
 }
 
-enum PresetTagApi {
-  tagList = '/sys/tsTag/list',
-  tagTypeList = '/sys/tsTagType/list',
-  tagRelationList = '/sys/tsTagRelation/list',
-  addTag = '/sys/tsTag/add',
-}
 export const listPresets = (params) => defHttp.get({ url: PresetApi.list, params });
 
 export const queryPresetById = (params) =>
@@ -42,9 +36,3 @@ export const batchDeletePreset = (params, handleSuccess) => {
         .then(() => handleSuccess()),
   });
 };
-
-export const listTags = (params) => defHttp.get({ url: PresetTagApi.tagList, params });
-export const listTagTypes = (params) => defHttp.get({ url: PresetTagApi.tagTypeList, params });
-export const listTagRelations = (params) => defHttp.get({ url: PresetTagApi.tagRelationList, params });
-
-export const addTagForPreset = (params) => defHttp.post({ url: PresetTagApi.addTag, params });

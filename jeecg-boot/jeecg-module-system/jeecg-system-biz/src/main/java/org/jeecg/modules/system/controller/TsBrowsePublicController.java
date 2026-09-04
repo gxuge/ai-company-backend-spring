@@ -11,6 +11,8 @@ import org.jeecg.modules.system.dto.tsstorypublic.TsStoryPublicBrowseQueryDto;
 import org.jeecg.modules.system.mapper.TsRoleImageProfileMapper;
 import org.jeecg.modules.system.mapper.TsRolePublicMapper;
 import org.jeecg.modules.system.mapper.TsStoryPublicMapper;
+import org.jeecg.modules.system.service.ITsContentTagService;
+import org.jeecg.modules.system.vo.tscontenttag.TsContentTagDisplayVo;
 import org.jeecg.modules.system.vo.tsimage.TsImageResourceResolver;
 import org.jeecg.modules.system.vo.tsroleimageprofile.TsRoleImageProfilePublicVo;
 import org.jeecg.modules.system.vo.tsrolepublic.TsRolePublicBrowseVo;
@@ -21,7 +23,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Tag(name = "Browse public APIs")
@@ -37,13 +41,16 @@ public class TsBrowsePublicController {
     private final TsStoryPublicMapper tsStoryPublicMapper;
     private final TsRolePublicMapper tsRolePublicMapper;
     private final TsRoleImageProfileMapper tsRoleImageProfileMapper;
+    private final ITsContentTagService tsContentTagService;
 
     public TsBrowsePublicController(TsStoryPublicMapper tsStoryPublicMapper,
                                     TsRolePublicMapper tsRolePublicMapper,
-                                    TsRoleImageProfileMapper tsRoleImageProfileMapper) {
+                                    TsRoleImageProfileMapper tsRoleImageProfileMapper,
+                                    ITsContentTagService tsContentTagService) {
         this.tsStoryPublicMapper = tsStoryPublicMapper;
         this.tsRolePublicMapper = tsRolePublicMapper;
         this.tsRoleImageProfileMapper = tsRoleImageProfileMapper;
+        this.tsContentTagService = tsContentTagService;
     }
 
     @Operation(summary = "Public story feed")
@@ -125,11 +132,38 @@ public class TsBrowsePublicController {
             return;
         }
         for (TsStoryPublicBrowseVo item : records) {
-            enrichStoryBrowse(item);
+            enrichStoryBrowseImage(item);
+        }
+        Map<Long, Integer> versions = new LinkedHashMap<>();
+        for (TsStoryPublicBrowseVo item : records) {
+            if (item != null && item.getId() != null && item.getContentVersion() != null) {
+                versions.put(item.getId(), item.getContentVersion());
+            }
+        }
+        Map<Long, List<TsContentTagDisplayVo>> tags =
+                tsContentTagService.findCurrentDisplayTags("story", versions);
+        for (TsStoryPublicBrowseVo item : records) {
+            if (item != null) {
+                item.setTags(tags.getOrDefault(item.getId(), List.of()));
+            }
         }
     }
 
     private void enrichStoryBrowse(TsStoryPublicBrowseVo item) {
+        if (item == null) {
+            return;
+        }
+        enrichStoryBrowseImage(item);
+        if (item.getId() == null || item.getContentVersion() == null) {
+            item.setTags(List.of());
+            return;
+        }
+        item.setTags(tsContentTagService.findCurrentDisplayTags(
+                "story", Map.of(item.getId(), item.getContentVersion()))
+                .getOrDefault(item.getId(), List.of()));
+    }
+
+    private void enrichStoryBrowseImage(TsStoryPublicBrowseVo item) {
         if (item == null) {
             return;
         }
@@ -145,11 +179,38 @@ public class TsBrowsePublicController {
             return;
         }
         for (TsRolePublicBrowseVo item : records) {
-            enrichRoleBrowse(item);
+            enrichRoleBrowseImage(item);
+        }
+        Map<Long, Integer> versions = new LinkedHashMap<>();
+        for (TsRolePublicBrowseVo item : records) {
+            if (item != null && item.getId() != null && item.getContentVersion() != null) {
+                versions.put(item.getId(), item.getContentVersion());
+            }
+        }
+        Map<Long, List<TsContentTagDisplayVo>> tags =
+                tsContentTagService.findCurrentDisplayTags("role", versions);
+        for (TsRolePublicBrowseVo item : records) {
+            if (item != null) {
+                item.setTags(tags.getOrDefault(item.getId(), List.of()));
+            }
         }
     }
 
     private void enrichRoleBrowse(TsRolePublicBrowseVo item) {
+        if (item == null) {
+            return;
+        }
+        enrichRoleBrowseImage(item);
+        if (item.getId() == null || item.getContentVersion() == null) {
+            item.setTags(List.of());
+            return;
+        }
+        item.setTags(tsContentTagService.findCurrentDisplayTags(
+                "role", Map.of(item.getId(), item.getContentVersion()))
+                .getOrDefault(item.getId(), List.of()));
+    }
+
+    private void enrichRoleBrowseImage(TsRolePublicBrowseVo item) {
         if (item == null) {
             return;
         }

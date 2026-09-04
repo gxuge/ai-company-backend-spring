@@ -1,0 +1,178 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsUserResourceLikeMapper">
+
+    <!-- 分页查询当前用户仍可访问的角色与故事点赞 -->
+    <select id="selectLikePage"
+            resultType="org.jeecg.modules.system.vo.tsuserresourcelike.TsUserResourceLikeVo">
+        SELECT
+            like_data.likeId,
+            like_data.resourceType,
+            like_data.resourceId,
+            like_data.publicId,
+            like_data.channelCode,
+            like_data.title,
+            like_data.coverUrl,
+            like_data.avatarUrl,
+            like_data.sceneImageUrl,
+            like_data.authorName,
+            like_data.authorAvatar,
+            like_data.likedAt
+        FROM (
+            <if test="query.resourceType == null or query.resourceType == 'role'">
+                SELECT
+                    l.id AS likeId,
+                    l.resource_type AS resourceType,
+                    l.resource_id AS resourceId,
+                    rp.id AS publicId,
+                    rp.channel_code AS channelCode,
+                    COALESCE(NULLIF(rp.display_title, ''), r.role_name) AS title,
+                    COALESCE(NULLIF(rp.cover_image_url, ''), r.cover_url) AS coverUrl,
+                    r.avatar_url AS avatarUrl,
+                    NULL AS sceneImageUrl,
+                    COALESCE(NULLIF(u.realname, ''), u.username) AS authorName,
+                    u.avatar AS authorAvatar,
+                    l.created_at AS likedAt
+                FROM ts_user_resource_like l
+                INNER JOIN ts_role_info r ON r.id = l.resource_id
+                INNER JOIN ts_role_public rp ON rp.id = (
+                    SELECT rp2.id
+                    FROM ts_role_public rp2
+                    WHERE rp2.role_id = r.id
+                      AND rp2.status = 'online'
+                    ORDER BY rp2.sort_order ASC, rp2.published_at DESC, rp2.id DESC
+                    LIMIT 1
+                )
+                LEFT JOIN sys_user u ON u.id = r.user_id
+                WHERE l.user_id = #{query.userId}
+                  AND l.resource_type = 'role'
+                  AND l.status = 1
+                  AND (r.status IS NULL OR r.status != 0)
+                <if test="query.keyword != null and query.keyword != ''">
+                    AND (
+                        r.role_name LIKE CONCAT('%', #{query.keyword}, '%')
+                        OR rp.display_title LIKE CONCAT('%', #{query.keyword}, '%')
+                    )
+                </if>
+            </if>
+            <if test="query.resourceType == null">
+                UNION ALL
+            </if>
+            <if test="query.resourceType == null or query.resourceType == 'story'">
+                SELECT
+                    l.id AS likeId,
+                    l.resource_type AS resourceType,
+                    l.resource_id AS resourceId,
+                    sp.id AS publicId,
+                    sp.channel_code AS channelCode,
+                    COALESCE(NULLIF(sp.display_title, ''), s.title) AS title,
+                    COALESCE(NULLIF(sp.cover_image_url, ''), s.cover_url) AS coverUrl,
+                    NULL AS avatarUrl,
+                    s.scene_image_url AS sceneImageUrl,
+                    COALESCE(NULLIF(u.realname, ''), u.username) AS authorName,
+                    u.avatar AS authorAvatar,
+                    l.created_at AS likedAt
+                FROM ts_user_resource_like l
+                INNER JOIN ts_story_info s ON s.id = l.resource_id
+                INNER JOIN ts_story_public sp ON sp.id = (
+                    SELECT sp2.id
+                    FROM ts_story_public sp2
+                    WHERE sp2.story_id = s.id
+                      AND sp2.status = 'online'
+                    ORDER BY sp2.sort_order ASC, sp2.published_at DESC, sp2.id DESC
+                    LIMIT 1
+                )
+                LEFT JOIN sys_user u ON u.id = s.user_id
+                WHERE l.user_id = #{query.userId}
+                  AND l.resource_type = 'story'
+                  AND l.status = 1
+                  AND s.is_deleted = 0
+                  AND (s.status IS NULL OR s.status != 9)
+                <if test="query.keyword != null and query.keyword != ''">
+                    AND (
+                        s.title LIKE CONCAT('%', #{query.keyword}, '%')
+                        OR s.story_intro LIKE CONCAT('%', #{query.keyword}, '%')
+                        OR sp.display_title LIKE CONCAT('%', #{query.keyword}, '%')
+                    )
+                </if>
+            </if>
+        ) like_data
+        ORDER BY like_data.likedAt DESC, like_data.likeId DESC
+    </select>
+
+    <!-- 查询当前用户的有效点赞状态 -->
+    <select id="countActiveLike" resultType="int">
+        SELECT COUNT(1)
+        FROM ts_user_resource_like
+        WHERE user_id = #{userId}
+          AND resource_type = #{resourceType}
+          AND resource_id = #{resourceId}
+          AND status = 1
+    </select>
+
+    <!-- 校验角色或故事是否具有在线公开记录 -->
+    <select id="countAvailableResource" resultType="int">
+        <choose>
+            <when test="resourceType == 'role'">
+                SELECT COUNT(1)
+                FROM ts_role_info r
+                INNER JOIN ts_role_public rp ON rp.role_id = r.id AND rp.status = 'online'
+                WHERE r.id = #{resourceId}
+                  AND (r.status IS NULL OR r.status != 0)
+            </when>
+            <otherwise>
+                SELECT COUNT(1)
+                FROM ts_story_info s
+                INNER JOIN ts_story_public sp ON sp.story_id = s.id AND sp.status = 'online'
+                WHERE s.id = #{resourceId}
+                  AND s.is_deleted = 0
+                  AND (s.status IS NULL OR s.status != 9)
+            </otherwise>
+        </choose>
+    </select>
+
+    <!-- 查询指定资源有效点赞总数 -->
+    <select id="countResourceLikes" resultType="long">
+        SELECT COUNT(1)
+        FROM ts_user_resource_like
+        WHERE resource_type = #{resourceType}
+          AND resource_id = #{resourceId}
+          AND status = 1
+    </select>
+
+    <!-- 唯一键冲突时仅恢复已取消的点赞，重复点赞不刷新点赞时间 -->
+    <insert id="upsertLike">
+        INSERT INTO ts_user_resource_like (
+            user_id,
+            resource_type,
+            resource_id,
+            status,
+            created_at,
+            updated_at
+        ) VALUES (
+            #{userId},
+            #{resourceType},
+            #{resourceId},
+            1,
+            #{now},
+            #{now}
+        )
+        ON DUPLICATE KEY UPDATE
+            created_at = IF(status = 0, VALUES(created_at), created_at),
+            updated_at = IF(status = 0, VALUES(updated_at), updated_at),
+            status = 1
+    </insert>
+
+    <!-- 仅取消当前用户自己的有效点赞 -->
+    <update id="cancelLike">
+        UPDATE ts_user_resource_like
+        SET status = 0,
+            updated_at = #{now}
+        WHERE user_id = #{userId}
+          AND resource_type = #{resourceType}
+          AND resource_id = #{resourceId}
+          AND status = 1
+    </update>
+
+</mapper>

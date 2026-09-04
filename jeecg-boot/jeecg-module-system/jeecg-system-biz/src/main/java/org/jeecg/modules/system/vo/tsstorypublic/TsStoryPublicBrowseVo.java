@@ -1,9 +1,11 @@
 package org.jeecg.modules.system.vo.tsstorypublic;
 
 import lombok.Data;
+import org.jeecg.modules.system.vo.tscontenttag.TsContentTagDisplayVo;
 import org.jeecg.modules.system.vo.tsimage.TsImageResourceVo;
 
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -37,6 +39,10 @@ public class TsStoryPublicBrowseVo {
     private String authorName;
     /** 作者头像。 */
     private String authorAvatar;
+    /** 内容版本。 */
+    private Integer contentVersion;
+    /** 当前版本展示标签。 */
+    private List<TsContentTagDisplayVo> tags;
     /** 更新时间。 */
     private Date updatedAt;
     /** 统一图片语义资源。 */

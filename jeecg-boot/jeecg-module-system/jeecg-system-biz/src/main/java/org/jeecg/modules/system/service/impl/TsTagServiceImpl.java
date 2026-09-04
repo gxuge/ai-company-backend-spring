@@ -7,7 +7,7 @@ import org.jeecg.modules.system.service.ITsTagService;
 import org.springframework.stereotype.Service;
 
 /**
- * @Description: 生成素材标签主表
+ * @Description: 角色与故事固定标签词典
  * @Author: jeecg-boot
  * @Date: 2026-05-28
  * @Version: V1.0
@@ -15,4 +15,3 @@ import org.springframework.stereotype.Service;
 @Service
 public class TsTagServiceImpl extends ServiceImpl<TsTagMapper, TsTag> implements ITsTagService {
 }
-

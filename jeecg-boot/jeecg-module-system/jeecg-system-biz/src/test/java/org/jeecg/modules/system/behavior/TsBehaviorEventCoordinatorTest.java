@@ -26,20 +26,25 @@ class TsBehaviorEventCoordinatorTest {
     @Test
     void shouldSkipPublisherWhenKafkaIsDisabled() {
         TsBehaviorEventPublisher publisher = mock(TsBehaviorEventPublisher.class);
+        TsBehaviorTagSnapshotEnricher enricher = mock(TsBehaviorTagSnapshotEnricher.class);
         TsBehaviorConfigBean config = new TsBehaviorConfigBean();
-        TsBehaviorEventCoordinator coordinator = new TsBehaviorEventCoordinator(publisher, config);
+        TsBehaviorEventCoordinator coordinator =
+                new TsBehaviorEventCoordinator(publisher, enricher, config);
         TsBehaviorEventMessage event = event();
 
         coordinator.publishAfterCommit(event);
 
         verify(publisher, never()).publish(event);
+        verify(enricher, never()).enrich(java.util.List.of(event));
     }
 
     @Test
     void shouldPublishOnlyAfterTransactionCommit() {
         TsBehaviorEventPublisher publisher = mock(TsBehaviorEventPublisher.class);
+        TsBehaviorTagSnapshotEnricher enricher = mock(TsBehaviorTagSnapshotEnricher.class);
         TsBehaviorConfigBean config = enabledConfig();
-        TsBehaviorEventCoordinator coordinator = new TsBehaviorEventCoordinator(publisher, config);
+        TsBehaviorEventCoordinator coordinator =
+                new TsBehaviorEventCoordinator(publisher, enricher, config);
         TsBehaviorEventMessage event = event();
         TransactionSynchronizationManager.initSynchronization();
         TransactionSynchronizationManager.setActualTransactionActive(true);
@@ -51,14 +56,17 @@ class TsBehaviorEventCoordinatorTest {
                 : TransactionSynchronizationManager.getSynchronizations()) {
             synchronization.afterCommit();
         }
+        verify(enricher).enrich(java.util.List.of(event));
         verify(publisher).publish(event);
     }
 
     @Test
     void shouldSwallowPublisherFailure() {
         TsBehaviorEventPublisher publisher = mock(TsBehaviorEventPublisher.class);
+        TsBehaviorTagSnapshotEnricher enricher = mock(TsBehaviorTagSnapshotEnricher.class);
         TsBehaviorConfigBean config = enabledConfig();
-        TsBehaviorEventCoordinator coordinator = new TsBehaviorEventCoordinator(publisher, config);
+        TsBehaviorEventCoordinator coordinator =
+                new TsBehaviorEventCoordinator(publisher, enricher, config);
         TsBehaviorEventMessage event = event();
         doThrow(new IllegalStateException("kafka unavailable"))
                 .when(publisher)

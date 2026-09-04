@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jeecg.common.exception.JeecgBootException;
 import org.jeecg.common.system.vo.LoginUser;
 import org.jeecg.modules.system.behavior.TsBehaviorEventPublisher;
+import org.jeecg.modules.system.behavior.TsBehaviorTagSnapshotEnricher;
 import org.jeecg.modules.system.config.TsBehaviorConfigBean;
 import org.jeecg.modules.system.dto.tsbehavior.TsBehaviorEventDto;
 import org.jeecg.modules.system.event.TsBehaviorEventMessage;
@@ -25,6 +26,7 @@ import static org.mockito.Mockito.verify;
 /** 业务行为采集服务测试。 */
 class TsBehaviorEventServiceImplTest {
     private TsBehaviorEventPublisher publisher;
+    private TsBehaviorTagSnapshotEnricher tagSnapshotEnricher;
     private TsBehaviorConfigBean config;
     private TsBehaviorEventServiceImpl service;
 
@@ -32,10 +34,11 @@ class TsBehaviorEventServiceImplTest {
     @BeforeEach
     void setUp() {
         publisher = mock(TsBehaviorEventPublisher.class);
+        tagSnapshotEnricher = mock(TsBehaviorTagSnapshotEnricher.class);
         config = new TsBehaviorConfigBean();
         config.getKafka().setEnabled(true);
         service = new TsBehaviorEventServiceImpl(
-                publisher, config, new ObjectMapper());
+                publisher, tagSnapshotEnricher, config, new ObjectMapper());
     }
 
     /** 行为采集关闭时应返回零并且不提交Kafka。 */
@@ -67,7 +70,8 @@ class TsBehaviorEventServiceImplTest {
         assertEquals("u1", captor.getValue().getUserId());
         assertEquals("WEB", captor.getValue().getPlatform());
         assertEquals("detail_view", captor.getValue().getEventType());
-        assertEquals(2, captor.getValue().getEventVersion());
+        assertEquals(3, captor.getValue().getEventVersion());
+        verify(tagSnapshotEnricher).enrich(any());
     }
 
     /** 超出允许时间窗口的事件必须拒绝。 */
@@ -134,6 +138,20 @@ class TsBehaviorEventServiceImplTest {
         assertThrows(
                 JeecgBootException.class,
                 () -> service.collect(user, List.of(request)));
+    }
+
+    /** 客户端不得伪造取消收藏事件。 */
+    @Test
+    void collectShouldRejectClientUnfavorite() {
+        LoginUser user = new LoginUser();
+        user.setId("u1");
+        TsBehaviorEventDto request = validRequest();
+        request.setEventType("unfavorite");
+
+        assertThrows(
+                JeecgBootException.class,
+                () -> service.collect(user, List.of(request)));
+        verify(publisher, never()).publish(any());
     }
 
     /** 合法推荐曝光必须携带场景、请求标识和正整数位置。 */

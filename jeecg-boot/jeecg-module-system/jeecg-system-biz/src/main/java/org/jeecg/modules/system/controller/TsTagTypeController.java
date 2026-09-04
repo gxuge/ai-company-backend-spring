@@ -17,12 +17,12 @@ import org.springframework.web.bind.annotation.*;
 import jakarta.servlet.http.HttpServletRequest;
 
 /**
- * @Description: 生成标签类型字典表
+ * @Description: 角色与故事固定标签类型
  * @Author: jeecg-boot
  * @Date: 2026-05-28
  * @Version: V1.0
  */
-@Tag(name = "生成标签类型字典表")
+@Tag(name = "角色与故事固定标签类型")
 @RestController
 @RequestMapping("/sys/tsTagType")
 public class TsTagTypeController {
@@ -56,6 +56,18 @@ public class TsTagTypeController {
     public Result<?> add(@RequestBody TsTagType tsTagType) {
         if (oConvertUtils.isEmpty(tsTagType.getId()) || oConvertUtils.isEmpty(tsTagType.getName())) {
             return Result.error("id/name 不能为空");
+        }
+        if (!"role".equals(tsTagType.getScope()) && !"story".equals(tsTagType.getScope())) {
+            return Result.error("scope 仅支持 role 或 story");
+        }
+        if (tsTagType.getEnabled() == null) {
+            tsTagType.setEnabled(1);
+        }
+        if (tsTagType.getVersion() == null) {
+            tsTagType.setVersion(1);
+        }
+        if (tsTagType.getSortOrder() == null) {
+            tsTagType.setSortOrder(0);
         }
         tsTagTypeService.save(tsTagType);
         return Result.OK("添加成功！");

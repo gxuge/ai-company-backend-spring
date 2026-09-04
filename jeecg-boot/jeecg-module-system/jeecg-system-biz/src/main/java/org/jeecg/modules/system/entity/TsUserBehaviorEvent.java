@@ -6,7 +6,9 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
+import java.math.BigDecimal;
 import java.util.Date;
+import java.util.List;
 
 /** ClickHouse 用户业务行为事件明细。 */
 @Data
@@ -30,6 +32,12 @@ public class TsUserBehaviorEvent {
     private String resourceType;
     /** 资源ID。 */
     private String resourceId;
+    /** 行为发生时的内容版本。 */
+    private Integer contentVersion;
+    /** 行为发生时的固定标签ID快照。 */
+    private List<Long> tagIds;
+    /** 与标签ID顺序一致的匹配分数快照。 */
+    private List<BigDecimal> tagScores;
     /** 页面路径。 */
     private String pagePath;
     /** 平台。 */

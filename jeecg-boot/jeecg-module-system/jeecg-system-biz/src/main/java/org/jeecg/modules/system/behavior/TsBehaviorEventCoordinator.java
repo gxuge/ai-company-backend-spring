@@ -7,19 +7,24 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.util.List;
+
 /** 后端可信行为事件的事务提交后发布入口。 */
 @Slf4j
 @Component
 public class TsBehaviorEventCoordinator {
 
     private final TsBehaviorEventPublisher eventPublisher;
+    private final TsBehaviorTagSnapshotEnricher tagSnapshotEnricher;
     private final TsBehaviorConfigBean config;
 
     /** 注入行为发布器和开关配置。 */
     public TsBehaviorEventCoordinator(
             TsBehaviorEventPublisher eventPublisher,
+            TsBehaviorTagSnapshotEnricher tagSnapshotEnricher,
             TsBehaviorConfigBean config) {
         this.eventPublisher = eventPublisher;
+        this.tagSnapshotEnricher = tagSnapshotEnricher;
         this.config = config;
     }
 
@@ -46,6 +51,7 @@ public class TsBehaviorEventCoordinator {
     /** 隔离埋点异常，禁止反向影响业务方法。 */
     private void publishQuietly(TsBehaviorEventMessage event) {
         try {
+            tagSnapshotEnricher.enrich(List.of(event));
             eventPublisher.publish(event);
         } catch (RuntimeException exception) {
             log.error(

@@ -23,7 +23,6 @@
 | `TsFeedbackAdminController` | `/sys` | 反馈状态管理与官方回复 |
 | `TsMcpServerController` | `/ts/mcp` | TS MCP SSE / HTTP 入口 |
 | `TsPresetController` | `/sys/tsPreset` | 生成预设主表 CRUD |
-| `TsPresetTagController` | `/sys/tsPresetTag` | 预设-标签关联 CRUD |
 | `TsPublicChannelController` | `/sys` | 公开渠道 CRUD + 下拉选项 |
 | `TsPublicManageOptionsController` | `/sys/ts-public-manage` | 公开管理用户下拉 |
 | `TsRoleController` | `/sys` | 角色 CRUD + 一键生成/模板生成 |
@@ -31,19 +30,24 @@
 | `TsRoleImageProfileController` | `/sys/ts-role-image-profiles` | 角色形象档案 CRUD |
 | `TsRolePublicController` | `/sys` | 角色公开作者视图 |
 | `TsRolePublicManageController` | `/sys` | 角色公开记录 CRUD + 审核流 |
-| `TsRoleTagController` | `/sys` | 官方角色标签查询 |
 | `TsStoryChapterController` | `/sys/ts-story-chapters` | 故事章节 CRUD |
 | `TsStoryController` | `/sys` | 故事 CRUD + 分段/全量生成 |
 | `TsStoryPublicManageController` | `/sys` | 故事公开记录 CRUD + 审核流 |
-| `TsTagController` | `/sys/tsTag` | 生成素材标签主表 CRUD |
-| `TsTagRelationController` | `/sys/tsTagRelation` | 标签关系规则 CRUD |
-| `TsTagTypeController` | `/sys/tsTagType` | 生成标签类型字典 CRUD |
+| `TsTagController` | `/sys/tsTag` | 固定内容标签 CRUD + 打标任务重试 |
+| `TsTagTypeController` | `/sys/tsTagType` | 固定内容标签类型 CRUD |
 | `TsUserImageAssetController` | `/sys/ts-user-image-assets` | 用户图片资产 CRUD |
 | `TsUserVoiceConfigController` | `/sys/ts-user-voice-config/current` | 当前用户音色配置读写 |
 | `TsVoiceProfileController` | `/sys/ts-voice-profiles` | 音色档案、标签、试听、当前用户库 |
 | `TsVoiceTagController` | `/sys/ts-voice-tags` | 音色标签 CRUD |
 
 ## 3. 核心接口
+
+### 3.0 内容标签
+- `ts_tag_type` 固定区分角色的性格、互动风格、外在气质，以及故事的题材、情绪基调、节奏、内容体验。
+- 角色和故事生成响应可选返回 `tags[{typeCode,name,score}]` 与 `tagModelVersion`。
+- 角色和故事保存请求可回传上述字段；后端仅保存固定词典命中、`score >= 0.5` 且每类排名前 3 的标签。
+- 未携带合法候选标签时，作品审核快照提交后创建独立异步打标任务。
+- `POST /sys/tsTag/tasks/retry?taskId={id}`：重新执行失败且未超过 3 次的打标任务。
 
 ### 3.1 聊天链路
 聊天会话、消息、附件均遵循标准 CRUD 路由，当前高频自定义接口如下：
@@ -223,6 +227,37 @@ Agent SSE 确认交互说明：
 
 收藏与取消操作均为幂等操作。资源不存在、已删除或没有在线公开记录时禁止新增收藏。
 
+#### 3.5.1 用户关注
+
+用户关注以当前登录用户为发起方，只允许关注正常且未删除的其他用户。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/ts-user-follows/following` | 分页查询当前用户关注的用户 |
+| GET | `/ts-user-follows/followers` | 分页查询当前用户的粉丝 |
+| GET | `/ts-user-follows/status` | 查询当前用户对目标用户的关注状态和目标用户实时计数 |
+| POST | `/ts-user-follows` | 关注目标用户 |
+| DELETE | `/ts-user-follows` | 取消关注目标用户 |
+
+分页参数为 `pageNo/pageSize/keyword`，其中 `pageSize` 最大为 `100`。
+操作和状态参数为 `targetUserId`。禁止关注自己；关注与取消关注均为幂等操作。
+状态响应包含 `followed/followerCount/followingCount`。
+
+#### 3.5.2 角色与故事点赞
+
+点赞与收藏是两套独立关系，仅允许点赞当前在线公开的角色或故事。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/ts-user-resource-likes` | 分页查询当前用户点赞的角色和故事 |
+| GET | `/ts-user-resource-likes/status` | 查询指定资源点赞状态和实时点赞总数 |
+| POST | `/ts-user-resource-likes` | 点赞在线公开角色或故事 |
+| DELETE | `/ts-user-resource-likes` | 取消角色或故事点赞 |
+
+分页参数与收藏一致。操作和状态参数为 `resourceType/resourceId`，
+其中 `resourceType` 仅支持 `role` 或 `story`。点赞与取消点赞均为幂等操作；
+状态响应包含 `liked/likeCount`。
+
 ### 3.6 用户浏览记录
 
 角色与故事共用同一浏览记录资源，通过 `resourceType` 区分类型。重复浏览不会新增记录，而是累加浏览次数并更新最近浏览时间。
@@ -295,10 +330,8 @@ Agent SSE 确认交互说明：
 | 控制器 | 基础路径 | 说明 |
 |---|---|---|
 | `TsPresetController` | `/sys/tsPreset` | 生成预设主表 |
-| `TsPresetTagController` | `/sys/tsPresetTag` | 预设-标签关联 |
-| `TsTagController` | `/sys/tsTag` | 生成素材标签主表 |
-| `TsTagTypeController` | `/sys/tsTagType` | 标签类型字典 |
-| `TsTagRelationController` | `/sys/tsTagRelation` | 标签关系规则 |
+| `TsTagController` | `/sys/tsTag` | 固定内容标签词典 |
+| `TsTagTypeController` | `/sys/tsTagType` | 固定内容标签类型 |
 
 ### 3.7 音色与资产
 | 方法 | 路径 | 说明 |
@@ -701,6 +734,9 @@ Kafka，由明细消费者写入 ClickHouse：
 
 事件必填 `eventId/eventType/sessionId`；可选
 `resourceType/resourceId/pagePath/platform/properties/occurredAt`。
+客户端仍不得上传标签或内容版本。服务端会将事件统一升级为 v3，并根据
+`resourceType + resourceId` 补充行为发生时的 `contentVersion/tagIds/tagScores`
+后写入 Kafka 和 ClickHouse；无标签内容使用空数组。
 `occurredAt` 推荐使用带时区的 ISO 8601 格式，例如
 `2026-08-26T12:15:39.125Z` 或 `2026-08-26T20:15:39.125+08:00`；
 为兼容既有调用，也接受按 GMT+8 解释的 `yyyy-MM-dd HH:mm:ss` 和毫秒时间戳。
@@ -715,6 +751,7 @@ Kafka，由明细消费者写入 ClickHouse：
 | `detail_view` | `role` 或 `story` | 无 |
 | `impression` | `role` 或 `story` | 必填 `scene/requestId/position` |
 | `favorite` | `role` 或 `story` | 无 |
+| `unfavorite` | `role` 或 `story` | 无，仅后端业务事件 |
 | `connection` | `role` 或 `story` | 无 |
 | `chat_message` | `role` 或 `story` | 无 |
 | `role_create` | `role` | 可选 `gender` |
@@ -723,5 +760,6 @@ Kafka，由明细消费者写入 ClickHouse：
 | `story_background_generate` | `story_background` | 可选 `style` |
 
 前端负责 `user_language`、角色/故事 `detail_view` 和推荐卡片 `impression`；
-收藏、连接、聊天、创建和生成事件由后端业务成功点可信上报。旧的评论、点赞、
-发布、泛生成 AOP 埋点及 Redis 实时特征消费者已移除。
+收藏、取消收藏、连接、聊天、创建和生成事件由后端业务成功点可信上报。
+`unfavorite` 仅在有效收藏实际变为取消状态时产生，重复取消不会重复上报。
+旧的评论、点赞、发布、泛生成 AOP 埋点及 Redis 实时特征消费者已移除。

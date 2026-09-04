@@ -28,6 +28,7 @@ import org.jeecg.modules.system.po.tsrole.TsRoleQueryPo;
 import org.jeecg.modules.system.po.tsrole.TsRoleSavePo;
 import org.jeecg.modules.system.service.ITsRoleGenerateService;
 import org.jeecg.modules.system.service.ITsRoleService;
+import org.jeecg.modules.system.service.ITsContentTagService;
 import org.jeecg.modules.system.service.ITsWorkReviewService;
 import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateImageByPromptVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleGenerateRoleVo;
@@ -39,10 +40,13 @@ import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickSettingGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleOneClickVoiceGenerateVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleVo;
 import org.jeecg.modules.system.vo.tsrole.TsRoleVoConverter;
+import org.jeecg.modules.system.vo.tscontenttag.TsContentTagDisplayVo;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -51,6 +55,8 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
     private ITsRoleGenerateService tsRoleGenerateService;
     @Resource
     private ITsWorkReviewService tsWorkReviewService;
+    @Resource
+    private ITsContentTagService tsContentTagService;
     @Resource
     private TsActivityProgressReporter activityProgressReporter;
     @Resource
@@ -65,7 +71,9 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
         TsRoleQueryPo queryPo = TsRoleQueryPo.fromRequest(userId, request);
         Page<TsRole> page = new Page<>(queryPo.getPageNo(), queryPo.getPageSize());
         Page<TsRole> pageData = baseMapper.selectRolePage(page, queryPo);
-        return Result.OK(TsRoleVoConverter.fromPage(pageData));
+        Page<TsRoleVo> voPage = TsRoleVoConverter.fromPage(pageData);
+        enrichRoleTags(voPage.getRecords());
+        return Result.OK(voPage);
     }
 
     /**
@@ -75,7 +83,7 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
     @CheckTsRoleOwnership(message = "角色不存在或无权访问")
     public Result<TsRoleVo> getRole(LoginUser user, Long id) {
         TsRole role = TsRoleOwnershipAspect.ROLE_CONTEXT.get();
-        return Result.OK(TsRoleVoConverter.fromEntity(role));
+        return Result.OK(enrichRoleTags(TsRoleVoConverter.fromEntity(role)));
     }
 
     /**
@@ -96,6 +104,9 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
         role.setCreatedAt(new Date());
         role.setUpdatedAt(new Date());
         this.save(role);
+        tsContentTagService.replaceTags(
+                "role", role.getId(), role.getContentVersion() + 1, null,
+                "generation", request.getTagModelVersion(), request.getTags(), true);
         tsWorkReviewService.submitRole(role.getId(), request.getIsPublic());
         activityProgressReporter.reportAfterCommit(
                 userId,
@@ -108,7 +119,8 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
                 role.getId(),
                 role.getGender() == null
                         ? Map.of() : Map.of("gender", role.getGender()));
-        return Result.OK("新增成功", TsRoleVoConverter.fromEntity(this.getById(role.getId())));
+        return Result.OK("新增成功", enrichRoleTags(
+                TsRoleVoConverter.fromEntity(this.getById(role.getId()))));
     }
 
     /**
@@ -126,8 +138,12 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
         savePo.applyTo(role);
         role.setUpdatedAt(new Date());
         this.updateById(role);
+        tsContentTagService.replaceTags(
+                "role", role.getId(), role.getContentVersion() + 1, null,
+                "generation", request.getTagModelVersion(), request.getTags(), true);
         tsWorkReviewService.submitRole(role.getId(), requestedPublic);
-        return Result.OK("修改成功", TsRoleVoConverter.fromEntity(this.getById(role.getId())));
+        return Result.OK("修改成功", enrichRoleTags(
+                TsRoleVoConverter.fromEntity(this.getById(role.getId()))));
     }
 
     /**
@@ -142,6 +158,34 @@ public class TsRoleServiceImpl extends ServiceImpl<TsRoleMapper, TsRole> impleme
         role.setUpdatedAt(new Date());
         this.updateById(role);
         return Result.OK("删除成功");
+    }
+
+    /** 为角色响应批量补充当前内容版本标签。 */
+    private void enrichRoleTags(List<TsRoleVo> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        Map<Long, Integer> versions = new LinkedHashMap<>();
+        for (TsRoleVo item : records) {
+            if (item != null && item.getId() != null && item.getContentVersion() != null) {
+                versions.put(item.getId(), item.getContentVersion());
+            }
+        }
+        Map<Long, List<TsContentTagDisplayVo>> tags =
+                tsContentTagService.findCurrentDisplayTags("role", versions);
+        for (TsRoleVo item : records) {
+            if (item != null) {
+                item.setTags(tags.getOrDefault(item.getId(), List.of()));
+            }
+        }
+    }
+
+    /** 为单个角色响应补充当前内容版本标签。 */
+    private TsRoleVo enrichRoleTags(TsRoleVo item) {
+        if (item != null) {
+            enrichRoleTags(List.of(item));
+        }
+        return item;
     }
 
     /**

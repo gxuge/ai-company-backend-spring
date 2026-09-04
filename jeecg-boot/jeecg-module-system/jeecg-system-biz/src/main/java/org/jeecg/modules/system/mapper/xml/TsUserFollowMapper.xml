@@ -1,0 +1,129 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.jeecg.modules.system.mapper.TsUserFollowMapper">
+
+    <!-- 分页查询当前用户关注的正常用户 -->
+    <select id="selectFollowingPage"
+            resultType="org.jeecg.modules.system.vo.tsuserfollow.TsUserFollowVo">
+        SELECT
+            f.id AS followId,
+            u.id AS userId,
+            u.username,
+            COALESCE(NULLIF(u.realname, ''), u.username) AS displayName,
+            u.avatar,
+            u.sign,
+            f.created_at AS followedAt
+        FROM ts_user_follow f
+        INNER JOIN sys_user u ON u.id = f.followed_user_id
+        WHERE f.follower_user_id = #{query.userId}
+          AND f.status = 1
+          AND u.status = 1
+          AND u.del_flag = 0
+        <if test="query.keyword != null and query.keyword != ''">
+            AND (
+                u.username LIKE CONCAT('%', #{query.keyword}, '%')
+                OR u.realname LIKE CONCAT('%', #{query.keyword}, '%')
+            )
+        </if>
+        ORDER BY f.created_at DESC, f.id DESC
+    </select>
+
+    <!-- 分页查询当前用户的正常粉丝 -->
+    <select id="selectFollowerPage"
+            resultType="org.jeecg.modules.system.vo.tsuserfollow.TsUserFollowVo">
+        SELECT
+            f.id AS followId,
+            u.id AS userId,
+            u.username,
+            COALESCE(NULLIF(u.realname, ''), u.username) AS displayName,
+            u.avatar,
+            u.sign,
+            f.created_at AS followedAt
+        FROM ts_user_follow f
+        INNER JOIN sys_user u ON u.id = f.follower_user_id
+        WHERE f.followed_user_id = #{query.userId}
+          AND f.status = 1
+          AND u.status = 1
+          AND u.del_flag = 0
+        <if test="query.keyword != null and query.keyword != ''">
+            AND (
+                u.username LIKE CONCAT('%', #{query.keyword}, '%')
+                OR u.realname LIKE CONCAT('%', #{query.keyword}, '%')
+            )
+        </if>
+        ORDER BY f.created_at DESC, f.id DESC
+    </select>
+
+    <!-- 查询有效关注状态 -->
+    <select id="countActiveFollow" resultType="int">
+        SELECT COUNT(1)
+        FROM ts_user_follow
+        WHERE follower_user_id = #{followerUserId}
+          AND followed_user_id = #{followedUserId}
+          AND status = 1
+    </select>
+
+    <!-- 校验目标用户正常且未删除 -->
+    <select id="countAvailableUser" resultType="int">
+        SELECT COUNT(1)
+        FROM sys_user
+        WHERE id = #{userId}
+          AND status = 1
+          AND del_flag = 0
+    </select>
+
+    <!-- 查询有效粉丝总数，并排除已冻结或删除的粉丝 -->
+    <select id="countFollowers" resultType="long">
+        SELECT COUNT(1)
+        FROM ts_user_follow f
+        INNER JOIN sys_user u ON u.id = f.follower_user_id
+        WHERE f.followed_user_id = #{userId}
+          AND f.status = 1
+          AND u.status = 1
+          AND u.del_flag = 0
+    </select>
+
+    <!-- 查询有效关注总数，并排除已冻结或删除的被关注用户 -->
+    <select id="countFollowing" resultType="long">
+        SELECT COUNT(1)
+        FROM ts_user_follow f
+        INNER JOIN sys_user u ON u.id = f.followed_user_id
+        WHERE f.follower_user_id = #{userId}
+          AND f.status = 1
+          AND u.status = 1
+          AND u.del_flag = 0
+    </select>
+
+    <!-- 唯一键冲突时仅恢复已取消的关注，重复关注不刷新关注时间 -->
+    <insert id="upsertFollow">
+        INSERT INTO ts_user_follow (
+            follower_user_id,
+            followed_user_id,
+            status,
+            created_at,
+            updated_at
+        ) VALUES (
+            #{followerUserId},
+            #{followedUserId},
+            1,
+            #{now},
+            #{now}
+        )
+        ON DUPLICATE KEY UPDATE
+            created_at = IF(status = 0, VALUES(created_at), created_at),
+            updated_at = IF(status = 0, VALUES(updated_at), updated_at),
+            status = 1
+    </insert>
+
+    <!-- 仅取消当前用户自己的有效关注 -->
+    <update id="cancelFollow">
+        UPDATE ts_user_follow
+        SET status = 0,
+            updated_at = #{now}
+        WHERE follower_user_id = #{followerUserId}
+          AND followed_user_id = #{followedUserId}
+          AND status = 1
+    </update>
+
+</mapper>

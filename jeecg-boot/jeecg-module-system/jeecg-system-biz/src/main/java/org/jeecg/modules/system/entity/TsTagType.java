@@ -11,7 +11,7 @@ import lombok.experimental.Accessors;
 import org.springframework.format.annotation.DateTimeFormat;
 
 /**
- * @Description: 生成标签类型字典表
+ * @Description: 角色与故事固定标签类型
  * @Author: jeecg-boot
  * @Date: 2026-05-28
  * @Version: V1.0
@@ -20,7 +20,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 @TableName("ts_tag_type")
 @EqualsAndHashCode(callSuper = false)
 @Accessors(chain = true)
-@Schema(description = "生成标签类型字典表")
+@Schema(description = "角色与故事固定标签类型")
 public class TsTagType {
 
     /** 类型ID */
@@ -32,8 +32,8 @@ public class TsTagType {
     @Schema(description = "类型名称")
     private String name;
 
-    /** 适用目标：character|story|shared */
-    @Schema(description = "适用目标：character|story|shared")
+    /** 内容类型：role|story */
+    @Schema(description = "内容类型：role|story")
     private String scope;
 
     /** 类型描述 */
@@ -43,6 +43,10 @@ public class TsTagType {
     /** 是否启用：1启用，0禁用 */
     @Schema(description = "是否启用：1启用，0禁用")
     private Integer enabled;
+
+    /** 词典版本 */
+    @Schema(description = "词典版本")
+    private Integer version;
 
     /** 排序值 */
     @TableField("sort_order")

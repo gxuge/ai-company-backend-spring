@@ -1,6 +1,7 @@
 package org.jeecg.modules.system.vo.tsstory;
 
 import lombok.Data;
+import org.jeecg.modules.system.vo.tscontenttag.TsContentTagDisplayVo;
 import org.jeecg.modules.system.vo.tsimage.TsImageResourceVo;
 
 import java.util.Date;
@@ -41,5 +42,6 @@ public class TsStoryVo {
     private Long followerCount;
     private Long dialogueCount;
     private List<TsStoryRoleBindingVo> roleBindings;
+    private List<TsContentTagDisplayVo> tags;
     private Map<String, TsImageResourceVo> imageResources;
 }

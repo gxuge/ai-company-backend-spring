@@ -3,6 +3,7 @@ package org.jeecg.modules.system.behavior;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.jeecg.modules.system.config.TsBehaviorConfigBean;
 import org.jeecg.modules.system.enums.tsbehavior.TsBehaviorEventType;
 import org.jeecg.modules.system.event.TsBehaviorEventMessage;
 import org.springframework.stereotype.Component;
@@ -19,6 +20,7 @@ import java.util.UUID;
 @Component
 public class TsBehaviorEventReporter {
     private final TsBehaviorEventCoordinator eventCoordinator;
+    private final TsBehaviorConfigBean config;
     private final ObjectMapper objectMapper;
 
     /**
@@ -26,8 +28,10 @@ public class TsBehaviorEventReporter {
      */
     public TsBehaviorEventReporter(
             TsBehaviorEventCoordinator eventCoordinator,
+            TsBehaviorConfigBean config,
             ObjectMapper objectMapper) {
         this.eventCoordinator = eventCoordinator;
+        this.config = config;
         this.objectMapper = objectMapper;
     }
 
@@ -40,14 +44,16 @@ public class TsBehaviorEventReporter {
             String resourceType,
             Object resourceId,
             Map<String, Object> properties) {
-        if (!StringUtils.hasText(userId) || eventType == null) {
+        if (!config.getKafka().isEnabled()
+                || !StringUtils.hasText(userId)
+                || eventType == null) {
             return;
         }
         Date now = new Date();
-        eventCoordinator.publishAfterCommit(new TsBehaviorEventMessage()
+        TsBehaviorEventMessage event = new TsBehaviorEventMessage()
                 .setEventId(UUID.randomUUID().toString())
                 .setEventType(eventType.getCode())
-                .setEventVersion(2)
+                .setEventVersion(3)
                 .setUserId(userId.trim())
                 .setSessionId("backend")
                 .setResourceType(trimToNull(resourceType))
@@ -55,7 +61,8 @@ public class TsBehaviorEventReporter {
                 .setPlatform("SERVER")
                 .setPropertiesJson(toJson(properties))
                 .setOccurredAt(now)
-                .setReceivedAt(now));
+                .setReceivedAt(now);
+        eventCoordinator.publishAfterCommit(event);
     }
 
     /**
